@@ -6,7 +6,9 @@ import 'package:adhd_planner/data/models/routine.dart';
 import 'package:adhd_planner/data/models/segment.dart';
 import 'package:adhd_planner/data/providers.dart';
 import 'package:adhd_planner/features/routines/routine_editor_page.dart';
+import 'package:adhd_planner/services/notification_service.dart';
 
+import '../../fakes/fake_notification_service.dart';
 import '../../fakes/fake_planner_repository.dart';
 
 const _segment = Segment(
@@ -22,7 +24,10 @@ const _segment = Segment(
 void main() {
   Widget wrap(FakePlannerRepository repo) {
     return ProviderScope(
-      overrides: [plannerRepositoryProvider.overrideWithValue(repo)],
+      overrides: [
+        plannerRepositoryProvider.overrideWithValue(repo),
+        notificationServiceProvider.overrideWithValue(FakeNotificationService()),
+      ],
       child: const MaterialApp(home: RoutineEditorPage()),
     );
   }
