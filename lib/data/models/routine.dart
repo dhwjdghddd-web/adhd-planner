@@ -40,6 +40,23 @@ class Routine {
 
   int get endMinute => (startMinute + durationMin) % TimeGeometry.minutesPerDay;
 
+  /// True if [minute] falls inside this routine's [startMinute, endMinute)
+  /// span, accounting for midnight-wrapping spans.
+  bool containsMinute(int minute) {
+    if (durationMin <= 0) return false;
+    if (durationMin % TimeGeometry.minutesPerDay == 0) return true;
+    final m = minute % TimeGeometry.minutesPerDay;
+    final start = startMinute % TimeGeometry.minutesPerDay;
+    final end = endMinute;
+    if (start < end) return m >= start && m < end;
+    return m >= start || m < end;
+  }
+
+  /// True if this routine repeats on [isoWeekday] (1=Mon..7=Sun). An empty
+  /// [repeatDays] means "every day".
+  bool occursOn(int isoWeekday) =>
+      repeatDays.isEmpty || repeatDays.contains(isoWeekday);
+
   Routine copyWith({
     String? segmentId,
     String? title,

@@ -7,7 +7,7 @@ import 'package:adhd_planner/data/providers.dart';
 import 'fakes/fake_planner_repository.dart';
 
 void main() {
-  testWidgets('App boots and shows the segments editor', (tester) async {
+  testWidgets('App boots and shows the circular planner home', (tester) async {
     await tester.pumpWidget(ProviderScope(
       overrides: [
         plannerRepositoryProvider.overrideWithValue(FakePlannerRepository()),
@@ -16,7 +16,7 @@ void main() {
     ));
     await tester.pumpAndSettle();
 
-    expect(find.text('하루 구간'), findsOneWidget);
-    expect(find.text('구간 추가'), findsWidgets);
+    expect(find.text('오늘'), findsOneWidget);
+    expect(find.byTooltip('구간 관리'), findsOneWidget);
   });
 }
