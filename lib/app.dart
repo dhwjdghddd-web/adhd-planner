@@ -4,9 +4,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/theme.dart';
 import 'data/models/app_settings.dart';
 import 'data/providers.dart';
+import 'features/focus/alarm_alert_dialog.dart';
 import 'features/memos/quick_add_button.dart';
 import 'features/onboarding/onboarding_page.dart';
 import 'features/planner/planner_page.dart';
+import 'services/notification_service.dart';
 
 /// Root widget. Theme mode and font scale follow [AppSettings] live (see
 /// `settingsProvider`), so changing them in the settings screen is
@@ -44,6 +46,7 @@ class App extends ConsumerWidget {
                   ),
                 ),
               ),
+              const _AlarmAlertLauncher(),
             ],
           ),
         );
@@ -74,4 +77,55 @@ class _RootRouter extends ConsumerWidget {
       error: (e, st) => Scaffold(body: Center(child: Text('오류: $e'))),
     );
   }
+}
+
+/// No visual presence of its own — just watches [pendingAlarmAlert] (set by
+/// notification_service.dart whenever the main alarm notification is
+/// tapped, including the system auto-launching the app via
+/// fullScreenIntent) and pops up [AlarmAlertDialog] once the Navigator
+/// actually exists. A plain callback from the notification handler can't
+/// show the dialog directly: on a cold start, that handler can fire before
+/// `runApp()`'s widget tree — and therefore [appNavigatorKey] — is ready.
+class _AlarmAlertLauncher extends StatefulWidget {
+  const _AlarmAlertLauncher();
+
+  @override
+  State<_AlarmAlertLauncher> createState() => _AlarmAlertLauncherState();
+}
+
+class _AlarmAlertLauncherState extends State<_AlarmAlertLauncher> {
+  @override
+  void initState() {
+    super.initState();
+    pendingAlarmAlert.addListener(_openIfPending);
+    // Covers a pending value that arrived before this widget was even
+    // built (e.g. a cold start where the notification response callback
+    // fired during main(), before runApp()).
+    WidgetsBinding.instance.addPostFrameCallback((_) => _openIfPending());
+  }
+
+  void _openIfPending() {
+    final pending = pendingAlarmAlert.value;
+    if (pending == null) return;
+    final context = appNavigatorKey.currentContext;
+    if (context == null) return;
+    pendingAlarmAlert.value = null;
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlarmAlertDialog(
+        routineId: pending.routineId,
+        notificationId: pending.notificationId,
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    pendingAlarmAlert.removeListener(_openIfPending);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => const SizedBox.shrink();
 }

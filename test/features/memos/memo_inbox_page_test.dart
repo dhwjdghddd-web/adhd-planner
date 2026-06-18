@@ -79,6 +79,46 @@ void main() {
     expect(find.text('병원 예약하기'), findsNothing);
   });
 
+  testWidgets('reviewed memos show a strikethrough', (tester) async {
+    final repo = FakePlannerRepository();
+    await repo.addMemo(_memo('m1', '읽은 메모', reviewed: true));
+
+    await tester.pumpWidget(wrap(repo));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('확인한 메모도 보기'));
+    await tester.pumpAndSettle();
+
+    final text = tester.widget<Text>(find.text('읽은 메모'));
+    expect(text.style?.decoration, TextDecoration.lineThrough);
+  });
+
+  testWidgets('unreviewed memos are sorted above reviewed ones', (tester) async {
+    final repo = FakePlannerRepository();
+    await repo.addMemo(_memo('m1', '읽은 메모', reviewed: true));
+    await repo.addMemo(_memo('m2', '안 읽은 메모'));
+
+    await tester.pumpWidget(wrap(repo));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('확인한 메모도 보기'));
+    await tester.pumpAndSettle();
+
+    final unreviewedY = tester.getTopLeft(find.text('안 읽은 메모')).dy;
+    final reviewedY = tester.getTopLeft(find.text('읽은 메모')).dy;
+    expect(unreviewedY, lessThan(reviewedY));
+  });
+
+  testWidgets('the list has bottom padding so the last tile clears the global FAB',
+      (tester) async {
+    final repo = FakePlannerRepository();
+    await repo.addMemo(_memo('m1', '메모'));
+
+    await tester.pumpWidget(wrap(repo));
+    await tester.pumpAndSettle();
+
+    final listView = tester.widget<ListView>(find.byType(ListView));
+    expect((listView.padding as EdgeInsets).bottom, greaterThanOrEqualTo(56));
+  });
+
   testWidgets('swiping a memo away and confirming deletes it', (tester) async {
     final repo = FakePlannerRepository();
     await repo.addMemo(_memo('m1', '지울 메모'));

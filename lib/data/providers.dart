@@ -3,7 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'models/app_settings.dart';
 import 'models/completion.dart';
 import 'models/memo.dart';
+import 'models/micro_step_progress.dart';
 import 'models/routine.dart';
+import 'models/routine_postponement.dart';
 import 'models/segment.dart';
 import 'repositories/planner_repository.dart';
 
@@ -32,6 +34,14 @@ final memosProvider = StreamProvider<List<Memo>>(
 
 final completionsProvider = StreamProvider<List<Completion>>(
   (ref) => ref.watch(plannerRepositoryProvider).watchCompletions(),
+);
+
+final microStepProgressProvider = StreamProvider<List<MicroStepProgress>>(
+  (ref) => ref.watch(plannerRepositoryProvider).watchMicroStepProgress(),
+);
+
+final routinePostponementsProvider = StreamProvider<List<RoutinePostponement>>(
+  (ref) => ref.watch(plannerRepositoryProvider).watchRoutinePostponements(),
 );
 
 final settingsProvider = StreamProvider<AppSettings>(

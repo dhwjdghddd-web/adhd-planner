@@ -3,7 +3,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../models/app_settings.dart';
 import '../../models/completion.dart';
 import '../../models/memo.dart';
+import '../../models/micro_step_progress.dart';
 import '../../models/routine.dart';
+import '../../models/routine_postponement.dart';
 import '../../models/segment.dart';
 import '../planner_repository.dart';
 
@@ -68,6 +70,24 @@ class FirestorePlannerRepository implements PlannerRepository {
   @override
   Future<void> removeCompletion(String dateKey, String routineId) =>
       _collection('completions').doc(Completion.keyFor(dateKey, routineId)).delete();
+
+  // Micro-step progress
+  @override
+  Stream<List<MicroStepProgress>> watchMicroStepProgress() =>
+      _watchAll('microStepProgress', MicroStepProgress.fromMap);
+
+  @override
+  Future<void> saveMicroStepProgress(MicroStepProgress p) =>
+      _collection('microStepProgress').doc(p.id).set(p.toMap());
+
+  // Routine postponements
+  @override
+  Stream<List<RoutinePostponement>> watchRoutinePostponements() =>
+      _watchAll('routinePostponements', RoutinePostponement.fromMap);
+
+  @override
+  Future<void> saveRoutinePostponement(RoutinePostponement p) =>
+      _collection('routinePostponements').doc(p.id).set(p.toMap());
 
   // Settings
   @override

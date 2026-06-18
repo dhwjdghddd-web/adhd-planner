@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -5,6 +7,8 @@ import 'package:permission_handler/permission_handler.dart';
 
 import '../../data/models/app_settings.dart';
 import '../../data/providers.dart';
+import '../../services/alarm_sound_picker.dart';
+import '../../services/notification_service.dart';
 import 'settings_controller.dart';
 
 /// Permission status, theme/font/motion controls, and an anonymous-account
@@ -75,6 +79,41 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     await _refreshPermissions();
   }
 
+  // Alarm channels are immutable once created, so a sound/vibration change
+  // only takes effect once everything gets rescheduled under the new
+  // channel id (see notification_service.dart) — without this, the choice
+  // here would silently do nothing until the next full app restart.
+  Future<void> _rescheduleAlarms(AppSettings settings) async {
+    try {
+      final routines = ref.read(routinesProvider).value ?? const [];
+      await ref.read(notificationServiceProvider).rescheduleAll(routines, settings);
+    } catch (_) {
+      // No platform channel available (e.g. under flutter test) — the
+      // setting itself is already saved and will still apply next launch.
+    }
+  }
+
+  Future<void> _pickAlarmSound(AppSettings settings) async {
+    final picked = await pickAlarmSound(currentUri: settings.alarmSoundUri);
+    if (picked == null) return;
+    final updated = settings.copyWith(alarmSoundUri: picked.uri, alarmSoundLabel: picked.label);
+    await ref.read(settingsControllerProvider).save(updated);
+    await _rescheduleAlarms(updated);
+  }
+
+  Future<void> _resetAlarmSound(AppSettings settings) async {
+    final updated = settings.copyWith(clearAlarmSound: true);
+    await ref.read(settingsControllerProvider).save(updated);
+    await _rescheduleAlarms(updated);
+  }
+
+  Future<void> _setVibrationPattern(AppSettings settings, AlarmVibrationPattern pattern) async {
+    unawaited(previewVibration(vibrationPatternFor(pattern)));
+    final updated = settings.copyWith(vibrationPattern: pattern);
+    await ref.read(settingsControllerProvider).save(updated);
+    await _rescheduleAlarms(updated);
+  }
+
   @override
   Widget build(BuildContext context) {
     final settingsAsync = ref.watch(settingsProvider);
@@ -123,6 +162,40 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           label: '마이크',
           status: _microphone,
           onTap: () => _requestOrOpenSettings(Permission.microphone),
+        ),
+        const Divider(),
+        const _SectionHeader('알람 소리·진동'),
+        ListTile(
+          leading: const Icon(Icons.music_note_outlined),
+          title: const Text('알람음'),
+          subtitle: Text(settings.alarmSoundLabel ?? '기본 알람음'),
+          trailing: settings.alarmSoundUri == null
+              ? null
+              : IconButton(
+                  icon: const Icon(Icons.refresh),
+                  tooltip: '기본 알람음으로',
+                  onPressed: () => _resetAlarmSound(settings),
+                ),
+          onTap: () => _pickAlarmSound(settings),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+          child: Text('진동 패턴', style: Theme.of(context).textTheme.bodyMedium),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final pattern in AlarmVibrationPattern.values)
+                ChoiceChip(
+                  label: Text(pattern.label),
+                  selected: settings.vibrationPattern == pattern,
+                  onSelected: (_) => _setVibrationPattern(settings, pattern),
+                ),
+            ],
+          ),
         ),
         const Divider(),
         const _SectionHeader('화면'),

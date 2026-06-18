@@ -3,7 +3,9 @@ import 'dart:async';
 import 'package:adhd_planner/data/models/app_settings.dart';
 import 'package:adhd_planner/data/models/completion.dart';
 import 'package:adhd_planner/data/models/memo.dart';
+import 'package:adhd_planner/data/models/micro_step_progress.dart';
 import 'package:adhd_planner/data/models/routine.dart';
+import 'package:adhd_planner/data/models/routine_postponement.dart';
 import 'package:adhd_planner/data/models/segment.dart';
 import 'package:adhd_planner/data/repositories/planner_repository.dart';
 
@@ -15,12 +17,16 @@ class FakePlannerRepository implements PlannerRepository {
   final Map<String, Routine> _routines = {};
   final Map<String, Memo> _memos = {};
   final Map<String, Completion> _completions = {};
+  final Map<String, MicroStepProgress> _microStepProgress = {};
+  final Map<String, RoutinePostponement> _routinePostponements = {};
   AppSettings _settings = const AppSettings.defaults();
 
   final _segmentsStream = _ReplayStream<List<Segment>>();
   final _routinesStream = _ReplayStream<List<Routine>>();
   final _memosStream = _ReplayStream<List<Memo>>();
   final _completionsStream = _ReplayStream<List<Completion>>();
+  final _microStepProgressStream = _ReplayStream<List<MicroStepProgress>>();
+  final _routinePostponementsStream = _ReplayStream<List<RoutinePostponement>>();
   final _settingsStream = _ReplayStream<AppSettings>();
 
   FakePlannerRepository() {
@@ -28,6 +34,8 @@ class FakePlannerRepository implements PlannerRepository {
     _routinesStream.add(const []);
     _memosStream.add(const []);
     _completionsStream.add(const []);
+    _microStepProgressStream.add(const []);
+    _routinePostponementsStream.add(const []);
     _settingsStream.add(_settings);
   }
 
@@ -95,6 +103,25 @@ class FakePlannerRepository implements PlannerRepository {
   Future<void> removeCompletion(String dateKey, String routineId) async {
     _completions.remove(Completion.keyFor(dateKey, routineId));
     _completionsStream.add(_completions.values.toList());
+  }
+
+  @override
+  Stream<List<MicroStepProgress>> watchMicroStepProgress() => _microStepProgressStream.stream;
+
+  @override
+  Future<void> saveMicroStepProgress(MicroStepProgress p) async {
+    _microStepProgress[p.id] = p;
+    _microStepProgressStream.add(_microStepProgress.values.toList());
+  }
+
+  @override
+  Stream<List<RoutinePostponement>> watchRoutinePostponements() =>
+      _routinePostponementsStream.stream;
+
+  @override
+  Future<void> saveRoutinePostponement(RoutinePostponement p) async {
+    _routinePostponements[p.id] = p;
+    _routinePostponementsStream.add(_routinePostponements.values.toList());
   }
 
   @override

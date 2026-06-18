@@ -11,7 +11,11 @@ import '../../core/time_geometry.dart';
 @immutable
 class Routine {
   final String id;
-  final String segmentId;
+  // null means the routine's startMinute doesn't fall inside any current
+  // segment (e.g. a gap between segments) — segmentId is derived from
+  // startMinute automatically rather than user-chosen, see
+  // routine_form_page.dart's _autoSegmentId.
+  final String? segmentId;
   final String title;
   final String note;
   final List<String> microSteps;
@@ -103,7 +107,7 @@ class Routine {
 
   factory Routine.fromMap(Map<String, dynamic> map) => Routine(
         id: map['id'] as String,
-        segmentId: map['segmentId'] as String,
+        segmentId: map['segmentId'] as String?,
         title: map['title'] as String,
         note: (map['note'] as String?) ?? '',
         microSteps: List<String>.from(map['microSteps'] as List? ?? const []),

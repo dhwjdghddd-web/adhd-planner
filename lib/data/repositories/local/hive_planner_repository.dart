@@ -3,7 +3,9 @@ import 'package:hive/hive.dart';
 import '../../models/app_settings.dart';
 import '../../models/completion.dart';
 import '../../models/memo.dart';
+import '../../models/micro_step_progress.dart';
 import '../../models/routine.dart';
+import '../../models/routine_postponement.dart';
 import '../../models/segment.dart';
 import '../planner_repository.dart';
 
@@ -16,6 +18,8 @@ class HivePlannerRepository implements PlannerRepository {
   static const routinesBoxName = 'routines';
   static const memosBoxName = 'memos';
   static const completionsBoxName = 'completions';
+  static const microStepProgressBoxName = 'microStepProgress';
+  static const routinePostponementsBoxName = 'routinePostponements';
   static const settingsBoxName = 'settings';
   static const _settingsKey = 'settings';
 
@@ -23,6 +27,8 @@ class HivePlannerRepository implements PlannerRepository {
   final Box _routinesBox;
   final Box _memosBox;
   final Box _completionsBox;
+  final Box _microStepProgressBox;
+  final Box _routinePostponementsBox;
   final Box _settingsBox;
 
   HivePlannerRepository._(
@@ -30,6 +36,8 @@ class HivePlannerRepository implements PlannerRepository {
     this._routinesBox,
     this._memosBox,
     this._completionsBox,
+    this._microStepProgressBox,
+    this._routinePostponementsBox,
     this._settingsBox,
   );
 
@@ -38,8 +46,18 @@ class HivePlannerRepository implements PlannerRepository {
     final routines = await Hive.openBox(routinesBoxName);
     final memos = await Hive.openBox(memosBoxName);
     final completions = await Hive.openBox(completionsBoxName);
+    final microStepProgress = await Hive.openBox(microStepProgressBoxName);
+    final routinePostponements = await Hive.openBox(routinePostponementsBoxName);
     final settings = await Hive.openBox(settingsBoxName);
-    return HivePlannerRepository._(segments, routines, memos, completions, settings);
+    return HivePlannerRepository._(
+      segments,
+      routines,
+      memos,
+      completions,
+      microStepProgress,
+      routinePostponements,
+      settings,
+    );
   }
 
   /// Closes all boxes. Used by tests to simulate an app restart, and can be
@@ -49,6 +67,8 @@ class HivePlannerRepository implements PlannerRepository {
     await _routinesBox.close();
     await _memosBox.close();
     await _completionsBox.close();
+    await _microStepProgressBox.close();
+    await _routinePostponementsBox.close();
     await _settingsBox.close();
   }
 
@@ -96,6 +116,24 @@ class HivePlannerRepository implements PlannerRepository {
   @override
   Future<void> removeCompletion(String dateKey, String routineId) =>
       _completionsBox.delete(Completion.keyFor(dateKey, routineId));
+
+  // Micro-step progress
+  @override
+  Stream<List<MicroStepProgress>> watchMicroStepProgress() =>
+      _watchAll(_microStepProgressBox, MicroStepProgress.fromMap);
+
+  @override
+  Future<void> saveMicroStepProgress(MicroStepProgress p) =>
+      _microStepProgressBox.put(p.id, p.toMap());
+
+  // Routine postponements
+  @override
+  Stream<List<RoutinePostponement>> watchRoutinePostponements() =>
+      _watchAll(_routinePostponementsBox, RoutinePostponement.fromMap);
+
+  @override
+  Future<void> saveRoutinePostponement(RoutinePostponement p) =>
+      _routinePostponementsBox.put(p.id, p.toMap());
 
   // Settings
   @override

@@ -1,3 +1,4 @@
+import 'package:adhd_planner/data/models/app_settings.dart';
 import 'package:adhd_planner/data/models/routine.dart';
 import 'package:adhd_planner/services/notification_service.dart';
 
@@ -15,7 +16,7 @@ class FakeNotificationService extends NotificationService {
   final List<List<Routine>> rescheduleCalls = [];
 
   @override
-  Future<void> rescheduleAll(List<Routine> routines) async {
+  Future<void> rescheduleAll(List<Routine> routines, AppSettings settings) async {
     rescheduleCalls.add(routines);
   }
 }

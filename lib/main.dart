@@ -27,7 +27,8 @@ void main() async {
   await notificationService.init();
   await notificationService.requestPermissions();
   final routines = await repository.watchRoutines().first;
-  await notificationService.rescheduleAll(routines);
+  final settings = await repository.watchSettings().first;
+  await notificationService.rescheduleAll(routines, settings);
 
   runApp(ProviderScope(
     overrides: [

@@ -43,6 +43,51 @@ void main() {
     expect(find.text('확인 중...'), findsWidgets);
   });
 
+  testWidgets('shows the system default alarm sound and all vibration pattern choices',
+      (tester) async {
+    await growSurface(tester);
+    await tester.pumpWidget(wrap(FakePlannerRepository()));
+    await tester.pumpAndSettle();
+
+    expect(find.text('기본 알람음'), findsOneWidget);
+    for (final pattern in AlarmVibrationPattern.values) {
+      expect(find.widgetWithText(ChoiceChip, pattern.label), findsOneWidget);
+    }
+    final defaultChip = tester.widget<ChoiceChip>(
+      find.widgetWithText(ChoiceChip, AlarmVibrationPattern.defaultPattern.label),
+    );
+    expect(defaultChip.selected, true);
+  });
+
+  testWidgets('picking a different vibration pattern persists it', (tester) async {
+    final repo = FakePlannerRepository();
+    final settingsLog = <AppSettings>[];
+    repo.watchSettings().listen(settingsLog.add);
+
+    await growSurface(tester);
+    await tester.pumpWidget(wrap(repo));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.widgetWithText(ChoiceChip, AlarmVibrationPattern.long.label));
+    await tester.pumpAndSettle();
+
+    expect(settingsLog.last.vibrationPattern, AlarmVibrationPattern.long);
+  });
+
+  testWidgets('tapping the alarm sound row does not crash with no platform channel',
+      (tester) async {
+    await growSurface(tester);
+    await tester.pumpWidget(wrap(FakePlannerRepository()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('기본 알람음'));
+    await tester.pumpAndSettle();
+
+    // No native picker under flutter test, so this is a no-op rather than a
+    // crash — the row should still be showing the unchanged default.
+    expect(find.text('기본 알람음'), findsOneWidget);
+  });
+
   testWidgets('selecting a theme segment persists it', (tester) async {
     final repo = FakePlannerRepository();
     final settingsLog = <AppSettings>[];

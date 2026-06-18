@@ -1,5 +1,8 @@
+import 'package:intl/intl.dart';
+
 import '../core/time_geometry.dart';
 import 'models/routine.dart';
+import 'models/routine_postponement.dart';
 
 /// Whatever the home dial and the focus screen agree is "happening now" (or
 /// coming up next), for a given moment in time. Both screens must call
@@ -37,4 +40,34 @@ RoutineStatus findRoutineStatus(List<Routine> routines, int nowMinute, int isoWe
   }
   if (next == null) return const RoutineStatus();
   return RoutineStatus(routine: next, isCurrent: false, remainingMinutes: bestDelta);
+}
+
+/// Overlays today's "미루기" (postpone) offset, if any, onto each routine's
+/// `startMinute` — a purely *display* transformation for whatever currently
+/// reads "what's happening today" (the home dial, [findRoutineStatus]).
+/// Never mutates or re-saves the routine itself; the permanent recurring
+/// schedule a [RoutineFormPage] edit would show is untouched. Returns
+/// [routines] unchanged (same instances) when nothing today has been
+/// postponed, so this is cheap to call on every rebuild.
+List<Routine> applyTodaysPostponements(
+  List<Routine> routines,
+  List<RoutinePostponement> postponements, {
+  DateTime? now,
+}) {
+  final dateKey = DateFormat('yyyy-MM-dd').format(now ?? DateTime.now());
+  final offsetByRoutineId = <String, int>{};
+  for (final p in postponements) {
+    if (p.dateKey == dateKey) offsetByRoutineId[p.routineId] = p.offsetMinutes;
+  }
+  if (offsetByRoutineId.isEmpty) return routines;
+
+  return [
+    for (final routine in routines)
+      if (offsetByRoutineId[routine.id] case final offset?)
+        routine.copyWith(
+          startMinute: (routine.startMinute + offset) % TimeGeometry.minutesPerDay,
+        )
+      else
+        routine,
+  ];
 }

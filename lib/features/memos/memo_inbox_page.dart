@@ -82,7 +82,14 @@ class _MemoList extends ConsumerWidget {
     if (query.isNotEmpty) {
       filtered = filtered.where((m) => m.text.contains(query));
     }
-    final sorted = filtered.toList()..sort((a, b) => b.createdAtIso.compareTo(a.createdAtIso));
+    // Unreviewed memos first (newest first within that group), reviewed
+    // ones pushed below them -- struck through in the tile itself below --
+    // also newest-first within their own group.
+    final sorted = filtered.toList()
+      ..sort((a, b) {
+        if (a.reviewed != b.reviewed) return a.reviewed ? 1 : -1;
+        return b.createdAtIso.compareTo(a.createdAtIso);
+      });
 
     if (sorted.isEmpty) {
       return Center(
@@ -94,6 +101,9 @@ class _MemoList extends ConsumerWidget {
     }
 
     return ListView.builder(
+      // Leaves room for the global quick-add FAB pinned at the bottom-left
+      // (see app.dart) so the last tile in a long list never sits under it.
+      padding: const EdgeInsets.only(bottom: 88),
       itemCount: sorted.length,
       itemBuilder: (context, index) {
         final memo = sorted[index];
@@ -113,7 +123,12 @@ class _MemoList extends ConsumerWidget {
             onChanged: (value) =>
                 ref.read(memosControllerProvider).setReviewed(memo, value ?? false),
             controlAffinity: ListTileControlAffinity.leading,
-            title: Text(memo.text),
+            title: Text(
+              memo.text,
+              style: memo.reviewed
+                  ? const TextStyle(decoration: TextDecoration.lineThrough)
+                  : null,
+            ),
             subtitle: Row(
               children: [
                 Icon(memo.source == MemoSource.voice ? Icons.mic : Icons.edit, size: 14),

@@ -34,10 +34,13 @@ Widget _testApp(FakePlannerRepository repo) {
 }
 
 void main() {
-  // quickAddSheetOpen is a module-level singleton (it has to be, so the FAB
-  // outside the Navigator can react to it) — reset it so one test's leftover
-  // "sheet still open" state can't leak into the next.
-  setUp(() => quickAddSheetOpen.value = false);
+  // quickAddSheetOpen/fabSuppressionCount are module-level singletons (they
+  // have to be, so the FAB outside the Navigator can react to them) — reset
+  // them so one test's leftover state can't leak into the next.
+  setUp(() {
+    quickAddSheetOpen.value = false;
+    fabSuppressionCount.value = 0;
+  });
 
   testWidgets('tapping the global FAB opens the quick-add sheet from outside the Navigator',
       (tester) async {
@@ -60,5 +63,29 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byIcon(Icons.edit_note), findsNothing);
+  });
+
+  testWidgets(
+      'a SuppressGlobalFab-wrapped page (onboarding, Focus) hides the FAB while pushed, '
+      'and it reappears after popping back',
+      (tester) async {
+    await tester.pumpWidget(_testApp(FakePlannerRepository()));
+    await tester.pumpAndSettle();
+
+    expect(find.byIcon(Icons.edit_note), findsOneWidget);
+
+    appNavigatorKey.currentState!.push(MaterialPageRoute<void>(
+      builder: (_) => const SuppressGlobalFab(
+        child: Scaffold(body: Center(child: Text('page with its own full-width bottom button'))),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.byIcon(Icons.edit_note), findsNothing);
+
+    appNavigatorKey.currentState!.pop();
+    await tester.pumpAndSettle();
+
+    expect(find.byIcon(Icons.edit_note), findsOneWidget);
   });
 }

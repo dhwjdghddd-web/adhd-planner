@@ -3,7 +3,10 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:adhd_planner/app.dart';
 import 'package:adhd_planner/data/models/app_settings.dart';
+import 'package:adhd_planner/data/models/routine.dart';
 import 'package:adhd_planner/data/providers.dart';
+import 'package:adhd_planner/features/focus/alarm_alert_dialog.dart';
+import 'package:adhd_planner/services/notification_service.dart';
 
 import 'fakes/fake_planner_repository.dart';
 
@@ -44,5 +47,46 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('오늘'), findsOneWidget);
+  });
+
+  testWidgets('a pending alarm alert set before the app even starts opens once it is ready '
+      '(cold start)', (tester) async {
+    final repo = FakePlannerRepository();
+    await repo.saveSettings(const AppSettings.defaults().copyWith(onboardingComplete: true));
+    await repo.upsertRoutine(Routine(id: 'r1', segmentId: 's1', title: '약 먹기', startMinute: 0));
+
+    pendingAlarmAlert.value = const PendingAlarmAlert(notificationId: 1, routineId: 'r1');
+    addTearDown(() => pendingAlarmAlert.value = null);
+
+    await tester.pumpWidget(ProviderScope(
+      overrides: [plannerRepositoryProvider.overrideWithValue(repo)],
+      child: const App(),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(AlarmAlertDialog), findsOneWidget);
+    expect(find.text('약 먹기'), findsOneWidget);
+    // Consumed, not left around to re-trigger on the next rebuild.
+    expect(pendingAlarmAlert.value, isNull);
+  });
+
+  testWidgets('a pending alarm alert that arrives while the app is already open also opens it',
+      (tester) async {
+    final repo = FakePlannerRepository();
+    await repo.saveSettings(const AppSettings.defaults().copyWith(onboardingComplete: true));
+    await repo.upsertRoutine(Routine(id: 'r1', segmentId: 's1', title: '약 먹기', startMinute: 0));
+
+    await tester.pumpWidget(ProviderScope(
+      overrides: [plannerRepositoryProvider.overrideWithValue(repo)],
+      child: const App(),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text('오늘'), findsOneWidget);
+
+    pendingAlarmAlert.value = const PendingAlarmAlert(notificationId: 1, routineId: 'r1');
+    addTearDown(() => pendingAlarmAlert.value = null);
+    await tester.pumpAndSettle();
+
+    expect(find.byType(AlarmAlertDialog), findsOneWidget);
   });
 }

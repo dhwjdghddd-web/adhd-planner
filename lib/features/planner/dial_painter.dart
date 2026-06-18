@@ -136,7 +136,33 @@ class DialPainter extends CustomPainter {
       final sweep = segment.lengthMinutes / TimeGeometry.minutesPerDay * 2 * math.pi;
       paint.color = segment.color;
       canvas.drawArc(rect, startAngle, sweep, false, paint);
+      _paintSegmentLabel(canvas, center, radius, segment);
     }
+  }
+
+  /// A short, horizontal (not curved) label at the midpoint of the
+  /// segment's own arc — labels the colored ring without the clutter of
+  /// spoke lines all the way to the center. Skipped entirely for a segment
+  /// too short to fit even a couple of characters, rather than overflowing
+  /// onto a neighboring arc.
+  void _paintSegmentLabel(Canvas canvas, Offset center, double radius, Segment segment) {
+    final arcLength = radius * (segment.lengthMinutes / TimeGeometry.minutesPerDay) * 2 * math.pi;
+    const minArcLength = 28.0;
+    if (arcLength < minArcLength) return;
+
+    final midMinute = (segment.startMinute + segment.lengthMinutes / 2).round();
+    final point = TimeGeometry.pointOnCircle(center, radius, midMinute);
+    final textColor = segment.color.computeLuminance() > 0.5 ? Colors.black87 : Colors.white;
+    final tp = TextPainter(
+      text: TextSpan(
+        text: segment.name,
+        style: TextStyle(fontSize: 10, color: textColor, fontWeight: FontWeight.w600),
+      ),
+      textDirection: TextDirection.ltr,
+      maxLines: 1,
+      ellipsis: '…',
+    )..layout(maxWidth: arcLength - 6);
+    tp.paint(canvas, point - Offset(tp.width / 2, tp.height / 2));
   }
 
   void _paintRoutineMarkers(Canvas canvas, Offset center, double outerR) {

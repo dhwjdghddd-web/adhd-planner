@@ -11,6 +11,9 @@ void main() {
       expect(settings.fontScale, 1.0);
       expect(settings.reduceMotion, false);
       expect(settings.exactAlarmGranted, false);
+      expect(settings.alarmSoundUri, isNull);
+      expect(settings.alarmSoundLabel, isNull);
+      expect(settings.vibrationPattern, AlarmVibrationPattern.defaultPattern);
     });
 
     test('toMap/fromMap round-trips every field including onboardingComplete', () {
@@ -43,6 +46,50 @@ void main() {
       expect(updated.onboardingComplete, true);
       expect(updated.themeMode, settings.themeMode);
       expect(updated.fontScale, settings.fontScale);
+    });
+
+    test('toMap/fromMap round-trips a custom alarm sound and vibration pattern', () {
+      const settings = AppSettings(
+        alarmSoundUri: 'content://media/some/sound',
+        alarmSoundLabel: '신나는 알람',
+        vibrationPattern: AlarmVibrationPattern.long,
+      );
+
+      final restored = AppSettings.fromMap(settings.toMap());
+
+      expect(restored.alarmSoundUri, 'content://media/some/sound');
+      expect(restored.alarmSoundLabel, '신나는 알람');
+      expect(restored.vibrationPattern, AlarmVibrationPattern.long);
+    });
+
+    test('fromMap defaults to the system sound and defaultPattern when missing', () {
+      final restored = AppSettings.fromMap(const {'themeMode': 'dark'});
+      expect(restored.alarmSoundUri, isNull);
+      expect(restored.vibrationPattern, AlarmVibrationPattern.defaultPattern);
+    });
+
+    test('clearAlarmSound resets to the system default even with a uri/label passed', () {
+      const settings = AppSettings(
+        alarmSoundUri: 'content://media/some/sound',
+        alarmSoundLabel: '신나는 알람',
+      );
+
+      final cleared = settings.copyWith(clearAlarmSound: true);
+
+      expect(cleared.alarmSoundUri, isNull);
+      expect(cleared.alarmSoundLabel, isNull);
+    });
+
+    test('copyWith without clearAlarmSound keeps the existing sound', () {
+      const settings = AppSettings(
+        alarmSoundUri: 'content://media/some/sound',
+        alarmSoundLabel: '신나는 알람',
+      );
+
+      final updated = settings.copyWith(reduceMotion: true);
+
+      expect(updated.alarmSoundUri, 'content://media/some/sound');
+      expect(updated.alarmSoundLabel, '신나는 알람');
     });
   });
 }

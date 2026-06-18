@@ -1,7 +1,9 @@
 import '../models/app_settings.dart';
 import '../models/completion.dart';
 import '../models/memo.dart';
+import '../models/micro_step_progress.dart';
 import '../models/routine.dart';
+import '../models/routine_postponement.dart';
 import '../models/segment.dart';
 
 /// Storage abstraction for the whole app. Screens and controllers depend
@@ -29,6 +31,14 @@ abstract class PlannerRepository {
   Stream<List<Completion>> watchCompletions();
   Future<void> setCompletion(Completion c);
   Future<void> removeCompletion(String dateKey, String routineId);
+
+  // Micro-step progress (per routine, per day)
+  Stream<List<MicroStepProgress>> watchMicroStepProgress();
+  Future<void> saveMicroStepProgress(MicroStepProgress p);
+
+  // Routine postponements ("미루기" -- per routine, per day)
+  Stream<List<RoutinePostponement>> watchRoutinePostponements();
+  Future<void> saveRoutinePostponement(RoutinePostponement p);
 
   // Settings
   Stream<AppSettings> watchSettings();

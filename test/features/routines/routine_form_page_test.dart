@@ -1,7 +1,9 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:adhd_planner/data/models/routine.dart';
 import 'package:adhd_planner/data/models/segment.dart';
 import 'package:adhd_planner/data/providers.dart';
 import 'package:adhd_planner/features/routines/routine_form_page.dart';
@@ -19,10 +21,10 @@ const _segment = Segment(
 );
 
 void main() {
-  Widget wrap(FakePlannerRepository repo) {
+  Widget wrap(FakePlannerRepository repo, {Routine? existing}) {
     return ProviderScope(
       overrides: [plannerRepositoryProvider.overrideWithValue(repo)],
-      child: const MaterialApp(home: RoutineFormPage()),
+      child: MaterialApp(home: RoutineFormPage(existing: existing)),
     );
   }
 
@@ -124,5 +126,92 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(tester.widget<FilledButton>(saveButton).onPressed, isNotNull);
+  });
+
+  testWidgets('a start time inside a segment auto-shows that segment, no dropdown',
+      (tester) async {
+    final repo = await repoWithSegment();
+    final existing = Routine(
+      id: 'r1',
+      segmentId: null,
+      title: '아침 루틴',
+      startMinute: 7 * 60, // inside _segment's 06:00~12:00
+    );
+    await growSurface(tester);
+    await tester.pumpWidget(wrap(repo, existing: existing));
+    await tester.pumpAndSettle();
+
+    expect(find.text('오전'), findsOneWidget);
+    expect(find.byType(DropdownButtonFormField<String>), findsNothing);
+  });
+
+  testWidgets('a start time outside every segment shows 구간 없음', (tester) async {
+    final repo = await repoWithSegment();
+    final existing = Routine(
+      id: 'r1',
+      segmentId: 's1',
+      title: '밤 루틴',
+      startMinute: 23 * 60, // outside _segment's 06:00~12:00
+    );
+    await growSurface(tester);
+    await tester.pumpWidget(wrap(repo, existing: existing));
+    await tester.pumpAndSettle();
+
+    expect(find.text('구간 없음'), findsOneWidget);
+  });
+
+  testWidgets('saving derives segmentId from the start time, not a stale stored value',
+      (tester) async {
+    final repo = await repoWithSegment();
+    final existing = Routine(
+      id: 'r1',
+      segmentId: 's1', // stale: this routine used to be inside the segment
+      title: '이동된 루틴',
+      startMinute: 7 * 60,
+    );
+    final routinesLog = <List<Routine>>[];
+    repo.watchRoutines().listen(routinesLog.add);
+
+    await growSurface(tester);
+    await tester.pumpWidget(wrap(repo, existing: existing));
+    await tester.pumpAndSettle();
+
+    // Move the start time outside the segment via the new wheel picker.
+    await tester.tap(find.text('시작 시각'));
+    await tester.pumpAndSettle();
+    expect(find.byType(CupertinoDatePicker), findsOneWidget);
+
+    await tester.drag(find.byType(CupertinoDatePicker), const Offset(0, -500));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, '확인'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.widgetWithText(FilledButton, '저장'));
+    await tester.pumpAndSettle();
+
+    final saved = routinesLog.last.firstWhere((r) => r.id == 'r1');
+    // Whatever the drag landed on, segmentId must match what that time
+    // actually derives to -- never the stale 's1' that was passed in.
+    final stillInSegment = _segment.containsMinute(saved.startMinute);
+    expect(saved.segmentId, stillInSegment ? 's1' : isNull);
+  });
+
+  testWidgets('tapping 시작 시각 opens a 24h wheel picker that can be cancelled',
+      (tester) async {
+    final repo = await repoWithSegment();
+    await growSurface(tester);
+    await tester.pumpWidget(wrap(repo));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('시작 시각'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(CupertinoDatePicker), findsOneWidget);
+
+    // Dismiss without confirming (tap outside / back) -- modal sheet pops.
+    await tester.tapAt(const Offset(20, 20));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(CupertinoDatePicker), findsNothing);
   });
 }

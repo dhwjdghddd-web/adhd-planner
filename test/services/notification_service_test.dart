@@ -2,8 +2,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:timezone/data/latest_all.dart' as tz_data;
 import 'package:timezone/timezone.dart' as tz;
 
+import 'package:adhd_planner/data/models/app_settings.dart';
 import 'package:adhd_planner/data/models/routine.dart';
 import 'package:adhd_planner/services/notification_service.dart';
+
+import '../fakes/fake_planner_repository.dart';
 
 Routine _routine({
   required String id,
@@ -116,6 +119,59 @@ void main() {
       final now = tz.TZDateTime.now(tz.local);
       final result = nextInstanceOf(now.weekday, now.hour * 60 + now.minute);
       expect(result.isAfter(now), true);
+    });
+  });
+
+  group('vibrationPatternFor', () {
+    test('every preset starts with a zero delay and is non-empty', () {
+      for (final preset in AlarmVibrationPattern.values) {
+        final pattern = vibrationPatternFor(preset);
+        expect(pattern, isNotEmpty, reason: preset.name);
+        expect(pattern.first, 0, reason: preset.name);
+      }
+    });
+
+    test('presets differ from each other (picking one actually changes something)', () {
+      final patterns = AlarmVibrationPattern.values.map(vibrationPatternFor).toList();
+      for (var i = 0; i < patterns.length; i++) {
+        for (var j = i + 1; j < patterns.length; j++) {
+          expect(patterns[i], isNot(patterns[j]), reason: '$i vs $j');
+        }
+      }
+    });
+  });
+
+  group('NotificationService.postpone', () {
+    test('repeated presses accumulate today\'s offset (5+5=10)', () async {
+      final repo = FakePlannerRepository();
+      await repo.upsertRoutine(_routine(id: 'r1')); // snoozeMin defaults to 5
+      final service = NotificationService(repo);
+
+      // The zonedSchedule calls inside postpone() need a real platform
+      // channel that doesn't exist under flutter test; what this test
+      // cares about (the persisted offset) is already written before that
+      // call, so swallowing the resulting MissingPluginException is safe.
+      try {
+        await service.postpone('r1', const AppSettings.defaults());
+      } catch (_) {}
+      var postponements = await repo.watchRoutinePostponements().first;
+      expect(postponements.single.offsetMinutes, 5);
+
+      try {
+        await service.postpone('r1', const AppSettings.defaults());
+      } catch (_) {}
+      postponements = await repo.watchRoutinePostponements().first;
+      expect(postponements.single.offsetMinutes, 10);
+    });
+
+    test('does nothing when the routine no longer exists', () async {
+      final repo = FakePlannerRepository();
+      final service = NotificationService(repo);
+
+      await service.postpone('missing', const AppSettings.defaults());
+
+      final postponements = await repo.watchRoutinePostponements().first;
+      expect(postponements, isEmpty);
     });
   });
 }

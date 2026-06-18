@@ -11,6 +11,7 @@ import '../../data/providers.dart';
 import '../../data/routine_status.dart';
 import '../focus/focus_page.dart';
 import '../memos/memo_inbox_page.dart';
+import '../rewards/daily_checklist_badge.dart';
 import '../rewards/streak_badge.dart';
 import '../routines/routine_editor_page.dart';
 import '../routines/routine_form_page.dart';
@@ -59,6 +60,7 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
   Widget build(BuildContext context) {
     final segmentsAsync = ref.watch(segmentsProvider);
     final routinesAsync = ref.watch(routinesProvider);
+    final postponements = ref.watch(routinePostponementsProvider).value ?? const [];
 
     return Scaffold(
       appBar: AppBar(
@@ -98,7 +100,13 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
         children: [
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 8),
-            child: Center(child: StreakBadge()),
+            child: Center(
+              child: Wrap(
+                spacing: 12,
+                alignment: WrapAlignment.center,
+                children: [StreakBadge(), DailyChecklistBadge()],
+              ),
+            ),
           ),
           Expanded(
             child: segmentsAsync.when(
@@ -106,6 +114,7 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
                 data: (routines) => _Dial(
                   segments: segments,
                   routines: routines,
+                  displayRoutines: applyTodaysPostponements(routines, postponements),
                   currentMinute: _currentMinute,
                 ),
                 loading: () => const Center(child: CircularProgressIndicator()),
@@ -125,17 +134,25 @@ class _Dial extends StatelessWidget {
   const _Dial({
     required this.segments,
     required this.routines,
+    required this.displayRoutines,
     required this.currentMinute,
   });
 
+  // The permanent, never-postponed schedule -- only used to resolve a
+  // tapped marker back to the real routine to edit (see _nearestRoutine).
   final List<Segment> segments;
   final List<Routine> routines;
+  // Today's postponements overlaid on top of [routines] -- what's actually
+  // drawn on the dial and fed to findRoutineStatus, so the marker position
+  // and the "지금/다음" summary always agree with what alarms are actually
+  // doing today.
+  final List<Routine> displayRoutines;
   final int currentMinute;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final status = findRoutineStatus(routines, currentMinute, DateTime.now().weekday);
+    final status = findRoutineStatus(displayRoutines, currentMinute, DateTime.now().weekday);
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -155,7 +172,7 @@ class _Dial extends StatelessWidget {
                       size: Size(side, side),
                       painter: DialPainter(
                         segments: segments,
-                        routines: routines,
+                        routines: displayRoutines,
                         currentMinute: currentMinute,
                         tickColor: theme.colorScheme.onSurface,
                         labelStyle: theme.textTheme.labelSmall ??
@@ -197,25 +214,34 @@ class _Dial extends StatelessWidget {
   }
 
   /// Finds the routine whose marker the tap landed closest to, within a
-  /// small hit-test radius around the marker itself. Mirrors exactly how
-  /// [DialPainter] positions markers so taps and drawing never disagree.
+  /// small hit-test radius around the marker itself. Hit-tests against
+  /// [displayRoutines] -- mirroring exactly how [DialPainter] positions
+  /// markers, postponements included, so taps and drawing never disagree --
+  /// then resolves the result back to its entry in [routines] before
+  /// returning, since tapping a marker opens the edit form, which must
+  /// show/save the routine's real permanent startMinute, not today's
+  /// postponed display position.
   Routine? _nearestRoutine(
       Offset center, Offset tapPoint, double outerR, Map<String, int> lanes) {
-    Routine? nearest;
+    Routine? nearestDisplay;
     var bestDistance = double.infinity;
     const hitRadius = DialGeometry.routineMarkerRadius + 10;
 
-    for (final routine in routines) {
+    for (final routine in displayRoutines) {
       final lane = lanes[routine.segmentId] ?? 0;
       final radius = DialGeometry.laneRadius(outerR, lane);
       final point = TimeGeometry.pointOnCircle(center, radius, routine.startMinute);
       final distance = (tapPoint - point).distance;
       if (distance <= hitRadius && distance < bestDistance) {
         bestDistance = distance;
-        nearest = routine;
+        nearestDisplay = routine;
       }
     }
-    return nearest;
+    if (nearestDisplay == null) return null;
+    for (final routine in routines) {
+      if (routine.id == nearestDisplay.id) return routine;
+    }
+    return null;
   }
 
   Segment? _nearestSegment(List<Segment> segments, int minute) {

@@ -28,7 +28,9 @@ class RoutinesController {
   }
 
   Future<void> _rescheduleAll() async {
-    final routines = await _ref.read(plannerRepositoryProvider).watchRoutines().first;
-    await _ref.read(notificationServiceProvider).rescheduleAll(routines);
+    final repo = _ref.read(plannerRepositoryProvider);
+    final routines = await repo.watchRoutines().first;
+    final settings = await repo.watchSettings().first;
+    await _ref.read(notificationServiceProvider).rescheduleAll(routines, settings);
   }
 }

@@ -41,6 +41,25 @@ void main() {
     });
   });
 
+  group('Routine segmentId', () {
+    test('toMap/fromMap round-trips a null segmentId (auto-derived, gap between segments)', () {
+      final r = Routine(
+        id: 'r1',
+        segmentId: null,
+        title: 'test',
+        startMinute: 0,
+      );
+      final restored = Routine.fromMap(r.toMap());
+      expect(restored.segmentId, isNull);
+    });
+
+    test('toMap/fromMap round-trips a non-null segmentId', () {
+      final r = _routine(startMinute: 0, durationMin: 30);
+      final restored = Routine.fromMap(r.toMap());
+      expect(restored.segmentId, 's1');
+    });
+  });
+
   group('Routine.occursOn', () {
     test('empty repeatDays matches every weekday', () {
       final r = _routine(startMinute: 0, durationMin: 30);

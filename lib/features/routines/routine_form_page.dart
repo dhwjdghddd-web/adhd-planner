@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
@@ -31,7 +32,6 @@ class _RoutineFormPageState extends ConsumerState<RoutineFormPage> {
   late TextEditingController _titleController;
   late TextEditingController _noteController;
   late TextEditingController _microStepController;
-  String? _segmentId;
   late int _startMinute;
   late int _durationMin;
   late bool _alarmEnabled;
@@ -44,16 +44,11 @@ class _RoutineFormPageState extends ConsumerState<RoutineFormPage> {
   void initState() {
     super.initState();
     final existing = widget.existing;
-    final segments = ref.read(segmentsProvider).value ?? const <Segment>[];
     final now = TimeOfDay.now();
 
     _titleController = TextEditingController(text: existing?.title ?? '');
     _noteController = TextEditingController(text: existing?.note ?? '');
     _microStepController = TextEditingController();
-    _segmentId = existing?.segmentId;
-    if (_segmentId == null || !segments.any((s) => s.id == _segmentId)) {
-      _segmentId = segments.isNotEmpty ? segments.first.id : null;
-    }
     _startMinute = existing?.startMinute ?? now.hour * 60 + now.minute;
     _durationMin = existing?.durationMin ?? 30;
     _alarmEnabled = existing?.alarmEnabled ?? true;
@@ -73,18 +68,56 @@ class _RoutineFormPageState extends ConsumerState<RoutineFormPage> {
 
   bool get _isEditing => widget.existing != null;
 
-  bool get _canSave =>
-      _titleController.text.trim().isNotEmpty &&
-      _segmentId != null &&
-      _durationMin > 0;
+  bool get _canSave => _titleController.text.trim().isNotEmpty && _durationMin > 0;
 
+  /// The segment whose time range covers [startMinute], if any — segments
+  /// are purely a visual category (marker color/icon + dial lane) derived
+  /// from when the routine actually starts, not something the user picks
+  /// separately, so there's no real "no segment selected" failure mode here.
+  static Segment? _autoSegment(List<Segment> segments, int startMinute) {
+    for (final segment in segments) {
+      if (segment.containsMinute(startMinute)) return segment;
+    }
+    return null;
+  }
+
+  // A scrollable 24h wheel (no AM/PM, no separate keyboard-entry mode)
+  // instead of the standard dial/keyboard showTimePicker — swiping each
+  // column directly matches how the rest of this app's time inputs work.
   Future<void> _pickStartTime() async {
-    final picked = await showTimePicker(
+    var pickedMinute = _startMinute;
+    final confirmed = await showModalBottomSheet<bool>(
       context: context,
-      initialTime: TimeOfDay(hour: _startMinute ~/ 60, minute: _startMinute % 60),
+      builder: (sheetContext) => SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              height: 216,
+              child: CupertinoDatePicker(
+                mode: CupertinoDatePickerMode.time,
+                use24hFormat: true,
+                initialDateTime: DateTime(2000, 1, 1, _startMinute ~/ 60, _startMinute % 60),
+                onDateTimeChanged: (dt) => pickedMinute = dt.hour * 60 + dt.minute,
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: () => Navigator.pop(sheetContext, true),
+                  child: const Text('확인'),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
-    if (picked == null) return;
-    setState(() => _startMinute = picked.hour * 60 + picked.minute);
+    if (confirmed != true) return;
+    setState(() => _startMinute = pickedMinute);
   }
 
   void _changeDuration(int delta) {
@@ -108,9 +141,10 @@ class _RoutineFormPageState extends ConsumerState<RoutineFormPage> {
     if (!_canSave) return;
 
     final controller = ref.read(routinesControllerProvider);
+    final segments = ref.read(segmentsProvider).value ?? const <Segment>[];
     final routine = Routine(
       id: widget.existing?.id ?? _uuid.v4(),
-      segmentId: _segmentId!,
+      segmentId: _autoSegment(segments, _startMinute)?.id,
       title: _titleController.text.trim(),
       note: _noteController.text.trim(),
       microSteps: _microSteps,
@@ -155,13 +189,7 @@ class _RoutineFormPageState extends ConsumerState<RoutineFormPage> {
   Widget build(BuildContext context) {
     final segments = ref.watch(segmentsProvider).value ?? const <Segment>[];
     final theme = Theme.of(context);
-
-    // initState reads the segments provider before its first StreamProvider
-    // emission can land (always async, even when data is already cached),
-    // so self-heal the default selection here once the data actually shows up.
-    if (segments.isNotEmpty && !segments.any((s) => s.id == _segmentId)) {
-      _segmentId = segments.first.id;
-    }
+    final autoSegment = _autoSegment(segments, _startMinute);
 
     return Scaffold(
       appBar: AppBar(
@@ -202,34 +230,23 @@ class _RoutineFormPageState extends ConsumerState<RoutineFormPage> {
             ),
           ),
           const SizedBox(height: 24),
-          const Text('소속 구간', style: TextStyle(fontWeight: FontWeight.bold)),
-          const SizedBox(height: 8),
-          if (segments.isEmpty)
-            Text(
-              '구간이 없어요. 먼저 구간을 만들어주세요.',
-              style: TextStyle(color: theme.colorScheme.error),
-            )
-          else
-            Semantics(
-              label: '소속 구간 선택',
-              child: DropdownButtonFormField<String>(
-                initialValue: _segmentId,
-                items: segments
-                    .map((s) => DropdownMenuItem(
-                          value: s.id,
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(iconForKey(s.iconKey), color: s.color, size: 20),
-                              const SizedBox(width: 8),
-                              Text(s.name),
-                            ],
-                          ),
-                        ))
-                    .toList(),
-                onChanged: (value) => setState(() => _segmentId = value),
-              ),
+          // Segment is derived from the start time below, not chosen here —
+          // this just shows what that comes out to so it's not a total
+          // mystery, with no way for it to drift from the actual time.
+          Semantics(
+            label: '소속 구간: ${autoSegment?.name ?? '구간 없음'} (시작 시각에 따라 자동 결정)',
+            child: Row(
+              children: [
+                Icon(
+                  iconForKey(autoSegment?.iconKey ?? ''),
+                  color: autoSegment?.color ?? theme.disabledColor,
+                  size: 20,
+                ),
+                const SizedBox(width: 8),
+                Text(autoSegment?.name ?? '구간 없음', style: theme.textTheme.bodyMedium),
+              ],
             ),
+          ),
           const SizedBox(height: 24),
           ListTile(
             contentPadding: EdgeInsets.zero,

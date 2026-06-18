@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:adhd_planner/data/models/routine.dart';
+import 'package:adhd_planner/data/models/routine_postponement.dart';
 import 'package:adhd_planner/data/routine_status.dart';
 
 Routine _routine({
@@ -82,6 +83,64 @@ void main() {
       expect(status.routine, isNull);
       expect(status.isCurrent, false);
       expect(status.remainingMinutes, 0);
+    });
+  });
+
+  group('applyTodaysPostponements', () {
+    final today = DateTime(2026, 6, 19);
+
+    test('shifts startMinute by today\'s offset for a postponed routine', () {
+      final r = _routine(id: 'r1', startMinute: 9 * 60, durationMin: 30);
+      final result = applyTodaysPostponements(
+        [r],
+        [RoutinePostponement.today('r1', 5, at: today)],
+        now: today,
+      );
+
+      expect(result.single.startMinute, 9 * 60 + 5);
+    });
+
+    test('leaves routines with no postponement untouched (same instance)', () {
+      final r = _routine(id: 'r1', startMinute: 9 * 60, durationMin: 30);
+      final result = applyTodaysPostponements([r], const [], now: today);
+
+      expect(result.single, same(r));
+    });
+
+    test('ignores a postponement from a different day', () {
+      final r = _routine(id: 'r1', startMinute: 9 * 60, durationMin: 30);
+      final yesterday = today.subtract(const Duration(days: 1));
+      final result = applyTodaysPostponements(
+        [r],
+        [RoutinePostponement.today('r1', 5, at: yesterday)],
+        now: today,
+      );
+
+      expect(result.single.startMinute, 9 * 60);
+    });
+
+    test('wraps past midnight', () {
+      final r = _routine(id: 'r1', startMinute: 23 * 60 + 50, durationMin: 30);
+      final result = applyTodaysPostponements(
+        [r],
+        [RoutinePostponement.today('r1', 20, at: today)],
+        now: today,
+      );
+
+      expect(result.single.startMinute, 10); // 23:50 + 20min wraps to 00:10
+    });
+
+    test('only affects the routine the postponement is for', () {
+      final a = _routine(id: 'a', startMinute: 9 * 60, durationMin: 30);
+      final b = _routine(id: 'b', startMinute: 10 * 60, durationMin: 30);
+      final result = applyTodaysPostponements(
+        [a, b],
+        [RoutinePostponement.today('a', 5, at: today)],
+        now: today,
+      );
+
+      expect(result.firstWhere((r) => r.id == 'a').startMinute, 9 * 60 + 5);
+      expect(result.firstWhere((r) => r.id == 'b').startMinute, 10 * 60);
     });
   });
 }

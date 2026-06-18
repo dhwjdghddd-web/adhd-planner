@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:adhd_planner/data/models/completion.dart';
+import 'package:adhd_planner/data/models/micro_step_progress.dart';
 import 'package:adhd_planner/data/models/routine.dart';
 import 'package:adhd_planner/data/providers.dart';
 import 'package:adhd_planner/features/focus/focus_page.dart';
@@ -124,7 +125,7 @@ void main() {
     expect(find.byType(FocusPage), findsNothing);
   });
 
-  testWidgets('다음 할 일 closes the screen without recording a completion',
+  testWidgets('the 닫기 back button closes the screen without recording a completion',
       (tester) async {
     final repo = FakePlannerRepository();
     await repo.upsertRoutine(Routine(
@@ -139,14 +140,15 @@ void main() {
 
     await openFocusPage(tester, repo);
 
-    await tester.tap(find.text('다음 할 일'));
+    await tester.tap(find.byTooltip('닫기'));
     await tester.pumpAndSettle();
 
     expect(find.byType(FocusPage), findsNothing);
     expect(snapshots.last, isEmpty);
   });
 
-  testWidgets('스누즈 shows a snackbar and records no completion', (tester) async {
+  testWidgets('미루기 postpones the routine, shows a snackbar, closes the screen, '
+      'and records no completion', (tester) async {
     final repo = FakePlannerRepository();
     await repo.upsertRoutine(Routine(
       id: 'r1',
@@ -154,18 +156,95 @@ void main() {
       title: '약 먹기',
       startMinute: _currentMinuteOfNow(),
       durationMin: 30,
+      snoozeMin: 7,
     ));
     final snapshots = <List<Completion>>[];
     repo.watchCompletions().listen(snapshots.add);
 
     await openFocusPage(tester, repo);
 
-    await tester.tap(find.text('스누즈'));
+    await tester.tap(find.text('미루기'));
     await tester.pump();
 
-    expect(find.textContaining('STEP 8'), findsOneWidget);
-    expect(find.byType(FocusPage), findsOneWidget);
+    expect(find.text('7분 미뤘어요'), findsWidgets);
+    await tester.pumpAndSettle();
+    expect(find.byType(FocusPage), findsNothing);
     expect(snapshots.last, isEmpty);
+  });
+
+  testWidgets(
+      'within the lead-warning window, the upcoming routine shows its micro-steps '
+      'instead of just the countdown text',
+      (tester) async {
+    final repo = FakePlannerRepository();
+    await repo.upsertRoutine(Routine(
+      id: 'r1',
+      segmentId: 's1',
+      title: '퇴근하기',
+      startMinute: (_currentMinuteOfNow() + 5) % (24 * 60),
+      durationMin: 30,
+      leadWarningMin: 5,
+      microSteps: const ['퇴근준비하기'],
+    ));
+
+    await openFocusPage(tester, repo);
+
+    expect(find.textContaining('분 후 시작'), findsOneWidget);
+    expect(find.text('퇴근하기'), findsOneWidget);
+    expect(find.widgetWithText(CheckboxListTile, '퇴근준비하기'), findsOneWidget);
+    // Not current yet, so no completion/postpone actions — just a way back.
+    expect(find.text('완료'), findsNothing);
+    expect(find.text('미루기'), findsNothing);
+    expect(find.text('닫기'), findsOneWidget);
+  });
+
+  testWidgets('outside the lead-warning window, the upcoming routine shows no micro-steps',
+      (tester) async {
+    final repo = FakePlannerRepository();
+    await repo.upsertRoutine(Routine(
+      id: 'r1',
+      segmentId: 's1',
+      title: '퇴근하기',
+      startMinute: (_currentMinuteOfNow() + 10) % (24 * 60),
+      durationMin: 30,
+      leadWarningMin: 5,
+      microSteps: const ['퇴근준비하기'],
+    ));
+
+    await openFocusPage(tester, repo);
+
+    expect(find.textContaining('다음 루틴까지'), findsOneWidget);
+    expect(find.text('퇴근준비하기'), findsNothing);
+  });
+
+  testWidgets('a micro-step checked before start stays checked once the routine goes current',
+      (tester) async {
+    final repo = FakePlannerRepository();
+    await repo.upsertRoutine(Routine(
+      id: 'r1',
+      segmentId: 's1',
+      title: '퇴근하기',
+      startMinute: _currentMinuteOfNow(),
+      durationMin: 30,
+      leadWarningMin: 5,
+      // Two steps: checking the first alone shouldn't trigger
+      // auto-complete-on-all-checked, which would close the screen before
+      // this test gets to assert on the checkbox state.
+      microSteps: const ['퇴근준비하기', '책상 정리하기'],
+    ));
+
+    await openFocusPage(tester, repo);
+
+    // Already "current" the moment it's opened here (startMinute == now),
+    // so this directly covers that _microStepsChecklist behaves the same
+    // way in both states rather than re-testing the upcoming window itself.
+    await tester.tap(find.text('퇴근준비하기'));
+    await tester.pumpAndSettle();
+
+    final checkbox = tester.widget<CheckboxListTile>(
+      find.widgetWithText(CheckboxListTile, '퇴근준비하기'),
+    );
+    expect(checkbox.value, true);
   });
 
   testWidgets('checking a micro-step toggles its checkbox', (tester) async {
@@ -193,5 +272,145 @@ void main() {
       find.widgetWithText(CheckboxListTile, '손 씻기'),
     );
     expect(after.value, true);
+  });
+
+  testWidgets('checking the last remaining micro-step auto-completes the routine',
+      (tester) async {
+    final repo = FakePlannerRepository();
+    await repo.upsertRoutine(Routine(
+      id: 'r1',
+      segmentId: 's1',
+      title: '약 먹기',
+      startMinute: _currentMinuteOfNow(),
+      durationMin: 30,
+      microSteps: const ['손 씻기', '물 준비'],
+    ));
+    final snapshots = <List<Completion>>[];
+    repo.watchCompletions().listen(snapshots.add);
+
+    await openFocusPage(tester, repo);
+
+    await tester.tap(find.text('손 씻기'));
+    await tester.pumpAndSettle();
+    expect(find.byType(FocusPage), findsOneWidget, reason: 'one step left unchecked');
+
+    await tester.tap(find.text('물 준비'));
+    await tester.pumpAndSettle();
+
+    expect(snapshots.last.any((c) => c.routineId == 'r1'), true);
+    expect(find.byType(FocusPage), findsNothing);
+  });
+
+  testWidgets('un-checking a micro-step does not trigger auto-complete', (tester) async {
+    final repo = FakePlannerRepository();
+    await repo.upsertRoutine(Routine(
+      id: 'r1',
+      segmentId: 's1',
+      title: '약 먹기',
+      startMinute: _currentMinuteOfNow(),
+      durationMin: 30,
+      microSteps: const ['손 씻기'],
+    ));
+
+    await openFocusPage(tester, repo);
+
+    await tester.tap(find.text('손 씻기')); // checks the only step -> auto-completes
+    await tester.pumpAndSettle();
+    expect(find.byType(FocusPage), findsNothing);
+  });
+
+  testWidgets('완료 marks every micro-step as checked', (tester) async {
+    final repo = FakePlannerRepository();
+    await repo.upsertRoutine(Routine(
+      id: 'r1',
+      segmentId: 's1',
+      title: '약 먹기',
+      startMinute: _currentMinuteOfNow(),
+      durationMin: 30,
+      microSteps: const ['손 씻기', '물 준비'],
+    ));
+    final snapshots = <List<MicroStepProgress>>[];
+    repo.watchMicroStepProgress().listen(snapshots.add);
+
+    await openFocusPage(tester, repo);
+
+    await tester.tap(find.text('완료'));
+    await tester.pumpAndSettle();
+
+    final saved = snapshots.last.firstWhere((p) => p.routineId == 'r1');
+    expect(saved.checkedIndices.toSet(), {0, 1});
+  });
+
+  testWidgets('the 빠른 메모 button opens the quick-add sheet from this screen',
+      (tester) async {
+    final repo = FakePlannerRepository();
+    await repo.upsertRoutine(Routine(
+      id: 'r1',
+      segmentId: 's1',
+      title: '약 먹기',
+      startMinute: _currentMinuteOfNow(),
+      durationMin: 30,
+    ));
+
+    await openFocusPage(tester, repo);
+
+    await tester.tap(find.byIcon(Icons.edit_note));
+    await tester.pumpAndSettle();
+
+    expect(find.text('빠른 메모'), findsOneWidget);
+    expect(find.byType(TextField), findsOneWidget);
+  });
+
+  testWidgets('a checked micro-step is still checked after leaving and reopening the screen',
+      (tester) async {
+    final repo = FakePlannerRepository();
+    await repo.upsertRoutine(Routine(
+      id: 'r1',
+      segmentId: 's1',
+      title: '퇴근하기',
+      startMinute: _currentMinuteOfNow(),
+      durationMin: 30,
+      // Two steps, not one: checking just the first shouldn't trigger
+      // auto-complete-on-all-checked and close the screen before the
+      // "leave and reopen" part of this test even happens.
+      microSteps: const ['퇴근준비하기', '책상 정리하기'],
+    ));
+
+    await openFocusPage(tester, repo);
+    await tester.tap(find.text('퇴근준비하기'));
+    await tester.pumpAndSettle();
+
+    // Close (via the back button) without completing, then reopen.
+    await tester.tap(find.byTooltip('닫기'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    final checkbox = tester.widget<CheckboxListTile>(
+      find.widgetWithText(CheckboxListTile, '퇴근준비하기'),
+    );
+    expect(checkbox.value, true);
+  });
+
+  testWidgets("yesterday's checked micro-steps don't carry over to today",
+      (tester) async {
+    final repo = FakePlannerRepository();
+    await repo.upsertRoutine(Routine(
+      id: 'r1',
+      segmentId: 's1',
+      title: '퇴근하기',
+      startMinute: _currentMinuteOfNow(),
+      durationMin: 30,
+      microSteps: const ['퇴근준비하기'],
+    ));
+    final yesterday = DateTime.now().subtract(const Duration(days: 1));
+    await repo.saveMicroStepProgress(MicroStepProgress.today('r1', [0], at: yesterday));
+
+    await openFocusPage(tester, repo);
+
+    final checkbox = tester.widget<CheckboxListTile>(
+      find.widgetWithText(CheckboxListTile, '퇴근준비하기'),
+    );
+    expect(checkbox.value, false);
   });
 }
