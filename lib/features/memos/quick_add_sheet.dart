@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -73,14 +75,20 @@ class _QuickAddSheetState extends ConsumerState<QuickAddSheet> {
     });
   }
 
-  Future<void> _save() async {
+  // Firestore's write Future only resolves once the backend acknowledges
+  // it — while offline that never happens until connectivity returns, so
+  // awaiting it here would leave the sheet stuck open with no feedback.
+  // The local cache (and this sheet's job is done) is updated synchronously
+  // regardless of network, so it's safe to close immediately and let the
+  // write sync in the background.
+  void _save() {
     final text = _controller.text.trim();
     if (text.isEmpty) return;
-    await ref.read(memosControllerProvider).add(
+    unawaited(ref.read(memosControllerProvider).add(
           text,
           source: _usedVoice ? MemoSource.voice : MemoSource.text,
-        );
-    if (mounted) Navigator.of(context).pop();
+        ));
+    Navigator.of(context).pop();
   }
 
   @override

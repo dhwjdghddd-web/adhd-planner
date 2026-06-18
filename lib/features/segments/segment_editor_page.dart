@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -109,7 +111,7 @@ class _SegmentList extends ConsumerWidget {
       ),
     );
     if (confirmed == true) {
-      await ref.read(segmentsControllerProvider).delete(segment.id);
+      unawaited(ref.read(segmentsControllerProvider).delete(segment.id));
     }
   }
 }

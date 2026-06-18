@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
@@ -103,7 +105,12 @@ class _SegmentFormPageState extends ConsumerState<SegmentFormPage> {
       if (proceed != true) return;
     }
 
-    await controller.upsert(segment);
+    // Not awaited: Firestore's write Future only resolves once the backend
+    // acknowledges it, which never happens while offline. The local cache
+    // updates synchronously either way, so blocking the pop on it would
+    // just leave the form stuck open with no feedback when there's no
+    // connection.
+    unawaited(controller.upsert(segment));
     if (mounted) Navigator.pop(context);
   }
 
@@ -126,7 +133,7 @@ class _SegmentFormPageState extends ConsumerState<SegmentFormPage> {
       ),
     );
     if (confirmed == true) {
-      await ref.read(segmentsControllerProvider).delete(existing.id);
+      unawaited(ref.read(segmentsControllerProvider).delete(existing.id));
       if (mounted) Navigator.pop(context);
     }
   }

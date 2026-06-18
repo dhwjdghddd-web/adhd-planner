@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
@@ -98,7 +100,11 @@ class _RoutineFormPageState extends ConsumerState<RoutineFormPage> {
     });
   }
 
-  Future<void> _save() async {
+  // Not awaited: Firestore's write Future only resolves once the backend
+  // acknowledges it, which never happens while offline. The local cache
+  // updates synchronously either way, so blocking the pop on it would just
+  // leave the form stuck open with no feedback when there's no connection.
+  void _save() {
     if (!_canSave) return;
 
     final controller = ref.read(routinesControllerProvider);
@@ -117,8 +123,8 @@ class _RoutineFormPageState extends ConsumerState<RoutineFormPage> {
       notificationIds: widget.existing?.notificationIds ?? const [],
     );
 
-    await controller.upsert(routine);
-    if (mounted) Navigator.pop(context);
+    unawaited(controller.upsert(routine));
+    Navigator.pop(context);
   }
 
   Future<void> _confirmDelete() async {
@@ -140,7 +146,7 @@ class _RoutineFormPageState extends ConsumerState<RoutineFormPage> {
       ),
     );
     if (confirmed == true) {
-      await ref.read(routinesControllerProvider).delete(existing.id);
+      unawaited(ref.read(routinesControllerProvider).delete(existing.id));
       if (mounted) Navigator.pop(context);
     }
   }

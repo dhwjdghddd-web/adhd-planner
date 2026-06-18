@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -153,7 +155,7 @@ class _Body extends ConsumerWidget {
       ),
     );
     if (confirmed == true) {
-      await ref.read(routinesControllerProvider).delete(routine.id);
+      unawaited(ref.read(routinesControllerProvider).delete(routine.id));
     }
   }
 }

@@ -265,8 +265,12 @@ class _FocusPageState extends ConsumerState<FocusPage> {
   }
 
   Future<void> _complete(String routineId) async {
-    await ref.read(completionsControllerProvider).complete(routineId);
-    if (!mounted) return;
+    // Not awaited: Firestore's write Future only resolves once the backend
+    // acknowledges it, which never happens while offline — the celebration
+    // below shouldn't wait on that, since the completion is already
+    // recorded in the local cache (and the streak badge above already
+    // reads from it) regardless of connectivity.
+    unawaited(ref.read(completionsControllerProvider).complete(routineId));
 
     final reduceMotion = ref.read(settingsProvider).value?.reduceMotion ?? false;
     HapticFeedback.mediumImpact();
