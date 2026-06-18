@@ -10,6 +10,7 @@ import '../../data/models/segment.dart';
 import '../../data/providers.dart';
 import '../../data/routine_status.dart';
 import '../focus/focus_page.dart';
+import '../rewards/streak_badge.dart';
 import '../routines/routine_editor_page.dart';
 import '../routines/routine_form_page.dart';
 import '../segments/segment_editor_page.dart';
@@ -77,18 +78,28 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
           ),
         ],
       ),
-      body: segmentsAsync.when(
-        data: (segments) => routinesAsync.when(
-          data: (routines) => _Dial(
-            segments: segments,
-            routines: routines,
-            currentMinute: _currentMinute,
+      body: Column(
+        children: [
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 8),
+            child: Center(child: StreakBadge()),
           ),
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (e, st) => Center(child: Text('오류: $e')),
-        ),
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, st) => Center(child: Text('오류: $e')),
+          Expanded(
+            child: segmentsAsync.when(
+              data: (segments) => routinesAsync.when(
+                data: (routines) => _Dial(
+                  segments: segments,
+                  routines: routines,
+                  currentMinute: _currentMinute,
+                ),
+                loading: () => const Center(child: CircularProgressIndicator()),
+                error: (e, st) => Center(child: Text('오류: $e')),
+              ),
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (e, st) => Center(child: Text('오류: $e')),
+            ),
+          ),
+        ],
       ),
     );
   }

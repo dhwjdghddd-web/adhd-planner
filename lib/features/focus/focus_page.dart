@@ -1,10 +1,14 @@
 import 'dart:async';
+import 'dart:math' as math;
 
+import 'package:confetti/confetti.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/providers.dart';
 import '../../data/routine_status.dart';
+import '../rewards/streak_badge.dart';
 import 'completions_controller.dart';
 import 'focus_countdown_painter.dart';
 
@@ -24,6 +28,8 @@ class _FocusPageState extends ConsumerState<FocusPage> {
   late int _isoWeekday;
   Timer? _ticker;
   final Set<int> _checked = {};
+  late final ConfettiController _confettiController;
+  bool _celebrating = false;
 
   @override
   void initState() {
@@ -35,6 +41,7 @@ class _FocusPageState extends ConsumerState<FocusPage> {
         setState(_updateClock);
       }
     });
+    _confettiController = ConfettiController(duration: const Duration(milliseconds: 600));
   }
 
   void _updateClock() {
@@ -50,12 +57,15 @@ class _FocusPageState extends ConsumerState<FocusPage> {
   @override
   void dispose() {
     _ticker?.cancel();
+    _confettiController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final routinesAsync = ref.watch(routinesProvider);
+    final theme = Theme.of(context);
+    final reduceMotion = ref.watch(settingsProvider).value?.reduceMotion ?? false;
 
     return Scaffold(
       body: SafeArea(
@@ -78,6 +88,37 @@ class _FocusPageState extends ConsumerState<FocusPage> {
                 onPressed: () => Navigator.of(context).pop(),
               ),
             ),
+            if (_celebrating)
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      if (!reduceMotion)
+                        Align(
+                          alignment: Alignment.topCenter,
+                          child: ConfettiWidget(
+                            confettiController: _confettiController,
+                            blastDirection: math.pi / 2,
+                            numberOfParticles: 24,
+                            gravity: 0.3,
+                            shouldLoop: false,
+                          ),
+                        ),
+                      reduceMotion
+                          ? Icon(Icons.check_circle, size: 96, color: theme.colorScheme.primary)
+                          : TweenAnimationBuilder<double>(
+                              tween: Tween(begin: 0.4, end: 1.0),
+                              duration: const Duration(milliseconds: 350),
+                              curve: Curves.elasticOut,
+                              builder: (context, scale, child) =>
+                                  Transform.scale(scale: scale, child: child),
+                              child: Icon(Icons.check_circle, size: 96, color: theme.colorScheme.primary),
+                            ),
+                    ],
+                  ),
+                ),
+              ),
           ],
         ),
       ),
@@ -161,6 +202,8 @@ class _FocusPageState extends ConsumerState<FocusPage> {
               style: theme.textTheme.headlineSmall,
               textAlign: TextAlign.center,
             ),
+            const SizedBox(height: 8),
+            const StreakBadge(),
             if (routine.microSteps.isNotEmpty) ...[
               const SizedBox(height: 16),
               ...List.generate(routine.microSteps.length, (i) {
@@ -211,6 +254,18 @@ class _FocusPageState extends ConsumerState<FocusPage> {
 
   Future<void> _complete(String routineId) async {
     await ref.read(completionsControllerProvider).complete(routineId);
+    if (!mounted) return;
+
+    final reduceMotion = ref.read(settingsProvider).value?.reduceMotion ?? false;
+    HapticFeedback.mediumImpact();
+    setState(() => _celebrating = true);
+    if (reduceMotion) {
+      await Future.delayed(const Duration(milliseconds: 250));
+    } else {
+      _confettiController.play();
+      await Future.delayed(const Duration(milliseconds: 900));
+    }
+
     if (mounted) Navigator.of(context).pop();
   }
 
