@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'core/theme.dart';
+import 'features/memos/quick_add_button.dart';
 import 'features/planner/planner_page.dart';
 
 /// Root widget. Navigation to the real feature screens (routines, focus,
@@ -14,9 +15,24 @@ class App extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'ADHD Planner',
+      navigatorKey: appNavigatorKey,
       theme: AppTheme.light(),
       darkTheme: AppTheme.dark(),
       home: const PlannerPage(),
+      builder: (context, child) => Stack(
+        children: [
+          ?child,
+          const SafeArea(
+            child: Align(
+              alignment: Alignment.bottomLeft,
+              child: Padding(
+                padding: EdgeInsets.all(16),
+                child: GlobalQuickAddButton(),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

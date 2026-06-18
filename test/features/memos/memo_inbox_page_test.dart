@@ -1,0 +1,97 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+import 'package:adhd_planner/data/models/memo.dart';
+import 'package:adhd_planner/data/providers.dart';
+import 'package:adhd_planner/features/memos/memo_inbox_page.dart';
+
+import '../../fakes/fake_planner_repository.dart';
+
+Memo _memo(String id, String text, {bool reviewed = false, MemoSource source = MemoSource.text}) {
+  return Memo(
+    id: id,
+    text: text,
+    source: source,
+    createdAtIso: DateTime(2026, 6, 18, 10, id.hashCode.abs() % 59).toIso8601String(),
+    reviewed: reviewed,
+  );
+}
+
+void main() {
+  Widget wrap(FakePlannerRepository repo) {
+    return ProviderScope(
+      overrides: [plannerRepositoryProvider.overrideWithValue(repo)],
+      child: const MaterialApp(home: MemoInboxPage()),
+    );
+  }
+
+  testWidgets('shows the empty state when there are no unreviewed memos', (tester) async {
+    await tester.pumpWidget(wrap(FakePlannerRepository()));
+    await tester.pumpAndSettle();
+
+    expect(find.text('확인하지 않은 메모가 없어요'), findsOneWidget);
+  });
+
+  testWidgets('shows unreviewed memos by default and hides reviewed ones', (tester) async {
+    final repo = FakePlannerRepository();
+    await repo.addMemo(_memo('m1', '안 읽은 메모'));
+    await repo.addMemo(_memo('m2', '읽은 메모', reviewed: true));
+
+    await tester.pumpWidget(wrap(repo));
+    await tester.pumpAndSettle();
+
+    expect(find.text('안 읽은 메모'), findsOneWidget);
+    expect(find.text('읽은 메모'), findsNothing);
+
+    await tester.tap(find.text('확인한 메모도 보기'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('읽은 메모'), findsOneWidget);
+  });
+
+  testWidgets('checking a memo marks it reviewed and removes it from the default view',
+      (tester) async {
+    final repo = FakePlannerRepository();
+    await repo.addMemo(_memo('m1', '체크할 메모'));
+
+    await tester.pumpWidget(wrap(repo));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byType(Checkbox));
+    await tester.pumpAndSettle();
+
+    expect(find.text('체크할 메모'), findsNothing);
+  });
+
+  testWidgets('search filters memos by substring', (tester) async {
+    final repo = FakePlannerRepository();
+    await repo.addMemo(_memo('m1', '우유 사기'));
+    await repo.addMemo(_memo('m2', '병원 예약하기'));
+
+    await tester.pumpWidget(wrap(repo));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField), '우유');
+    await tester.pumpAndSettle();
+
+    expect(find.text('우유 사기'), findsOneWidget);
+    expect(find.text('병원 예약하기'), findsNothing);
+  });
+
+  testWidgets('swiping a memo away and confirming deletes it', (tester) async {
+    final repo = FakePlannerRepository();
+    await repo.addMemo(_memo('m1', '지울 메모'));
+
+    await tester.pumpWidget(wrap(repo));
+    await tester.pumpAndSettle();
+
+    await tester.drag(find.text('지울 메모'), const Offset(-500, 0));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.widgetWithText(FilledButton, '삭제'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('지울 메모'), findsNothing);
+  });
+}

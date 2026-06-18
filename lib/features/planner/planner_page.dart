@@ -10,6 +10,7 @@ import '../../data/models/segment.dart';
 import '../../data/providers.dart';
 import '../../data/routine_status.dart';
 import '../focus/focus_page.dart';
+import '../memos/memo_inbox_page.dart';
 import '../rewards/streak_badge.dart';
 import '../routines/routine_editor_page.dart';
 import '../routines/routine_form_page.dart';
@@ -74,6 +75,13 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
             tooltip: '구간 관리',
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const SegmentEditorPage()),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.sticky_note_2_outlined),
+            tooltip: '메모',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const MemoInboxPage()),
             ),
           ),
         ],
