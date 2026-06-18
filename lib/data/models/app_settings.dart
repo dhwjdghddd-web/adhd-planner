@@ -10,12 +10,14 @@ class AppSettings {
   final double fontScale;
   final bool reduceMotion;
   final bool exactAlarmGranted;
+  final bool onboardingComplete;
 
   const AppSettings({
     this.themeMode = AppThemeMode.system,
     this.fontScale = 1.0,
     this.reduceMotion = false,
     this.exactAlarmGranted = false,
+    this.onboardingComplete = false,
   });
 
   const AppSettings.defaults() : this();
@@ -25,12 +27,14 @@ class AppSettings {
     double? fontScale,
     bool? reduceMotion,
     bool? exactAlarmGranted,
+    bool? onboardingComplete,
   }) {
     return AppSettings(
       themeMode: themeMode ?? this.themeMode,
       fontScale: fontScale ?? this.fontScale,
       reduceMotion: reduceMotion ?? this.reduceMotion,
       exactAlarmGranted: exactAlarmGranted ?? this.exactAlarmGranted,
+      onboardingComplete: onboardingComplete ?? this.onboardingComplete,
     );
   }
 
@@ -39,6 +43,7 @@ class AppSettings {
         'fontScale': fontScale,
         'reduceMotion': reduceMotion,
         'exactAlarmGranted': exactAlarmGranted,
+        'onboardingComplete': onboardingComplete,
       };
 
   factory AppSettings.fromMap(Map<String, dynamic> map) => AppSettings(
@@ -49,5 +54,6 @@ class AppSettings {
         fontScale: (map['fontScale'] as num?)?.toDouble() ?? 1.0,
         reduceMotion: (map['reduceMotion'] as bool?) ?? false,
         exactAlarmGranted: (map['exactAlarmGranted'] as bool?) ?? false,
+        onboardingComplete: (map['onboardingComplete'] as bool?) ?? false,
       );
 }

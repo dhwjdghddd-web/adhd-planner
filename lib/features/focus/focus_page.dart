@@ -186,12 +186,24 @@ class _FocusPageState extends ConsumerState<FocusPage> {
                       strokeWidth: 14,
                     ),
                   ),
-                  Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text('${status.remainingMinutes}분', style: theme.textTheme.headlineMedium),
-                      Text('남음', style: theme.textTheme.bodyMedium),
-                    ],
+                  // Fixed-size ring (matches the dial's own center circle in
+                  // planner_page.dart) — clamp locally so this can't grow
+                  // past the ring at 200% system text scale.
+                  MediaQuery.withClampedTextScaling(
+                    maxScaleFactor: 1.3,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            '${status.remainingMinutes}분',
+                            style: theme.textTheme.headlineMedium,
+                          ),
+                          Text('남음', style: theme.textTheme.bodyMedium),
+                        ],
+                      ),
+                    ),
                   ),
                 ],
               ),

@@ -16,6 +16,7 @@ import '../routines/routine_editor_page.dart';
 import '../routines/routine_form_page.dart';
 import '../segments/segment_editor_page.dart';
 import '../segments/segment_form_page.dart';
+import '../settings/settings_page.dart';
 import 'dial_painter.dart';
 
 /// Home screen: the 24h circular dial with segment arcs, routine markers,
@@ -82,6 +83,13 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
             tooltip: '메모',
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const MemoInboxPage()),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.settings_outlined),
+            tooltip: '설정',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const SettingsPage()),
             ),
           ),
         ],
@@ -263,41 +271,53 @@ class _CenterSummary extends StatelessWidget {
           ),
         ],
       ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(TimeGeometry.formatMinute(currentMinute), style: theme.textTheme.titleMedium),
-          const SizedBox(height: 6),
-          if (routine == null)
-            Text(
-              '오늘 일정이 없어요',
-              style: theme.textTheme.bodySmall,
-              textAlign: TextAlign.center,
-            )
-          else ...[
-            Text(
-              status.isCurrent ? '지금: ${routine.title}' : '다음: ${routine.title}',
-              style: theme.textTheme.bodyMedium,
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-            const SizedBox(height: 4),
-            Text(
-              status.isCurrent
-                  ? '${status.remainingMinutes}분 남음'
-                  : '${status.remainingMinutes}분 후 시작',
-              style: theme.textTheme.bodySmall,
-            ),
-          ],
-          const SizedBox(height: 8),
-          FilledButton.tonal(
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const FocusPage()),
-            ),
-            child: const Text('지금'),
+      // This circle has a fixed physical size (it sits inside the dial's own
+      // geometry), so it can't grow with the user's font-size setting the
+      // way a scrolling list can. Clamp text growth so most of it still
+      // scales a little, then FittedBox is a hard safety net — together
+      // they guarantee this never overflows at 200%, even with a long
+      // routine title.
+      child: MediaQuery.withClampedTextScaling(
+        maxScaleFactor: 1.3,
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(TimeGeometry.formatMinute(currentMinute), style: theme.textTheme.titleMedium),
+              const SizedBox(height: 6),
+              if (routine == null)
+                Text(
+                  '오늘 일정이 없어요',
+                  style: theme.textTheme.bodySmall,
+                  textAlign: TextAlign.center,
+                )
+              else ...[
+                Text(
+                  status.isCurrent ? '지금: ${routine.title}' : '다음: ${routine.title}',
+                  style: theme.textTheme.bodyMedium,
+                  textAlign: TextAlign.center,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  status.isCurrent
+                      ? '${status.remainingMinutes}분 남음'
+                      : '${status.remainingMinutes}분 후 시작',
+                  style: theme.textTheme.bodySmall,
+                ),
+              ],
+              const SizedBox(height: 8),
+              FilledButton.tonal(
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const FocusPage()),
+                ),
+                child: const Text('지금'),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
