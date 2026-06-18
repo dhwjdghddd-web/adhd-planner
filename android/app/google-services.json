@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "704421480832",
+    "project_id": "adhd-planner-4f9ee",
+    "storage_bucket": "adhd-planner-4f9ee.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:704421480832:android:ad427ef2d3c2bae6f91965",
+        "android_client_info": {
+          "package_name": "com.adhdplanner.adhd_planner"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAygAJi-WmkoXlvdkWlJDeK5ORgQoLPycc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

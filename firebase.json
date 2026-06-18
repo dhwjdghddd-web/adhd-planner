@@ -1,0 +1,24 @@
+{
+  "firestore": {
+    "rules": "firestore.rules"
+  },
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "adhd-planner-4f9ee",
+          "appId": "1:704421480832:android:ad427ef2d3c2bae6f91965",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "adhd-planner-4f9ee",
+          "configurations": {
+            "android": "1:704421480832:android:ad427ef2d3c2bae6f91965"
+          }
+        }
+      }
+    }
+  }
+}

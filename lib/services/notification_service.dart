@@ -1,7 +1,8 @@
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_timezone/flutter_timezone.dart';
-import 'package:hive_flutter/hive_flutter.dart';
 import 'package:timezone/data/latest_all.dart' as tz_data;
 import 'package:timezone/timezone.dart' as tz;
 
@@ -9,8 +10,9 @@ import '../core/time_geometry.dart';
 import '../data/models/completion.dart';
 import '../data/models/routine.dart';
 import '../data/providers.dart';
-import '../data/repositories/local/hive_planner_repository.dart';
+import '../data/repositories/firestore/firestore_planner_repository.dart';
 import '../data/repositories/planner_repository.dart';
+import '../firebase_options.dart';
 
 const _routineChannelId = 'routine';
 const _routineChannelName = '루틴 알람';
@@ -249,16 +251,29 @@ Future<void> _handleResponse(NotificationResponse response) async {
   }
 }
 
-// Deliberately never closes the [HivePlannerRepository] it opens: when
-// Android delivers this in the app's existing isolate (foreground or
-// backgrounded-but-alive), the boxes it opens are the *same* shared boxes
-// the running app already has open via `main.dart`'s repository — closing
-// them here would pull storage out from under the live UI. When it instead
-// runs in a fresh background isolate (app fully killed), the isolate is
-// torn down shortly after anyway, so there's nothing to leak.
+// May run in a fresh background isolate with no app state (Android killed
+// the process before delivering this action), so it re-initializes Firebase
+// and resolves the signed-in user itself rather than assuming either is
+// already set up. `Firebase.apps.isEmpty` distinguishes that case from
+// running in the app's existing isolate, where re-initializing would throw
+// a duplicate-app error.
+Future<String?> _resolveUid() async {
+  if (Firebase.apps.isEmpty) {
+    await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  }
+  final current = FirebaseAuth.instance.currentUser;
+  if (current != null) return current.uid;
+  final restored = await FirebaseAuth.instance
+      .authStateChanges()
+      .firstWhere((u) => u != null)
+      .timeout(const Duration(seconds: 5), onTimeout: () => null);
+  return restored?.uid;
+}
+
 Future<void> _handleSnooze(String routineId) async {
-  await Hive.initFlutter();
-  final repository = await HivePlannerRepository.open();
+  final uid = await _resolveUid();
+  if (uid == null) return;
+  final repository = FirestorePlannerRepository(uid);
   final routine = await _findRoutine(repository, routineId);
   if (routine == null) return;
 
@@ -285,12 +300,13 @@ Future<void> _handleSnooze(String routineId) async {
 }
 
 Future<void> _handleComplete(String routineId) async {
-  await Hive.initFlutter();
-  final repository = await HivePlannerRepository.open();
+  final uid = await _resolveUid();
+  if (uid == null) return;
+  final repository = FirestorePlannerRepository(uid);
   await repository.setCompletion(Completion.now(routineId));
 }
 
-Future<Routine?> _findRoutine(HivePlannerRepository repository, String id) async {
+Future<Routine?> _findRoutine(PlannerRepository repository, String id) async {
   final routines = await repository.watchRoutines().first;
   for (final routine in routines) {
     if (routine.id == id) return routine;
