@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/models/memo.dart';
 import '../../data/providers.dart';
 import 'memos_controller.dart';
+import 'quick_add_button.dart';
 
 /// Memo inbox: unreviewed thoughts by default (with a toggle to also show
 /// ones already reviewed), a search box, and swipe-to-delete. Memos are
@@ -53,14 +54,21 @@ class _MemoInboxPageState extends ConsumerState<MemoInboxPage> {
             onChanged: (value) => setState(() => _showReviewed = value),
           ),
           Expanded(
-            child: memosAsync.when(
-              data: (memos) => _MemoList(
-                memos: memos,
-                query: _searchController.text.trim(),
-                showReviewed: _showReviewed,
+            // Shrinks the visible list area itself (rather than padding
+            // inside it, which only shows up once scrolled all the way
+            // down) so content never reaches the global bottom-left
+            // quick-add FAB even before scrolling.
+            child: Padding(
+              padding: EdgeInsets.only(bottom: fabAvoidingBottomInset(context)),
+              child: memosAsync.when(
+                data: (memos) => _MemoList(
+                  memos: memos,
+                  query: _searchController.text.trim(),
+                  showReviewed: _showReviewed,
+                ),
+                loading: () => const Center(child: CircularProgressIndicator()),
+                error: (e, st) => Center(child: Text('오류: $e')),
               ),
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, st) => Center(child: Text('오류: $e')),
             ),
           ),
         ],
@@ -70,7 +78,11 @@ class _MemoInboxPageState extends ConsumerState<MemoInboxPage> {
 }
 
 class _MemoList extends ConsumerWidget {
-  const _MemoList({required this.memos, required this.query, required this.showReviewed});
+  const _MemoList({
+    required this.memos,
+    required this.query,
+    required this.showReviewed,
+  });
 
   final List<Memo> memos;
   final String query;
@@ -101,9 +113,6 @@ class _MemoList extends ConsumerWidget {
     }
 
     return ListView.builder(
-      // Leaves room for the global quick-add FAB pinned at the bottom-left
-      // (see app.dart) so the last tile in a long list never sits under it.
-      padding: const EdgeInsets.only(bottom: 88),
       itemCount: sorted.length,
       itemBuilder: (context, index) {
         final memo = sorted[index];
@@ -120,8 +129,9 @@ class _MemoList extends ConsumerWidget {
           ),
           child: CheckboxListTile(
             value: memo.reviewed,
-            onChanged: (value) =>
-                ref.read(memosControllerProvider).setReviewed(memo, value ?? false),
+            onChanged: (value) => ref
+                .read(memosControllerProvider)
+                .setReviewed(memo, value ?? false),
             controlAffinity: ListTileControlAffinity.leading,
             title: Text(
               memo.text,
@@ -131,7 +141,10 @@ class _MemoList extends ConsumerWidget {
             ),
             subtitle: Row(
               children: [
-                Icon(memo.source == MemoSource.voice ? Icons.mic : Icons.edit, size: 14),
+                Icon(
+                  memo.source == MemoSource.voice ? Icons.mic : Icons.edit,
+                  size: 14,
+                ),
                 const SizedBox(width: 4),
                 Text(_formatTime(memo.createdAt)),
                 if (memo.category != null) ...[
@@ -163,8 +176,14 @@ class _MemoList extends ConsumerWidget {
         title: const Text('메모 삭제'),
         content: const Text('이 메모를 삭제할까요?'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('취소')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('삭제')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('삭제'),
+          ),
         ],
       ),
     );

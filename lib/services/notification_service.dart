@@ -225,6 +225,10 @@ AndroidNotificationDetails _androidDetailsFor(ScheduledSpec spec, AppSettings se
       category: _alarmCategory,
       additionalFlags: _insistentFlag,
       timeoutAfter: _transitionRepeatMs,
+      // Tapping the body must not silently stop the sound/vibration before
+      // the alert dialog's own 확인/미루기 is pressed -- autoCancel's
+      // default (true) would dismiss (and so stop) it right on tap.
+      autoCancel: false,
       actions: const [
         AndroidNotificationAction(_actionPostpone, '미루기'),
       ],
@@ -241,6 +245,8 @@ AndroidNotificationDetails _androidDetailsFor(ScheduledSpec spec, AppSettings se
     audioAttributesUsage: _alarmAudioUsage,
     category: _alarmCategory,
     additionalFlags: _insistentFlag,
+    // Same reasoning as the transition channel above.
+    autoCancel: false,
     timeoutAfter: _mainAlarmRepeatMs,
     // Pops AlarmAlertDialog over the lock screen like a real alarm clock,
     // rather than waiting for the user to pull down the shade and tap it.
@@ -300,6 +306,23 @@ Future<void> _ensureChannels(AppSettings settings) async {
   }
 }
 
+/// Sets `tz.local` to the device's real timezone. Must be called before any
+/// `tz.TZDateTime.now(tz.local)`/scheduling call — `tz.local` otherwise
+/// defaults to UTC, and a fresh background isolate (a notification action
+/// tapped while the app was killed, see `_handlePostpone`/
+/// `_handleComplete` below) starts with none of `main()`'s setup, [init]
+/// included. Missing this in [postpone] specifically caused 미루기 to
+/// reschedule things 9 hours off in KST.
+Future<void> _ensureLocalTimezone() async {
+  tz_data.initializeTimeZones();
+  try {
+    final localTz = await FlutterTimezone.getLocalTimezone();
+    tz.setLocalLocation(tz.getLocation(localTz.identifier));
+  } catch (_) {
+    tz.setLocalLocation(tz.UTC);
+  }
+}
+
 /// Local alarm scheduling: the main alarm at a routine's start time, a
 /// transition warning before it, and snooze/complete actions on the alarm
 /// notification itself. Works while the app is closed — Android replays
@@ -320,13 +343,7 @@ class NotificationService {
       onDidReceiveBackgroundNotificationResponse: handleNotificationResponseBackground,
     );
 
-    tz_data.initializeTimeZones();
-    try {
-      final localTz = await FlutterTimezone.getLocalTimezone();
-      tz.setLocalLocation(tz.getLocation(localTz.identifier));
-    } catch (_) {
-      tz.setLocalLocation(tz.UTC);
-    }
+    await _ensureLocalTimezone();
   }
 
   /// Requests POST_NOTIFICATIONS (Android 13+) and the exact-alarm
@@ -365,9 +382,29 @@ class NotificationService {
         nextInstanceOf(spec.isoWeekday, spec.minuteOfDay),
         NotificationDetails(android: _androidDetailsFor(spec, settings)),
         uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
-        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        // alarmClock (AlarmManager.setAlarmClock under the hood), not just
+        // exactAllowWhileIdle: Samsung OneUI's "무음" ringer mode appears
+        // to suppress vibration on a plain notification even with
+        // USAGE_ALARM set on its channel, but alarms registered this way
+        // get the same "real alarm clock" treatment as the stock clock
+        // app's alarms -- bypassing ringer mode/DND. Trade-off: a
+        // permanent alarm-clock icon shows in the status bar whenever one
+        // of these is pending, same as any other alarm app.
+        androidScheduleMode: AndroidScheduleMode.alarmClock,
         matchDateTimeComponents: DateTimeComponents.dayOfWeekAndTime,
         payload: spec.payload,
+      );
+      // The notification's own vibration is what 무음 ringer mode silences
+      // (see VibrationAlarmReceiver.kt) -- this directly-triggered Vibrator
+      // call alongside it is the part that actually buzzes in that mode.
+      // Re-arms itself weekly on the native side, so it stays in sync with
+      // matchDateTimeComponents above without Dart needing to be running.
+      await _scheduleVibrationAlarm(
+        requestCode: spec.id,
+        triggerAt: nextInstanceOf(spec.isoWeekday, spec.minuteOfDay),
+        pattern: vibrationPatternFor(settings.vibrationPattern),
+        durationMs: spec.isTransition ? _transitionRepeatMs : _mainAlarmRepeatMs,
+        repeatInterval: const Duration(days: 7),
       );
     }
 
@@ -403,7 +440,7 @@ class NotificationService {
     final routine = await _findRoutine(_repository, routineId);
     if (routine == null) return;
 
-    tz_data.initializeTimeZones();
+    await _ensureLocalTimezone();
     final now = tz.TZDateTime.now(tz.local);
     final dateKey = DateFormat('yyyy-MM-dd').format(DateTime.now());
 
@@ -448,8 +485,23 @@ class NotificationService {
             ),
           ),
           uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
-          androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+          // alarmClock (AlarmManager.setAlarmClock under the hood), not just
+        // exactAllowWhileIdle: Samsung OneUI's "무음" ringer mode appears
+        // to suppress vibration on a plain notification even with
+        // USAGE_ALARM set on its channel, but alarms registered this way
+        // get the same "real alarm clock" treatment as the stock clock
+        // app's alarms -- bypassing ringer mode/DND. Trade-off: a
+        // permanent alarm-clock icon shows in the status bar whenever one
+        // of these is pending, same as any other alarm app.
+        androidScheduleMode: AndroidScheduleMode.alarmClock,
           payload: 'transition:${routine.id}',
+        );
+        await _scheduleVibrationAlarm(
+          requestCode: notificationIdFor(routine.id, 0, 3),
+          triggerAt: warnAt,
+          pattern: vibrationPatternFor(settings.vibrationPattern),
+          durationMs: _transitionRepeatMs,
+          repeatInterval: Duration.zero,
         );
       }
     }
@@ -475,28 +527,94 @@ class NotificationService {
         ),
       ),
       uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
-      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      androidScheduleMode: AndroidScheduleMode.alarmClock,
       payload: 'main:${routine.id}',
+    );
+    await _scheduleVibrationAlarm(
+      requestCode: notificationIdFor(routine.id, 0, 2),
+      triggerAt: mainAt,
+      pattern: vibrationPatternFor(settings.vibrationPattern),
+      durationMs: _mainAlarmRepeatMs,
+      repeatInterval: Duration.zero,
     );
   }
 
   /// Dismisses a still-showing notification outright — needed when a UI
   /// screen (rather than tapping the notification's own action) handles
-  /// 완료/스누즈, since the insistently-repeating alarm notification has to
-  /// be cancelled manually to actually stop the sound/vibration.
-  Future<void> cancelNotification(int id) => _plugin.cancel(id);
+  /// 확인/미루기, since the insistently-repeating alarm notification has to
+  /// be cancelled manually to actually stop the sound. Also stops (and
+  /// un-arms) this id's directly-triggered Vibrator call alongside it --
+  /// see VibrationAlarmReceiver.kt -- since that one keeps buzzing on its
+  /// own timer independently of the notification.
+  Future<void> cancelNotification(int id) async {
+    await _plugin.cancel(id);
+    await _cancelVibrationAlarm(id);
+  }
+
+  /// Cancels every still-armed notification (and the Vibrator alarm
+  /// riding alongside each) for a routine that's about to be deleted.
+  /// `rescheduleAll`'s own `cancelAll` only clears flutter_local_
+  /// notifications' side -- a deleted routine is gone from the routine
+  /// list it rebuilds from, so without this its still-armed Vibrator
+  /// alarms (see VibrationAlarmReceiver.kt, which re-arms itself weekly
+  /// on the native side) would otherwise keep buzzing on their own
+  /// forever with nothing left to silence them.
+  Future<void> cancelRoutineAlarms(Routine routine) async {
+    for (final id in routine.notificationIds) {
+      await cancelNotification(id);
+    }
+  }
+
+  Future<void> _scheduleVibrationAlarm({
+    required int requestCode,
+    required tz.TZDateTime triggerAt,
+    required Int64List pattern,
+    required int durationMs,
+    required Duration repeatInterval,
+  }) async {
+    try {
+      await _alarmChannelChannel.invokeMethod('scheduleVibrationAlarm', {
+        'requestCode': requestCode,
+        'triggerAtMillis': triggerAt.millisecondsSinceEpoch,
+        // .toList(): a typed Int64List crosses the platform channel as a
+        // Java long[], which a Kotlin List<*> argument() cast can't read
+        // -- a plain Dart List<int> (boxed Longs) is what ensureAlarmChannel
+        // already sends the same vibration pattern as, above.
+        'pattern': pattern.toList(),
+        'durationMs': durationMs,
+        'repeatIntervalMs': repeatInterval.inMilliseconds,
+      });
+    } catch (_) {
+      // No platform channel available (e.g. under flutter test).
+    }
+  }
+
+  Future<void> _cancelVibrationAlarm(int requestCode) async {
+    try {
+      await _alarmChannelChannel.invokeMethod('cancelVibrationAlarm', {
+        'requestCode': requestCode,
+      });
+    } catch (_) {
+      // No platform channel available (e.g. under flutter test).
+    }
+  }
 }
 
-/// What the main alarm notification was tapped (or full-screen-launched)
-/// for, picked up by [App]'s alarm-alert launcher once the Navigator is
-/// ready (see app.dart) — a [ValueNotifier] rather than calling
-/// `Navigator.push` straight from here since this can fire before the
-/// widget tree exists yet (cold start).
+/// What alarm notification was tapped (or full-screen-launched) for,
+/// picked up by [App]'s alarm-alert launcher once the Navigator is ready
+/// (see app.dart) — a [ValueNotifier] rather than calling
+/// `Navigator.push`/`showDialog` straight from here since this can fire
+/// before the widget tree exists yet (cold start).
 class PendingAlarmAlert {
-  const PendingAlarmAlert({required this.notificationId, required this.routineId});
+  const PendingAlarmAlert({
+    required this.notificationId,
+    required this.routineId,
+    required this.isTransition,
+  });
 
   final int notificationId;
   final String routineId;
+  final bool isTransition;
 }
 
 final ValueNotifier<PendingAlarmAlert?> pendingAlarmAlert = ValueNotifier(null);
@@ -534,11 +652,11 @@ Future<void> _handleResponse(NotificationResponse response) async {
     // the action buttons above, which are getBroadcast and so can run in
     // the background isolate this function might be on), so this always
     // runs in the main isolate and App's launcher can safely act on it.
-    // Only the main alarm pops the alert dialog; tapping the lead-warning
-    // notification's body is a no-op since there's nothing to act on yet.
-    if (isTransition) return;
-    pendingAlarmAlert.value =
-        PendingAlarmAlert(notificationId: response.id!, routineId: routineId);
+    pendingAlarmAlert.value = PendingAlarmAlert(
+      notificationId: response.id!,
+      routineId: routineId,
+      isTransition: isTransition,
+    );
   }
 }
 

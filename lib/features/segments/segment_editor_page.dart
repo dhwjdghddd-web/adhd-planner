@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/time_geometry.dart';
 import '../../data/models/segment.dart';
 import '../../data/providers.dart';
+import '../memos/quick_add_button.dart';
 import 'segment_form_page.dart';
 import 'segment_icons.dart';
 import 'segments_controller.dart';
@@ -19,10 +20,17 @@ class SegmentEditorPage extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(title: const Text('하루 구간')),
-      body: segmentsAsync.when(
-        data: (segments) => _SegmentList(segments: segments),
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, st) => Center(child: Text('오류: $e')),
+      // Shrinks the visible body area itself (rather than padding inside
+      // the list, which only shows up once scrolled all the way down) so
+      // content never reaches the global bottom-left quick-add FAB (or
+      // this page's own bottom-right one) even before scrolling.
+      body: Padding(
+        padding: EdgeInsets.only(bottom: fabAvoidingBottomInset(context)),
+        child: segmentsAsync.when(
+          data: (segments) => _SegmentList(segments: segments),
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (e, st) => Center(child: Text('오류: $e')),
+        ),
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _openForm(context),
@@ -94,7 +102,10 @@ class _SegmentList extends ConsumerWidget {
   }
 
   Future<void> _confirmDelete(
-      BuildContext context, WidgetRef ref, Segment segment) async {
+    BuildContext context,
+    WidgetRef ref,
+    Segment segment,
+  ) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
@@ -102,11 +113,13 @@ class _SegmentList extends ConsumerWidget {
         content: Text('"${segment.name}" 구간을 삭제할까요? 소속된 루틴은 구간 없이 남습니다.'),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('취소')),
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('취소'),
+          ),
           FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('삭제')),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('삭제'),
+          ),
         ],
       ),
     );
@@ -132,7 +145,8 @@ class _SegmentTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final range = '${TimeGeometry.formatMinute(segment.startMinute)} ~ '
+    final range =
+        '${TimeGeometry.formatMinute(segment.startMinute)} ~ '
         '${TimeGeometry.formatMinute(segment.endMinute)} · ${segment.lengthMinutes}분';
 
     return Semantics(

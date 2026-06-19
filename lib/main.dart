@@ -15,13 +15,14 @@ void main() async {
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   FirebaseFirestore.instance.settings = const Settings(persistenceEnabled: true);
 
-  // Anonymous auth: no sign-in UI yet (STEP 9 just wires the cloud backend
-  // behind the same Repository interface). STEP 12 adds an upgrade path to
-  // a real Google/Apple account from this same anonymous uid.
+  // Anonymous auth for Firestore authentication requirement.
   var user = FirebaseAuth.instance.currentUser;
   user ??= (await FirebaseAuth.instance.signInAnonymously()).user;
 
-  final repository = FirestorePlannerRepository(user!.uid);
+  // 고정 UID: 재설치 시 익명 UID가 바뀌어도 기존 데이터를 유지하기 위해
+  // 원본 사용자 UID를 직접 지정한다.
+  const fixedUid = 'LqBWKlX59ucI6KQ7W2rrlVZtQNv1';
+  final repository = FirestorePlannerRepository(fixedUid);
 
   final notificationService = NotificationService(repository);
   await notificationService.init();

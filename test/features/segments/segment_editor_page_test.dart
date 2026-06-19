@@ -22,8 +22,25 @@ void main() {
     expect(find.textContaining('아직 구간이 없어요'), findsOneWidget);
   });
 
+  // SegmentFormPage's visible body area got shrunk by a bottom Padding (so
+  // its 저장 button never sits under the global quick-add FAB) -- on the
+  // default test surface that pushes 저장 below the fold, where
+  // ListView's Sliver virtualization won't even build it. Same fix
+  // routine_form_page_test.dart already uses for the same reason.
+  Future<void> growSurface(WidgetTester tester) async {
+    await tester.binding.setSurfaceSize(const Size(800, 2400));
+    tester.view.physicalSize = const Size(800, 2400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+      tester.binding.setSurfaceSize(null);
+    });
+  }
+
   testWidgets('creating a segment through the form shows it in the list',
       (tester) async {
+    await growSurface(tester);
     await tester.pumpWidget(wrap(FakePlannerRepository()));
     await tester.pumpAndSettle();
 
@@ -44,6 +61,7 @@ void main() {
 
   testWidgets('deleting a segment removes it after confirmation',
       (tester) async {
+    await growSurface(tester);
     final repo = FakePlannerRepository();
     await tester.pumpWidget(wrap(repo));
     await tester.pumpAndSettle();

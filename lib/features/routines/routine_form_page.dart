@@ -10,11 +10,11 @@ import '../../core/time_geometry.dart';
 import '../../data/models/routine.dart';
 import '../../data/models/segment.dart';
 import '../../data/providers.dart';
+import '../memos/quick_add_button.dart';
 import '../segments/segment_icons.dart';
 import 'routines_controller.dart';
 
 const _uuid = Uuid();
-const List<int> _durationPresets = [15, 30, 45, 60, 90];
 
 /// Add/edit form for a single [Routine]. Reachable from
 /// [RoutineEditorPage]'s list or by tapping a routine marker on the home
@@ -32,8 +32,9 @@ class _RoutineFormPageState extends ConsumerState<RoutineFormPage> {
   late TextEditingController _titleController;
   late TextEditingController _noteController;
   late TextEditingController _microStepController;
+  final _microStepFocusNode = FocusNode();
+  final _microStepInputKey = GlobalKey();
   late int _startMinute;
-  late int _durationMin;
   late bool _alarmEnabled;
   late int _leadWarningMin;
   late int _snoozeMin;
@@ -50,7 +51,6 @@ class _RoutineFormPageState extends ConsumerState<RoutineFormPage> {
     _noteController = TextEditingController(text: existing?.note ?? '');
     _microStepController = TextEditingController();
     _startMinute = existing?.startMinute ?? now.hour * 60 + now.minute;
-    _durationMin = existing?.durationMin ?? 30;
     _alarmEnabled = existing?.alarmEnabled ?? true;
     _leadWarningMin = existing?.leadWarningMin ?? 5;
     _snoozeMin = existing?.snoozeMin ?? 5;
@@ -63,12 +63,13 @@ class _RoutineFormPageState extends ConsumerState<RoutineFormPage> {
     _titleController.dispose();
     _noteController.dispose();
     _microStepController.dispose();
+    _microStepFocusNode.dispose();
     super.dispose();
   }
 
   bool get _isEditing => widget.existing != null;
 
-  bool get _canSave => _titleController.text.trim().isNotEmpty && _durationMin > 0;
+  bool get _canSave => _titleController.text.trim().isNotEmpty;
 
   /// The segment whose time range covers [startMinute], if any — segments
   /// are purely a visual category (marker color/icon + dial lane) derived
@@ -98,8 +99,15 @@ class _RoutineFormPageState extends ConsumerState<RoutineFormPage> {
               child: CupertinoDatePicker(
                 mode: CupertinoDatePickerMode.time,
                 use24hFormat: true,
-                initialDateTime: DateTime(2000, 1, 1, _startMinute ~/ 60, _startMinute % 60),
-                onDateTimeChanged: (dt) => pickedMinute = dt.hour * 60 + dt.minute,
+                initialDateTime: DateTime(
+                  2000,
+                  1,
+                  1,
+                  _startMinute ~/ 60,
+                  _startMinute % 60,
+                ),
+                onDateTimeChanged: (dt) =>
+                    pickedMinute = dt.hour * 60 + dt.minute,
               ),
             ),
             Padding(
@@ -120,16 +128,29 @@ class _RoutineFormPageState extends ConsumerState<RoutineFormPage> {
     setState(() => _startMinute = pickedMinute);
   }
 
-  void _changeDuration(int delta) {
-    setState(() => _durationMin = (_durationMin + delta).clamp(5, 24 * 60));
-  }
-
   void _addMicroStep() {
     final text = _microStepController.text.trim();
     if (text.isEmpty) return;
     setState(() {
       _microSteps.add(text);
       _microStepController.clear();
+    });
+    // Without this, tapping the + button (which isn't the text field
+    // itself) drops focus and dismisses the keyboard, forcing a re-tap
+    // before typing the next step -- re-requesting keeps it open so
+    // several steps can be added back-to-back.
+    _microStepFocusNode.requestFocus();
+    // Otherwise the input row only scrolls into view once the keyboard's
+    // own "scroll to the focused field" kicks in on the next keystroke --
+    // a new step pushes the row further down the list right as it's
+    // added, so it should already be visible by then, not after typing.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final inputContext = _microStepInputKey.currentContext;
+      if (inputContext == null) return;
+      Scrollable.ensureVisible(
+        inputContext,
+        duration: const Duration(milliseconds: 200),
+      );
     });
   }
 
@@ -149,7 +170,6 @@ class _RoutineFormPageState extends ConsumerState<RoutineFormPage> {
       note: _noteController.text.trim(),
       microSteps: _microSteps,
       startMinute: _startMinute,
-      durationMin: _durationMin,
       alarmEnabled: _alarmEnabled,
       leadWarningMin: _leadWarningMin,
       snoozeMin: _snoozeMin,
@@ -171,11 +191,13 @@ class _RoutineFormPageState extends ConsumerState<RoutineFormPage> {
         content: Text('"${existing.title}" 루틴을 삭제할까요?'),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('취소')),
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('취소'),
+          ),
           FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('삭제')),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('삭제'),
+          ),
         ],
       ),
     );
@@ -203,199 +225,180 @@ class _RoutineFormPageState extends ConsumerState<RoutineFormPage> {
             ),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Semantics(
-            label: '루틴 제목 입력',
-            child: TextField(
-              controller: _titleController,
-              decoration: const InputDecoration(
-                labelText: '제목',
-                hintText: '예: 약 먹기, 운동, 보고서 작성',
-              ),
-              onChanged: (_) => setState(() {}),
-            ),
-          ),
-          const SizedBox(height: 16),
-          Semantics(
-            label: '메모 입력',
-            child: TextField(
-              controller: _noteController,
-              maxLines: 3,
-              decoration: const InputDecoration(
-                labelText: '메모 (선택)',
-                alignLabelWithHint: true,
+      // Shrinks the visible body area itself (rather than padding inside
+      // the ListView, which only shows up once scrolled all the way down)
+      // so the 저장 button and the fields above it never end up under the
+      // global bottom-left quick-add FAB even before scrolling.
+      body: Padding(
+        padding: EdgeInsets.only(bottom: fabAvoidingBottomInset(context)),
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            Semantics(
+              label: '루틴 제목 입력',
+              child: TextField(
+                controller: _titleController,
+                decoration: const InputDecoration(
+                  labelText: '제목',
+                  hintText: '예: 약 먹기, 운동, 보고서 작성',
+                ),
+                onChanged: (_) => setState(() {}),
               ),
             ),
-          ),
-          const SizedBox(height: 24),
-          // Segment is derived from the start time below, not chosen here —
-          // this just shows what that comes out to so it's not a total
-          // mystery, with no way for it to drift from the actual time.
-          Semantics(
-            label: '소속 구간: ${autoSegment?.name ?? '구간 없음'} (시작 시각에 따라 자동 결정)',
-            child: Row(
-              children: [
-                Icon(
-                  iconForKey(autoSegment?.iconKey ?? ''),
-                  color: autoSegment?.color ?? theme.disabledColor,
-                  size: 20,
-                ),
-                const SizedBox(width: 8),
-                Text(autoSegment?.name ?? '구간 없음', style: theme.textTheme.bodyMedium),
-              ],
-            ),
-          ),
-          const SizedBox(height: 24),
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            title: const Text('시작 시각'),
-            subtitle: Text(TimeGeometry.formatMinute(_startMinute)),
-            trailing: const Icon(Icons.access_time),
-            onTap: _pickStartTime,
-          ),
-          const SizedBox(height: 8),
-          const Text('길이', style: TextStyle(fontWeight: FontWeight.bold)),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Semantics(
-                label: '길이 5분 줄이기',
-                container: true,
-                child: IconButton.filledTonal(
-                  onPressed: () => _changeDuration(-5),
-                  icon: const Icon(Icons.remove),
+            const SizedBox(height: 16),
+            Semantics(
+              label: '메모 입력',
+              child: TextField(
+                controller: _noteController,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  labelText: '메모 (선택)',
+                  alignLabelWithHint: true,
                 ),
               ),
-              SizedBox(
-                width: 88,
-                child: Text(
-                  key: const Key('routineDurationValue'),
-                  '$_durationMin분',
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.titleMedium,
-                ),
-              ),
-              Semantics(
-                label: '길이 5분 늘리기',
-                container: true,
-                child: IconButton.filledTonal(
-                  onPressed: () => _changeDuration(5),
-                  icon: const Icon(Icons.add),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            children: _durationPresets
-                .map((minutes) => ChoiceChip(
-                      label: Text('$minutes분'),
-                      selected: _durationMin == minutes,
-                      onSelected: (_) => setState(() => _durationMin = minutes),
-                    ))
-                .toList(),
-          ),
-          const SizedBox(height: 24),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            title: const Text('알람'),
-            subtitle: const Text('정해진 시각에 알려줘요'),
-            value: _alarmEnabled,
-            onChanged: (value) => setState(() => _alarmEnabled = value),
-          ),
-          if (_alarmEnabled) ...[
-            const SizedBox(height: 8),
-            _MinuteStepperRow(
-              label: '전환 예고',
-              value: _leadWarningMin,
-              suffix: '분 전',
-              onChanged: (v) => setState(() => _leadWarningMin = v),
             ),
-            const SizedBox(height: 8),
-            _MinuteStepperRow(
-              label: '스누즈',
-              value: _snoozeMin,
-              suffix: '분 후',
-              onChanged: (v) => setState(() => _snoozeMin = v),
+            const SizedBox(height: 24),
+            // Segment is derived from the start time below, not chosen here —
+            // this just shows what that comes out to so it's not a total
+            // mystery, with no way for it to drift from the actual time.
+            Semantics(
+              label: '소속 구간: ${autoSegment?.name ?? '구간 없음'} (시작 시각에 따라 자동 결정)',
+              child: Row(
+                children: [
+                  Icon(
+                    iconForKey(autoSegment?.iconKey ?? ''),
+                    color: autoSegment?.color ?? theme.disabledColor,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    autoSegment?.name ?? '구간 없음',
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                ],
+              ),
             ),
-          ],
-          const SizedBox(height: 24),
-          const Text('반복 요일 (선택 안 하면 매일)',
-              style: TextStyle(fontWeight: FontWeight.bold)),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: List.generate(7, (i) {
-              final day = i + 1; // 1=Mon..7=Sun
-              final selected = _repeatDays.contains(day);
-              return Semantics(
-                label: '${kWeekdayShortLabels[i]}요일 반복',
-                selected: selected,
-                child: FilterChip(
-                  label: Text(kWeekdayShortLabels[i]),
-                  selected: selected,
-                  onSelected: (value) => setState(() {
-                    if (value) {
-                      _repeatDays.add(day);
-                    } else {
-                      _repeatDays.remove(day);
-                    }
-                  }),
-                ),
-              );
-            }),
-          ),
-          const SizedBox(height: 24),
-          const Text('마이크로스텝', style: TextStyle(fontWeight: FontWeight.bold)),
-          const SizedBox(height: 4),
-          Text(
-            '작업을 작게 쪼개면 시작하기 쉬워져요.',
-            style: theme.textTheme.bodySmall,
-          ),
-          const SizedBox(height: 8),
-          for (var i = 0; i < _microSteps.length; i++)
+            const SizedBox(height: 24),
             ListTile(
               contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.check_circle_outline),
-              title: Text(_microSteps[i]),
-              trailing: IconButton(
-                icon: const Icon(Icons.delete_outline),
-                tooltip: '단계 삭제',
-                onPressed: () => setState(() => _microSteps.removeAt(i)),
-              ),
+              title: const Text('시작 시각'),
+              subtitle: Text(TimeGeometry.formatMinute(_startMinute)),
+              trailing: const Icon(Icons.access_time),
+              onTap: _pickStartTime,
             ),
-          Row(
-            children: [
-              Expanded(
-                child: Semantics(
-                  label: '마이크로스텝 입력',
-                  child: TextField(
-                    controller: _microStepController,
-                    decoration: const InputDecoration(hintText: '예: 책상에 앉기'),
-                    onSubmitted: (_) => _addMicroStep(),
-                  ),
-                ),
+            const SizedBox(height: 24),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('알람'),
+              subtitle: const Text('정해진 시각에 알려줘요'),
+              value: _alarmEnabled,
+              onChanged: (value) => setState(() => _alarmEnabled = value),
+            ),
+            if (_alarmEnabled) ...[
+              const SizedBox(height: 8),
+              _MinuteStepperRow(
+                label: '전환 예고',
+                value: _leadWarningMin,
+                suffix: '분 전',
+                onChanged: (v) => setState(() => _leadWarningMin = v),
               ),
-              IconButton.filledTonal(
-                onPressed: _addMicroStep,
-                icon: const Icon(Icons.add),
-                tooltip: '단계 추가',
+              const SizedBox(height: 8),
+              _MinuteStepperRow(
+                label: '스누즈',
+                value: _snoozeMin,
+                suffix: '분 후',
+                onChanged: (v) => setState(() => _snoozeMin = v),
               ),
             ],
-          ),
-          const SizedBox(height: 32),
-          SizedBox(
-            height: 56,
-            child: FilledButton(
-              onPressed: _canSave ? _save : null,
-              child: const Text('저장'),
+            const SizedBox(height: 24),
+            const Text(
+              '반복 요일 (선택 안 하면 매일)',
+              style: TextStyle(fontWeight: FontWeight.bold),
             ),
-          ),
-        ],
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: List.generate(7, (i) {
+                final day = i + 1; // 1=Mon..7=Sun
+                final selected = _repeatDays.contains(day);
+                return Semantics(
+                  label: '${kWeekdayShortLabels[i]}요일 반복',
+                  selected: selected,
+                  child: FilterChip(
+                    label: Text(kWeekdayShortLabels[i]),
+                    selected: selected,
+                    onSelected: (value) => setState(() {
+                      if (value) {
+                        _repeatDays.add(day);
+                      } else {
+                        _repeatDays.remove(day);
+                      }
+                    }),
+                  ),
+                );
+              }),
+            ),
+            const SizedBox(height: 24),
+            const Text('마이크로스텝', style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 4),
+            Text('작업을 작게 쪼개면 시작하기 쉬워져요.', style: theme.textTheme.bodySmall),
+            const SizedBox(height: 8),
+            for (var i = 0; i < _microSteps.length; i++)
+              ListTile(
+                key: ValueKey('microStep$i-${_microSteps[i]}'),
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.check_circle_outline),
+                title: Text(_microSteps[i]),
+                trailing: IconButton(
+                  icon: const Icon(Icons.delete_outline),
+                  tooltip: '단계 삭제',
+                  onPressed: () => setState(() => _microSteps.removeAt(i)),
+                ),
+              ),
+            Row(
+              // Without this, adding a step shifts this Row one slot later
+              // in the surrounding ListView's unkeyed children (the new
+              // ListTile takes its old slot) -- Flutter then sees a type
+              // mismatch at that slot and disposes+recreates this whole
+              // Row, tearing down the TextField's EditableText (and with
+              // it the IME connection) on every single 추가 tap.
+              key: _microStepInputKey,
+              children: [
+                Expanded(
+                  child: Semantics(
+                    label: '마이크로스텝 입력',
+                    child: TextField(
+                      controller: _microStepController,
+                      focusNode: _microStepFocusNode,
+                      decoration: const InputDecoration(hintText: '예: 책상에 앉기'),
+                      textInputAction: TextInputAction.done,
+                      onSubmitted: (_) => _addMicroStep(),
+                    ),
+                  ),
+                ),
+                // Kept on top of the key fix above: a focusable button
+                // stealing focus on tap would otherwise still dismiss the
+                // keyboard in its own right.
+                ExcludeFocus(
+                  child: IconButton.filledTonal(
+                    onPressed: _addMicroStep,
+                    icon: const Icon(Icons.add),
+                    tooltip: '단계 추가',
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 32),
+            SizedBox(
+              height: 56,
+              child: FilledButton(
+                onPressed: _canSave ? _save : null,
+                child: const Text('저장'),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

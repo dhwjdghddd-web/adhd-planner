@@ -1,9 +1,14 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 
 import 'core/theme.dart';
+import 'core/time_geometry.dart';
 import 'data/models/app_settings.dart';
 import 'data/providers.dart';
+import 'data/routine_status.dart';
 import 'features/focus/alarm_alert_dialog.dart';
 import 'features/memos/quick_add_button.dart';
 import 'features/onboarding/onboarding_page.dart';
@@ -47,12 +52,41 @@ class App extends ConsumerWidget {
                 ),
               ),
               const _AlarmAlertLauncher(),
+              const _ForegroundAlarmWatcher(),
             ],
           ),
         );
       },
     );
   }
+}
+
+/// True while [AlarmAlertDialog] is up, shared by [_AlarmAlertLauncher]
+/// (the notification-tap/fullScreenIntent path) and
+/// [_ForegroundAlarmWatcher] (the "app is already open" path below) so
+/// they never pop two dialogs on top of each other for the same alarm.
+/// Public (not `_`-prefixed) so tests can reset it between cases the same
+/// way they already do for `quickAddSheetOpen`/`fabSuppressionCount`.
+final ValueNotifier<bool> alarmDialogOpen = ValueNotifier(false);
+
+void _showAlarmDialog({
+  required String routineId,
+  required int notificationId,
+  required bool isTransition,
+}) {
+  if (alarmDialogOpen.value) return;
+  final context = appNavigatorKey.currentContext;
+  if (context == null) return;
+  alarmDialogOpen.value = true;
+  showDialog<void>(
+    context: context,
+    barrierDismissible: false,
+    builder: (_) => AlarmAlertDialog(
+      routineId: routineId,
+      notificationId: notificationId,
+      isTransition: isTransition,
+    ),
+  ).whenComplete(() => alarmDialogOpen.value = false);
 }
 
 ThemeMode _toThemeMode(AppThemeMode mode) => switch (mode) {
@@ -107,22 +141,102 @@ class _AlarmAlertLauncherState extends State<_AlarmAlertLauncher> {
   void _openIfPending() {
     final pending = pendingAlarmAlert.value;
     if (pending == null) return;
-    final context = appNavigatorKey.currentContext;
-    if (context == null) return;
+    if (appNavigatorKey.currentContext == null) return;
     pendingAlarmAlert.value = null;
-    showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => AlarmAlertDialog(
-        routineId: pending.routineId,
-        notificationId: pending.notificationId,
-      ),
+    _showAlarmDialog(
+      routineId: pending.routineId,
+      notificationId: pending.notificationId,
+      isTransition: pending.isTransition,
     );
   }
 
   @override
   void dispose() {
     pendingAlarmAlert.removeListener(_openIfPending);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => const SizedBox.shrink();
+}
+
+/// Pops [AlarmAlertDialog] on its own, without waiting for a notification
+/// tap, whenever a routine's main alarm time arrives while this app is
+/// already the one on screen — checked once a second (cheap: just a
+/// minute-of-day comparison) but only acted on once per actual minute
+/// change, so a routine's start time only ever opens the dialog once. The
+/// underlying notification still fires too (so the alarm still works when
+/// the app isn't in the foreground); this just means whoever's already
+/// looking at the app doesn't have to notice and tap a heads-up banner
+/// first.
+class _ForegroundAlarmWatcher extends ConsumerStatefulWidget {
+  const _ForegroundAlarmWatcher();
+
+  @override
+  ConsumerState<_ForegroundAlarmWatcher> createState() => _ForegroundAlarmWatcherState();
+}
+
+class _ForegroundAlarmWatcherState extends ConsumerState<_ForegroundAlarmWatcher> {
+  Timer? _ticker;
+  int? _lastCheckedMinuteOfDay;
+
+  @override
+  void initState() {
+    super.initState();
+    _ticker = Timer.periodic(const Duration(seconds: 1), (_) => _check());
+  }
+
+  void _check() {
+    final now = DateTime.now();
+    final minuteOfDay = now.hour * 60 + now.minute;
+    if (minuteOfDay == _lastCheckedMinuteOfDay) return;
+    _lastCheckedMinuteOfDay = minuteOfDay;
+
+    final routines = ref.read(routinesProvider).value;
+    if (routines == null) return;
+    final postponements = ref.read(routinePostponementsProvider).value ?? const [];
+    final effective = applyTodaysPostponements(routines, postponements, now: now);
+    final dateKey = DateFormat('yyyy-MM-dd').format(now);
+
+    for (final routine in effective) {
+      if (!routine.alarmEnabled) continue;
+      if (!routine.occursOn(now.weekday)) continue;
+      // A 미루기'd routine's alarms were re-scheduled as one-off slot
+      // 2/3 notifications (see notification_service.dart's postpone()) --
+      // cancelling the wrong (still-recurring slot 0/1) id here would
+      // leave the real, still-showing notification (and its sound/
+      // vibration) untouched even after 확인/미루기 closes this dialog.
+      final postponedToday = postponements.any(
+        (p) => p.routineId == routine.id && p.dateKey == dateKey && p.offsetMinutes > 0,
+      );
+      if (routine.startMinute == minuteOfDay) {
+        _showAlarmDialog(
+          routineId: routine.id,
+          notificationId: postponedToday
+              ? notificationIdFor(routine.id, 0, 2)
+              : notificationIdFor(routine.id, now.weekday, 0),
+          isTransition: false,
+        );
+        break; // one dialog at a time is enough even if two start the same minute
+      }
+      final warnMinute =
+          (routine.startMinute - routine.leadWarningMin) % TimeGeometry.minutesPerDay;
+      if (routine.leadWarningMin > 0 && warnMinute == minuteOfDay) {
+        _showAlarmDialog(
+          routineId: routine.id,
+          notificationId: postponedToday
+              ? notificationIdFor(routine.id, 0, 3)
+              : notificationIdFor(routine.id, now.weekday, 1),
+          isTransition: true,
+        );
+        break;
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _ticker?.cancel();
     super.dispose();
   }
 

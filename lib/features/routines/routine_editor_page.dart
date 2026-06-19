@@ -8,6 +8,7 @@ import '../../core/time_geometry.dart';
 import '../../data/models/routine.dart';
 import '../../data/models/segment.dart';
 import '../../data/providers.dart';
+import '../memos/quick_add_button.dart';
 import '../segments/segment_editor_page.dart';
 import '../segments/segment_icons.dart';
 import 'routine_form_page.dart';
@@ -26,14 +27,21 @@ class RoutineEditorPage extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(title: const Text('루틴')),
-      body: segmentsAsync.when(
-        data: (segments) => routinesAsync.when(
-          data: (routines) => _Body(segments: segments, routines: routines),
+      // Shrinks the visible body area itself (rather than padding inside
+      // the list, which only shows up once scrolled all the way down) so
+      // content never reaches the global bottom-left quick-add FAB (or
+      // this page's own bottom-right one) even before scrolling.
+      body: Padding(
+        padding: EdgeInsets.only(bottom: fabAvoidingBottomInset(context)),
+        child: segmentsAsync.when(
+          data: (segments) => routinesAsync.when(
+            data: (routines) => _Body(segments: segments, routines: routines),
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (e, st) => Center(child: Text('오류: $e')),
+          ),
           loading: () => const Center(child: CircularProgressIndicator()),
           error: (e, st) => Center(child: Text('오류: $e')),
         ),
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, st) => Center(child: Text('오류: $e')),
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _openForm(context, ref),
@@ -46,14 +54,14 @@ class RoutineEditorPage extends ConsumerWidget {
   void _openForm(BuildContext context, WidgetRef ref) {
     final segments = ref.read(segmentsProvider).value ?? const <Segment>[];
     if (segments.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('먼저 구간을 만들어주세요.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('먼저 구간을 만들어주세요.')));
       return;
     }
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const RoutineFormPage()),
-    );
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const RoutineFormPage()));
   }
 }
 
@@ -129,7 +137,9 @@ class _Body extends ConsumerWidget {
           routine: routine,
           segment: segment,
           onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => RoutineFormPage(existing: routine)),
+            MaterialPageRoute(
+              builder: (_) => RoutineFormPage(existing: routine),
+            ),
           ),
           onDelete: () => _confirmDelete(context, ref, routine),
         );
@@ -138,7 +148,10 @@ class _Body extends ConsumerWidget {
   }
 
   Future<void> _confirmDelete(
-      BuildContext context, WidgetRef ref, Routine routine) async {
+    BuildContext context,
+    WidgetRef ref,
+    Routine routine,
+  ) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
@@ -146,11 +159,13 @@ class _Body extends ConsumerWidget {
         content: Text('"${routine.title}" 루틴을 삭제할까요?'),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('취소')),
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('취소'),
+          ),
           FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('삭제')),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('삭제'),
+          ),
         ],
       ),
     );
@@ -175,25 +190,27 @@ class _RoutineTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final range = '${TimeGeometry.formatMinute(routine.startMinute)} ~ '
-        '${TimeGeometry.formatMinute(routine.endMinute)} · ${routine.durationMin}분';
+    final startTime = TimeGeometry.formatMinute(routine.startMinute);
     final repeatLabel = routine.repeatDays.isEmpty
         ? '매일'
         : routine.repeatDays.map((d) => kWeekdayShortLabels[d - 1]).join(' ');
     final segmentName = segment?.name ?? '구간 없음';
 
     return Semantics(
-      label: '${routine.title} 루틴, $segmentName, $range, 반복 $repeatLabel',
+      label: '${routine.title} 루틴, $segmentName, $startTime, 반복 $repeatLabel',
       child: Card(
         margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
         child: ListTile(
           onTap: onTap,
           leading: CircleAvatar(
             backgroundColor: segment?.color ?? Colors.grey,
-            child: Icon(iconForKey(segment?.iconKey ?? ''), color: Colors.white),
+            child: Icon(
+              iconForKey(segment?.iconKey ?? ''),
+              color: Colors.white,
+            ),
           ),
           title: Text(routine.title),
-          subtitle: Text('$segmentName · $range · $repeatLabel'),
+          subtitle: Text('$segmentName · $startTime · $repeatLabel'),
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [

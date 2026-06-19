@@ -107,16 +107,19 @@ void main() {
     expect(unreviewedY, lessThan(reviewedY));
   });
 
-  testWidgets('the list has bottom padding so the last tile clears the global FAB',
-      (tester) async {
+  testWidgets(
+      'the visible list area is shrunk (not just padded inside) so the '
+      'last tile clears the global FAB even before scrolling', (tester) async {
     final repo = FakePlannerRepository();
     await repo.addMemo(_memo('m1', '메모'));
 
     await tester.pumpWidget(wrap(repo));
     await tester.pumpAndSettle();
 
-    final listView = tester.widget<ListView>(find.byType(ListView));
-    expect((listView.padding as EdgeInsets).bottom, greaterThanOrEqualTo(56));
+    final padding = tester.widget<Padding>(
+      find.ancestor(of: find.byType(ListView), matching: find.byType(Padding)).first,
+    );
+    expect((padding.padding as EdgeInsets).bottom, greaterThanOrEqualTo(56));
   });
 
   testWidgets('swiping a memo away and confirming deletes it', (tester) async {

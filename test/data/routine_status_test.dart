@@ -7,7 +7,6 @@ import 'package:adhd_planner/data/routine_status.dart';
 Routine _routine({
   required String id,
   required int startMinute,
-  required int durationMin,
   List<int> repeatDays = const [],
 }) {
   return Routine(
@@ -15,25 +14,42 @@ Routine _routine({
     segmentId: 's1',
     title: id,
     startMinute: startMinute,
-    durationMin: durationMin,
     repeatDays: repeatDays,
   );
 }
 
 void main() {
   group('findRoutineStatus', () {
-    test('returns the routine covering nowMinute as current', () {
-      final r = _routine(id: 'r1', startMinute: 9 * 60, durationMin: 30);
+    test('a routine that already started stays current, with no remaining-minutes countdown',
+        () {
+      final r = _routine(id: 'r1', startMinute: 9 * 60);
       final status = findRoutineStatus([r], 9 * 60 + 10, 1);
 
       expect(status.routine, r);
       expect(status.isCurrent, true);
-      expect(status.remainingMinutes, 20);
+      expect(status.remainingMinutes, 0);
     });
 
-    test('falls back to the soonest upcoming routine when none is current', () {
-      final soon = _routine(id: 'soon', startMinute: 10 * 60, durationMin: 30);
-      final later = _routine(id: 'later', startMinute: 14 * 60, durationMin: 30);
+    test('stays current arbitrarily long after its start -- no expiry', () {
+      final r = _routine(id: 'r1', startMinute: 9 * 60);
+      final status = findRoutineStatus([r], 9 * 60 + 500, 1);
+
+      expect(status.routine, r);
+      expect(status.isCurrent, true);
+    });
+
+    test('the most recently started routine wins when several have already started', () {
+      final earlier = _routine(id: 'earlier', startMinute: 8 * 60);
+      final later = _routine(id: 'later', startMinute: 9 * 60);
+      final status = findRoutineStatus([earlier, later], 9 * 60 + 30, 1);
+
+      expect(status.routine, later);
+      expect(status.isCurrent, true);
+    });
+
+    test('falls back to the soonest upcoming routine when none has started yet', () {
+      final soon = _routine(id: 'soon', startMinute: 10 * 60);
+      final later = _routine(id: 'later', startMinute: 14 * 60);
       final status = findRoutineStatus([later, soon], 9 * 60, 1);
 
       expect(status.routine, soon);
@@ -45,7 +61,6 @@ void main() {
       final weekdaysOnly = _routine(
         id: 'weekdays',
         startMinute: 9 * 60,
-        durationMin: 30,
         repeatDays: const [1, 2, 3, 4, 5],
       );
       // Saturday = isoWeekday 6, routine does not occur.
@@ -58,10 +73,9 @@ void main() {
       final weekdaysOnly = _routine(
         id: 'weekdays',
         startMinute: 10 * 60,
-        durationMin: 30,
         repeatDays: const [1, 2, 3, 4, 5],
       );
-      final everyday = _routine(id: 'everyday', startMinute: 12 * 60, durationMin: 30);
+      final everyday = _routine(id: 'everyday', startMinute: 12 * 60);
       // Saturday = isoWeekday 6: weekdaysOnly must be skipped even though it
       // starts sooner than everyday.
       final status = findRoutineStatus([weekdaysOnly, everyday], 9 * 60, 6);
@@ -71,7 +85,7 @@ void main() {
     });
 
     test('empty repeatDays always matches', () {
-      final r = _routine(id: 'r1', startMinute: 9 * 60, durationMin: 30);
+      final r = _routine(id: 'r1', startMinute: 9 * 60);
       for (var day = 1; day <= 7; day++) {
         final status = findRoutineStatus([r], 9 * 60 + 5, day);
         expect(status.routine, r, reason: 'day $day');
@@ -90,7 +104,7 @@ void main() {
     final today = DateTime(2026, 6, 19);
 
     test('shifts startMinute by today\'s offset for a postponed routine', () {
-      final r = _routine(id: 'r1', startMinute: 9 * 60, durationMin: 30);
+      final r = _routine(id: 'r1', startMinute: 9 * 60);
       final result = applyTodaysPostponements(
         [r],
         [RoutinePostponement.today('r1', 5, at: today)],
@@ -101,14 +115,14 @@ void main() {
     });
 
     test('leaves routines with no postponement untouched (same instance)', () {
-      final r = _routine(id: 'r1', startMinute: 9 * 60, durationMin: 30);
+      final r = _routine(id: 'r1', startMinute: 9 * 60);
       final result = applyTodaysPostponements([r], const [], now: today);
 
       expect(result.single, same(r));
     });
 
     test('ignores a postponement from a different day', () {
-      final r = _routine(id: 'r1', startMinute: 9 * 60, durationMin: 30);
+      final r = _routine(id: 'r1', startMinute: 9 * 60);
       final yesterday = today.subtract(const Duration(days: 1));
       final result = applyTodaysPostponements(
         [r],
@@ -120,7 +134,7 @@ void main() {
     });
 
     test('wraps past midnight', () {
-      final r = _routine(id: 'r1', startMinute: 23 * 60 + 50, durationMin: 30);
+      final r = _routine(id: 'r1', startMinute: 23 * 60 + 50);
       final result = applyTodaysPostponements(
         [r],
         [RoutinePostponement.today('r1', 20, at: today)],
@@ -131,8 +145,8 @@ void main() {
     });
 
     test('only affects the routine the postponement is for', () {
-      final a = _routine(id: 'a', startMinute: 9 * 60, durationMin: 30);
-      final b = _routine(id: 'b', startMinute: 10 * 60, durationMin: 30);
+      final a = _routine(id: 'a', startMinute: 9 * 60);
+      final b = _routine(id: 'b', startMinute: 10 * 60);
       final result = applyTodaysPostponements(
         [a, b],
         [RoutinePostponement.today('a', 5, at: today)],

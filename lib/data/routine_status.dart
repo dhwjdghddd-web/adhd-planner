@@ -16,24 +16,34 @@ class RoutineStatus {
   final int remainingMinutes;
 }
 
-/// Finds the routine covering [nowMinute] on [isoWeekday] (1=Mon..7=Sun), or
-/// failing that, the soonest upcoming routine that occurs on [isoWeekday].
-/// Routines whose `repeatDays` excludes [isoWeekday] are skipped entirely.
+/// Finds whichever routine on [isoWeekday] (1=Mon..7=Sun) started most
+/// recently at or before [nowMinute] -- it stays "current" for the rest of
+/// the day, however long that actually takes, rather than expiring after
+/// some fixed duration: there's no length to set on a [Routine] for exactly
+/// this reason, since "ran out of time" isn't a state this app wants to put
+/// anyone in. Falls back to the soonest routine still ahead today if none
+/// has started yet. Routines whose `repeatDays` excludes [isoWeekday] are
+/// skipped entirely.
 RoutineStatus findRoutineStatus(List<Routine> routines, int nowMinute, int isoWeekday) {
+  Routine? current;
+  var latestStart = -1;
   for (final routine in routines) {
     if (!routine.occursOn(isoWeekday)) continue;
-    if (routine.containsMinute(nowMinute)) {
-      final remaining = TimeGeometry.lengthMinutes(nowMinute, routine.endMinute);
-      return RoutineStatus(routine: routine, isCurrent: true, remainingMinutes: remaining);
+    if (routine.startMinute <= nowMinute && routine.startMinute > latestStart) {
+      latestStart = routine.startMinute;
+      current = routine;
     }
+  }
+  if (current != null) {
+    return RoutineStatus(routine: current, isCurrent: true);
   }
 
   Routine? next;
   var bestDelta = TimeGeometry.minutesPerDay + 1;
   for (final routine in routines) {
     if (!routine.occursOn(isoWeekday)) continue;
-    final delta = TimeGeometry.lengthMinutes(nowMinute, routine.startMinute);
-    if (delta < bestDelta) {
+    final delta = routine.startMinute - nowMinute;
+    if (delta >= 0 && delta < bestDelta) {
       bestDelta = delta;
       next = routine;
     }

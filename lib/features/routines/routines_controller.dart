@@ -23,7 +23,19 @@ class RoutinesController {
   }
 
   Future<void> delete(String id) async {
-    await _ref.read(plannerRepositoryProvider).deleteRoutine(id);
+    final repo = _ref.read(plannerRepositoryProvider);
+    // Cancel before the routine is gone -- rescheduleAll only knows about
+    // routines still in the list it rebuilds from, so a deleted routine's
+    // alarms (and the Vibrator alarms riding alongside them) would
+    // otherwise never get cancelled. See cancelRoutineAlarms.
+    final routines = await repo.watchRoutines().first;
+    for (final routine in routines) {
+      if (routine.id == id) {
+        await _ref.read(notificationServiceProvider).cancelRoutineAlarms(routine);
+        break;
+      }
+    }
+    await repo.deleteRoutine(id);
     await _rescheduleAll();
   }
 

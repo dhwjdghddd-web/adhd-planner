@@ -1,10 +1,16 @@
 import 'package:flutter/foundation.dart';
 
-import '../../core/time_geometry.dart';
-
 /// A scheduled task placed inside a [Segment]. Carries everything the
 /// notification service (STEP 8) needs to schedule the main alarm, the
 /// transition warning, and snooze behaviour.
+///
+/// Deliberately has no length/duration field: [findRoutineStatus] treats a
+/// routine as "current" from its [startMinute] until whichever other
+/// routine starts next, however long that actually takes, rather than
+/// expiring it after some fixed duration and leaving it impossible to
+/// check off late. ADHD time-blindness means routines already run long or
+/// short unpredictably -- penalizing that with a hard cutoff fights the
+/// whole point of this app.
 ///
 /// [repeatDays] uses ISO-8601 weekday numbers (1=Mon .. 7=Sun). An empty
 /// list means "every day".
@@ -20,7 +26,6 @@ class Routine {
   final String note;
   final List<String> microSteps;
   final int startMinute;
-  final int durationMin;
   final bool alarmEnabled;
   final int leadWarningMin;
   final int snoozeMin;
@@ -34,27 +39,12 @@ class Routine {
     this.note = '',
     this.microSteps = const [],
     required this.startMinute,
-    this.durationMin = 30,
     this.alarmEnabled = true,
     this.leadWarningMin = 5,
     this.snoozeMin = 5,
     this.repeatDays = const [],
     this.notificationIds = const [],
   });
-
-  int get endMinute => (startMinute + durationMin) % TimeGeometry.minutesPerDay;
-
-  /// True if [minute] falls inside this routine's [startMinute, endMinute)
-  /// span, accounting for midnight-wrapping spans.
-  bool containsMinute(int minute) {
-    if (durationMin <= 0) return false;
-    if (durationMin % TimeGeometry.minutesPerDay == 0) return true;
-    final m = minute % TimeGeometry.minutesPerDay;
-    final start = startMinute % TimeGeometry.minutesPerDay;
-    final end = endMinute;
-    if (start < end) return m >= start && m < end;
-    return m >= start || m < end;
-  }
 
   /// True if this routine repeats on [isoWeekday] (1=Mon..7=Sun). An empty
   /// [repeatDays] means "every day".
@@ -67,7 +57,6 @@ class Routine {
     String? note,
     List<String>? microSteps,
     int? startMinute,
-    int? durationMin,
     bool? alarmEnabled,
     int? leadWarningMin,
     int? snoozeMin,
@@ -81,7 +70,6 @@ class Routine {
       note: note ?? this.note,
       microSteps: microSteps ?? this.microSteps,
       startMinute: startMinute ?? this.startMinute,
-      durationMin: durationMin ?? this.durationMin,
       alarmEnabled: alarmEnabled ?? this.alarmEnabled,
       leadWarningMin: leadWarningMin ?? this.leadWarningMin,
       snoozeMin: snoozeMin ?? this.snoozeMin,
@@ -97,7 +85,6 @@ class Routine {
         'note': note,
         'microSteps': microSteps,
         'startMinute': startMinute,
-        'durationMin': durationMin,
         'alarmEnabled': alarmEnabled,
         'leadWarningMin': leadWarningMin,
         'snoozeMin': snoozeMin,
@@ -112,7 +99,6 @@ class Routine {
         note: (map['note'] as String?) ?? '',
         microSteps: List<String>.from(map['microSteps'] as List? ?? const []),
         startMinute: map['startMinute'] as int,
-        durationMin: (map['durationMin'] as int?) ?? 30,
         alarmEnabled: (map['alarmEnabled'] as bool?) ?? true,
         leadWarningMin: (map['leadWarningMin'] as int?) ?? 5,
         snoozeMin: (map['snoozeMin'] as int?) ?? 5,

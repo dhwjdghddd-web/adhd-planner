@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:adhd_planner/core/time_geometry.dart';
+import 'package:adhd_planner/data/models/completion.dart';
 import 'package:adhd_planner/data/models/routine.dart';
 import 'package:adhd_planner/data/models/segment.dart';
 import 'package:adhd_planner/data/providers.dart';
@@ -58,6 +59,45 @@ void main() {
     expect(find.byType(SegmentFormPage), findsOneWidget);
   });
 
+  testWidgets(
+      "a routine completed today is passed to DialPainter's badge set, "
+      'an incomplete one is not', (tester) async {
+    final repo = FakePlannerRepository();
+    await repo.upsertSegment(const Segment(
+      id: 's1',
+      name: '오전',
+      colorValue: 0xFF2E7D8C,
+      iconKey: 'wb_sunny',
+      startMinute: 0,
+      endMinute: 24 * 60,
+      order: 0,
+    ));
+    await repo.upsertRoutine(Routine(
+      id: 'r1',
+      segmentId: 's1',
+      title: '완료한 루틴',
+      startMinute: 60,
+    ));
+    await repo.upsertRoutine(Routine(
+      id: 'r2',
+      segmentId: 's1',
+      title: '안 한 루틴',
+      startMinute: 120,
+    ));
+    await repo.setCompletion(Completion.now('r1'));
+
+    await tester.pumpWidget(wrap(repo));
+    await tester.pumpAndSettle();
+
+    final painter = tester
+        .widget<CustomPaint>(
+          find.byWidgetPredicate((w) => w is CustomPaint && w.painter is DialPainter),
+        )
+        .painter as DialPainter;
+
+    expect(painter.completedRoutineIds, {'r1'});
+  });
+
   testWidgets('app bar action opens the segment editor', (tester) async {
     await tester.pumpWidget(wrap(FakePlannerRepository()));
     await tester.pumpAndSettle();
@@ -95,7 +135,6 @@ void main() {
       segmentId: 's1',
       title: '약 먹기',
       startMinute: 0,
-      durationMin: 30,
     ));
 
     await tester.pumpWidget(wrap(repo));
@@ -133,7 +172,6 @@ void main() {
       segmentId: 's1',
       title: '약 먹기',
       startMinute: nowMinute,
-      durationMin: 30,
     ));
 
     await tester.pumpWidget(wrap(repo));

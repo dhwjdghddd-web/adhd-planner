@@ -91,7 +91,6 @@ void main() {
       segmentId: 's1',
       title: '운동',
       startMinute: 7 * 60,
-      durationMin: 30,
     ));
 
     await tester.pumpWidget(wrap(repo));

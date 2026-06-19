@@ -63,6 +63,7 @@ class DialPainter extends CustomPainter {
     required this.tickColor,
     required this.labelStyle,
     required this.handColor,
+    this.completedRoutineIds = const {},
   }) : _lanes = DialGeometry.assignLanes(segments);
 
   final List<Segment> segments;
@@ -71,6 +72,7 @@ class DialPainter extends CustomPainter {
   final Color tickColor;
   final TextStyle labelStyle;
   final Color handColor;
+  final Set<String> completedRoutineIds;
 
   final Map<String, int> _lanes;
 
@@ -196,7 +198,40 @@ class DialPainter extends CustomPainter {
         textDirection: TextDirection.ltr,
       )..layout();
       tp.paint(canvas, point - Offset(tp.width / 2, tp.height / 2));
+
+      if (completedRoutineIds.contains(routine.id)) {
+        _paintCompletedBadge(canvas, point);
+      }
     }
+  }
+
+  /// Small checkmark badge over a marker's top-right edge -- the at-a-
+  /// glance "did I do this today" this dial otherwise can't show, since
+  /// the marker itself is always drawn from the permanent schedule (see
+  /// [routines] above), not whether today's instance is done.
+  void _paintCompletedBadge(Canvas canvas, Offset markerPoint) {
+    final badgeCenter = markerPoint +
+        Offset(
+          DialGeometry.routineMarkerRadius * 0.8,
+          -DialGeometry.routineMarkerRadius * 0.8,
+        );
+    const badgeRadius = DialGeometry.routineMarkerRadius * 0.65;
+    canvas.drawCircle(badgeCenter, badgeRadius + 1.5, Paint()..color = Colors.white);
+    canvas.drawCircle(badgeCenter, badgeRadius, Paint()..color = const Color(0xFF2E7D32));
+
+    final tp = TextPainter(
+      text: TextSpan(
+        text: String.fromCharCode(Icons.check.codePoint),
+        style: TextStyle(
+          fontSize: badgeRadius * 1.3,
+          fontFamily: Icons.check.fontFamily,
+          package: Icons.check.fontPackage,
+          color: Colors.white,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    tp.paint(canvas, badgeCenter - Offset(tp.width / 2, tp.height / 2));
   }
 
   void _paintHand(Canvas canvas, Offset center, double outerR) {
@@ -216,7 +251,9 @@ class DialPainter extends CustomPainter {
         !_sameSegments(oldDelegate.segments, segments) ||
         !_sameRoutines(oldDelegate.routines, routines) ||
         oldDelegate.tickColor != tickColor ||
-        oldDelegate.handColor != handColor;
+        oldDelegate.handColor != handColor ||
+        !oldDelegate.completedRoutineIds.containsAll(completedRoutineIds) ||
+        !completedRoutineIds.containsAll(oldDelegate.completedRoutineIds);
   }
 
   static bool _sameSegments(List<Segment> a, List<Segment> b) {
@@ -242,7 +279,6 @@ class DialPainter extends CustomPainter {
       final y = b[i];
       if (x.id != y.id ||
           x.startMinute != y.startMinute ||
-          x.durationMin != y.durationMin ||
           x.segmentId != y.segmentId) {
         return false;
       }

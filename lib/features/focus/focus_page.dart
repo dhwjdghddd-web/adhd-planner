@@ -7,23 +7,23 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
-import '../../data/models/app_settings.dart';
+import '../../core/time_geometry.dart';
 import '../../data/models/micro_step_progress.dart';
 import '../../data/models/routine.dart';
 import '../../data/providers.dart';
 import '../../data/routine_status.dart';
-import '../../services/notification_service.dart';
 import '../memos/quick_add_button.dart';
 import '../memos/quick_add_sheet.dart';
 import '../rewards/streak_badge.dart';
 import 'completions_controller.dart';
-import 'focus_countdown_painter.dart';
 import 'micro_step_progress_controller.dart';
 
-/// '지금' focus screen: shows exactly one routine — whichever covers the
-/// current minute — full-screen with a countdown ring, a micro-steps
-/// checklist, and large actions. Everything else is hidden so there's only
-/// one thing to look at.
+/// '지금' focus screen: shows exactly one routine — whichever started most
+/// recently and hasn't been superseded by a later one yet — full-screen
+/// with a micro-steps checklist and large actions. It stays "current"
+/// however long it actually takes (no length to set, no expiry), since
+/// running out of time isn't a state this app wants to put anyone in.
+/// Everything else is hidden so there's only one thing to look at.
 class FocusPage extends ConsumerStatefulWidget {
   const FocusPage({super.key});
 
@@ -223,22 +223,23 @@ class _FocusPageState extends ConsumerState<FocusPage> {
           routine.leadWarningMin > 0 && status.remainingMinutes <= routine.leadWarningMin;
 
       if (!upcoming) {
+        final startTime = TimeGeometry.formatMinute(routine.startMinute);
         return Center(
           child: Padding(
             padding: const EdgeInsets.all(24),
             child: Semantics(
-              label: '다음 할 일: ${routine.title}, ${status.remainingMinutes}분 후 시작',
+              label: '다음 할 일: ${routine.title}, $startTime',
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Text(
-                    '다음 루틴까지 ${status.remainingMinutes}분',
+                    '다음: ${routine.title}',
                     style: theme.textTheme.headlineMedium,
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 12),
                   Text(
-                    routine.title,
+                    startTime,
                     style: theme.textTheme.titleMedium,
                     textAlign: TextAlign.center,
                   ),
@@ -285,62 +286,25 @@ class _FocusPageState extends ConsumerState<FocusPage> {
       );
     }
 
-    final progress = routine.durationMin <= 0
-        ? 0.0
-        : status.remainingMinutes / routine.durationMin;
-
     return Column(
       children: [
-        // Ring/title/streak stay put rather than scrolling away with a long
+        // Title/streak stay put rather than scrolling away with a long
         // micro-steps list — only the checklist below scrolls.
         Padding(
           padding: const EdgeInsets.fromLTRB(24, 64, 24, 0),
           child: Semantics(
-            label: '지금 집중: ${routine.title}, ${status.remainingMinutes}분 남음',
+            label: '지금 집중: ${routine.title}',
             child: Column(
               children: [
-                SizedBox(
-                  width: 220,
-                  height: 220,
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      CustomPaint(
-                        size: const Size(220, 220),
-                        painter: FocusCountdownPainter(
-                          progress: progress,
-                          trackColor: theme.colorScheme.surfaceContainerHighest,
-                          progressColor: theme.colorScheme.primary,
-                          strokeWidth: 14,
-                        ),
-                      ),
-                      // Fixed-size ring (matches the dial's own center
-                      // circle in planner_page.dart) — clamp locally so
-                      // this can't grow past the ring at 200% system text
-                      // scale.
-                      MediaQuery.withClampedTextScaling(
-                        maxScaleFactor: 1.3,
-                        child: FittedBox(
-                          fit: BoxFit.scaleDown,
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                '${status.remainingMinutes}분',
-                                style: theme.textTheme.headlineMedium,
-                              ),
-                              Text('남음', style: theme.textTheme.bodyMedium),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
+                Icon(
+                  Icons.alarm,
+                  size: 64,
+                  color: theme.colorScheme.primary,
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 16),
                 Text(
                   routine.title,
-                  style: theme.textTheme.headlineSmall,
+                  style: theme.textTheme.headlineMedium,
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 8),
@@ -360,11 +324,11 @@ class _FocusPageState extends ConsumerState<FocusPage> {
         _bottomActions([
           FilledButton(
             onPressed: () => _complete(routine.id, microSteps: routine.microSteps),
-            child: const Text('완료'),
-          ),
-          FilledButton.tonal(
-            onPressed: () => _postpone(routine),
-            child: const Text('미루기'),
+            // "모두" since this button does what checking off the last
+            // remaining micro-step itself already does (see
+            // _toggleMicroStep's autoCompleteWhenAllChecked) -- pressing it
+            // marks every micro-step checked too, not just the routine.
+            child: const Text('모두 완료'),
           ),
         ]),
       ],
@@ -462,37 +426,5 @@ class _FocusPageState extends ConsumerState<FocusPage> {
     }
 
     if (mounted) Navigator.of(context).pop();
-  }
-
-  // Pushes today's effective start time forward via NotificationService
-  // (same logic a notification's own 미루기 action triggers) and cancels
-  // today's still-showing alarm notification, if any -- not just a
-  // SnackBar, since this button used to be a STEP 7 stub that never got
-  // wired up once the real alarm plumbing landed in STEP 8.
-  void _postpone(Routine routine) {
-    final settings = ref.read(settingsProvider).value ?? const AppSettings.defaults();
-    final today = DateTime.now().weekday;
-    final service = ref.read(notificationServiceProvider);
-    unawaited(_tryPostpone(service, routine.id, settings, today));
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('${routine.snoozeMin}분 미뤘어요')),
-    );
-    Navigator.of(context).pop();
-  }
-
-  Future<void> _tryPostpone(
-    NotificationService service,
-    String routineId,
-    AppSettings settings,
-    int today,
-  ) async {
-    try {
-      await service.postpone(routineId, settings);
-      await service.cancelNotification(notificationIdFor(routineId, today, 0));
-    } catch (_) {
-      // No platform channel available (e.g. under flutter test) -- the
-      // postpone just won't visibly do anything there.
-    }
   }
 }

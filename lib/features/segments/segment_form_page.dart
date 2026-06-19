@@ -8,6 +8,7 @@ import '../../core/constants.dart';
 import '../../core/time_geometry.dart';
 import '../../data/models/segment.dart';
 import '../../data/providers.dart';
+import '../memos/quick_add_button.dart';
 import 'segment_icons.dart';
 import 'segments_controller.dart';
 
@@ -51,7 +52,8 @@ class _SegmentFormPageState extends ConsumerState<SegmentFormPage> {
   int get _lengthMinutes =>
       TimeGeometry.lengthMinutes(_startMinute, _endMinute);
 
-  bool get _canSave => _nameController.text.trim().isNotEmpty && _lengthMinutes > 0;
+  bool get _canSave =>
+      _nameController.text.trim().isNotEmpty && _lengthMinutes > 0;
 
   Future<void> _pickTime(bool isStart) async {
     final initial = isStart ? _startMinute : _endMinute;
@@ -91,14 +93,18 @@ class _SegmentFormPageState extends ConsumerState<SegmentFormPage> {
         context: context,
         builder: (_) => AlertDialog(
           title: const Text('시간이 겹쳐요'),
-          content: const Text('다른 구간과 시간이 겹칩니다. 그래도 저장할까요? (원형에서 안쪽 링으로 표시됩니다)'),
+          content: const Text(
+            '다른 구간과 시간이 겹칩니다. 그래도 저장할까요? (원형에서 안쪽 링으로 표시됩니다)',
+          ),
           actions: [
             TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text('취소')),
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('취소'),
+            ),
             FilledButton(
-                onPressed: () => Navigator.pop(context, true),
-                child: const Text('저장')),
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('저장'),
+            ),
           ],
         ),
       );
@@ -124,11 +130,13 @@ class _SegmentFormPageState extends ConsumerState<SegmentFormPage> {
         content: Text('"${existing.name}" 구간을 삭제할까요?'),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('취소')),
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('취소'),
+          ),
           FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('삭제')),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('삭제'),
+          ),
         ],
       ),
     );
@@ -154,115 +162,125 @@ class _SegmentFormPageState extends ConsumerState<SegmentFormPage> {
             ),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Semantics(
-            label: '구간 이름 입력',
-            child: TextField(
-              controller: _nameController,
-              decoration: const InputDecoration(
-                labelText: '이름',
-                hintText: '예: 오전, 오후, 퇴근 후',
+      // Shrinks the visible body area itself (rather than padding inside
+      // the ListView, which only shows up once scrolled all the way down)
+      // so the 저장 button and the fields above it never end up under the
+      // global bottom-left quick-add FAB even before scrolling.
+      body: Padding(
+        padding: EdgeInsets.only(bottom: fabAvoidingBottomInset(context)),
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            Semantics(
+              label: '구간 이름 입력',
+              child: TextField(
+                controller: _nameController,
+                decoration: const InputDecoration(
+                  labelText: '이름',
+                  hintText: '예: 오전, 오후, 퇴근 후',
+                ),
+                onChanged: (_) => setState(() {}),
               ),
-              onChanged: (_) => setState(() {}),
             ),
-          ),
-          const SizedBox(height: 24),
-          const Text('색', style: TextStyle(fontWeight: FontWeight.bold)),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: kSegmentPalette.map((color) {
-              final value = color.toARGB32();
-              final selected = value == _colorValue;
-              return Semantics(
-                label: '색상 선택',
-                selected: selected,
-                child: GestureDetector(
-                  onTap: () => setState(() => _colorValue = value),
-                  child: Container(
-                    width: kMinTapTarget,
-                    height: kMinTapTarget,
-                    decoration: BoxDecoration(
-                      color: color,
-                      shape: BoxShape.circle,
-                      border: selected
-                          ? Border.all(
-                              color: Theme.of(context).colorScheme.onSurface,
-                              width: 3)
+            const SizedBox(height: 24),
+            const Text('색', style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: kSegmentPalette.map((color) {
+                final value = color.toARGB32();
+                final selected = value == _colorValue;
+                return Semantics(
+                  label: '색상 선택',
+                  selected: selected,
+                  child: GestureDetector(
+                    onTap: () => setState(() => _colorValue = value),
+                    child: Container(
+                      width: kMinTapTarget,
+                      height: kMinTapTarget,
+                      decoration: BoxDecoration(
+                        color: color,
+                        shape: BoxShape.circle,
+                        border: selected
+                            ? Border.all(
+                                color: Theme.of(context).colorScheme.onSurface,
+                                width: 3,
+                              )
+                            : null,
+                      ),
+                      child: selected
+                          ? const Icon(Icons.check, color: Colors.white)
                           : null,
                     ),
-                    child: selected
-                        ? const Icon(Icons.check, color: Colors.white)
-                        : null,
                   ),
-                ),
-              );
-            }).toList(),
-          ),
-          const SizedBox(height: 24),
-          const Text('아이콘', style: TextStyle(fontWeight: FontWeight.bold)),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: kSegmentIcons.entries.map((entry) {
-              final selected = entry.key == _iconKey;
-              return Semantics(
-                label: '아이콘 선택',
-                selected: selected,
-                child: GestureDetector(
-                  onTap: () => setState(() => _iconKey = entry.key),
-                  child: Container(
-                    width: kMinTapTarget,
-                    height: kMinTapTarget,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: selected
-                          ? Theme.of(context).colorScheme.primaryContainer
-                          : Theme.of(context).colorScheme.surfaceContainerHighest,
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 24),
+            const Text('아이콘', style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: kSegmentIcons.entries.map((entry) {
+                final selected = entry.key == _iconKey;
+                return Semantics(
+                  label: '아이콘 선택',
+                  selected: selected,
+                  child: GestureDetector(
+                    onTap: () => setState(() => _iconKey = entry.key),
+                    child: Container(
+                      width: kMinTapTarget,
+                      height: kMinTapTarget,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: selected
+                            ? Theme.of(context).colorScheme.primaryContainer
+                            : Theme.of(
+                                context,
+                              ).colorScheme.surfaceContainerHighest,
+                      ),
+                      child: Icon(entry.value),
                     ),
-                    child: Icon(entry.value),
                   ),
-                ),
-              );
-            }).toList(),
-          ),
-          const SizedBox(height: 24),
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            title: const Text('시작 시각'),
-            subtitle: Text(TimeGeometry.formatMinute(_startMinute)),
-            trailing: const Icon(Icons.access_time),
-            onTap: () => _pickTime(true),
-          ),
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            title: const Text('끝나는 시각'),
-            subtitle: Text(TimeGeometry.formatMinute(_endMinute)),
-            trailing: const Icon(Icons.access_time),
-            onTap: () => _pickTime(false),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            lengthOk ? '길이: $_lengthMinutes분' : '시작과 끝 시각이 같아요. 길이가 0분이 됩니다.',
-            style: TextStyle(
-              color: lengthOk
-                  ? Theme.of(context).colorScheme.onSurfaceVariant
-                  : Theme.of(context).colorScheme.error,
+                );
+              }).toList(),
             ),
-          ),
-          const SizedBox(height: 32),
-          SizedBox(
-            height: 56,
-            child: FilledButton(
-              onPressed: _canSave ? _save : null,
-              child: const Text('저장'),
+            const SizedBox(height: 24),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('시작 시각'),
+              subtitle: Text(TimeGeometry.formatMinute(_startMinute)),
+              trailing: const Icon(Icons.access_time),
+              onTap: () => _pickTime(true),
             ),
-          ),
-        ],
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('끝나는 시각'),
+              subtitle: Text(TimeGeometry.formatMinute(_endMinute)),
+              trailing: const Icon(Icons.access_time),
+              onTap: () => _pickTime(false),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              lengthOk ? '길이: $_lengthMinutes분' : '시작과 끝 시각이 같아요. 길이가 0분이 됩니다.',
+              style: TextStyle(
+                color: lengthOk
+                    ? Theme.of(context).colorScheme.onSurfaceVariant
+                    : Theme.of(context).colorScheme.error,
+              ),
+            ),
+            const SizedBox(height: 32),
+            SizedBox(
+              height: 56,
+              child: FilledButton(
+                onPressed: _canSave ? _save : null,
+                child: const Text('저장'),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

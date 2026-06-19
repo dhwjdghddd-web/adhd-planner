@@ -9,6 +9,7 @@ import '../../data/models/app_settings.dart';
 import '../../data/providers.dart';
 import '../../services/alarm_sound_picker.dart';
 import '../../services/notification_service.dart';
+import '../memos/quick_add_button.dart';
 import 'settings_controller.dart';
 
 /// Permission status, theme/font/motion controls, and an anonymous-account
@@ -58,7 +59,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
 
     if (exactAlarm == null) return;
     final settings = ref.read(settingsProvider).value;
-    if (settings != null && settings.exactAlarmGranted != exactAlarm.isGranted) {
+    if (settings != null &&
+        settings.exactAlarmGranted != exactAlarm.isGranted) {
       await ref
           .read(settingsControllerProvider)
           .save(settings.copyWith(exactAlarmGranted: exactAlarm.isGranted));
@@ -86,7 +88,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   Future<void> _rescheduleAlarms(AppSettings settings) async {
     try {
       final routines = ref.read(routinesProvider).value ?? const [];
-      await ref.read(notificationServiceProvider).rescheduleAll(routines, settings);
+      await ref
+          .read(notificationServiceProvider)
+          .rescheduleAll(routines, settings);
     } catch (_) {
       // No platform channel available (e.g. under flutter test) — the
       // setting itself is already saved and will still apply next launch.
@@ -96,7 +100,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   Future<void> _pickAlarmSound(AppSettings settings) async {
     final picked = await pickAlarmSound(currentUri: settings.alarmSoundUri);
     if (picked == null) return;
-    final updated = settings.copyWith(alarmSoundUri: picked.uri, alarmSoundLabel: picked.label);
+    final updated = settings.copyWith(
+      alarmSoundUri: picked.uri,
+      alarmSoundLabel: picked.label,
+    );
     await ref.read(settingsControllerProvider).save(updated);
     await _rescheduleAlarms(updated);
   }
@@ -107,7 +114,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     await _rescheduleAlarms(updated);
   }
 
-  Future<void> _setVibrationPattern(AppSettings settings, AlarmVibrationPattern pattern) async {
+  Future<void> _setVibrationPattern(
+    AppSettings settings,
+    AlarmVibrationPattern pattern,
+  ) async {
     unawaited(previewVibration(vibrationPatternFor(pattern)));
     final updated = settings.copyWith(vibrationPattern: pattern);
     await ref.read(settingsControllerProvider).save(updated);
@@ -120,10 +130,17 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
 
     return Scaffold(
       appBar: AppBar(title: const Text('설정')),
-      body: settingsAsync.when(
-        data: _buildBody,
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, st) => Center(child: Text('오류: $e')),
+      // Shrinks the visible body area itself (rather than padding inside
+      // the ListView, which only shows up once scrolled all the way down)
+      // so content never reaches the global bottom-left quick-add FAB even
+      // before scrolling.
+      body: Padding(
+        padding: EdgeInsets.only(bottom: fabAvoidingBottomInset(context)),
+        child: settingsAsync.when(
+          data: _buildBody,
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (e, st) => Center(child: Text('오류: $e')),
+        ),
       ),
     );
   }
@@ -232,14 +249,16 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             max: 2.0,
             divisions: 12,
             label: '${(settings.fontScale * 100).round()}%',
-            onChanged: (value) => controller.save(settings.copyWith(fontScale: value)),
+            onChanged: (value) =>
+                controller.save(settings.copyWith(fontScale: value)),
           ),
         ),
         SwitchListTile(
           title: const Text('동작 줄이기'),
           subtitle: const Text('완료 효과의 컨페티·확대 애니메이션을 줄이고 정적인 표시로 대체해요.'),
           value: settings.reduceMotion,
-          onChanged: (value) => controller.save(settings.copyWith(reduceMotion: value)),
+          onChanged: (value) =>
+              controller.save(settings.copyWith(reduceMotion: value)),
         ),
         const Divider(),
         const _SectionHeader('계정'),
@@ -293,12 +312,14 @@ class _PermissionRow extends StatelessWidget {
     final statusText = status == null
         ? '확인 중...'
         : granted
-            ? '허용됨'
-            : permanentlyDenied
-                ? '거부됨 (설정에서 변경)'
-                : '거부됨';
+        ? '허용됨'
+        : permanentlyDenied
+        ? '거부됨 (설정에서 변경)'
+        : '거부됨';
     final statusIcon = granted ? Icons.check_circle : Icons.cancel_outlined;
-    final statusColor = granted ? Colors.green : Theme.of(context).colorScheme.error;
+    final statusColor = granted
+        ? Colors.green
+        : Theme.of(context).colorScheme.error;
 
     return Semantics(
       label: '$label 권한, $statusText',

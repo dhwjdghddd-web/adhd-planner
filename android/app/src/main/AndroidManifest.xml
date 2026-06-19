@@ -51,6 +51,9 @@
         <!-- flutter_local_notifications: handles taps on notification action buttons
              (e.g. 스누즈/완료) — without this, action taps are silently dropped. -->
         <receiver android:exported="false" android:name="com.dexterous.flutterlocalnotifications.ActionBroadcastReceiver" />
+        <!-- Direct Vibrator trigger alongside the alarm notification.
+             See VibrationAlarmReceiver.kt for why this exists. -->
+        <receiver android:exported="false" android:name=".VibrationAlarmReceiver" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

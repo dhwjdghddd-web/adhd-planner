@@ -34,9 +34,6 @@ void main() {
     return repo;
   }
 
-  String? durationText(WidgetTester tester) =>
-      tester.widget<Text>(find.byKey(const Key('routineDurationValue'))).data;
-
   // The form is taller than the default test surface, which would leave
   // ListView children below the fold un-inflated. Growing the surface so
   // the whole form fits avoids fighting Sliver virtualization in finders.
@@ -49,39 +46,6 @@ void main() {
       tester.view.resetDevicePixelRatio();
     });
   }
-
-  testWidgets('duration stepper increases and decreases by 5 minutes',
-      (tester) async {
-    final repo = await repoWithSegment();
-    await growSurface(tester);
-    await tester.pumpWidget(wrap(repo));
-    await tester.pumpAndSettle();
-
-    expect(durationText(tester), '30분');
-
-    await tester.tap(find.bySemanticsLabel('길이 5분 늘리기'));
-    await tester.pumpAndSettle();
-    expect(durationText(tester), '35분');
-
-    await tester.tap(find.bySemanticsLabel('길이 5분 줄이기'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.bySemanticsLabel('길이 5분 줄이기'));
-    await tester.pumpAndSettle();
-    expect(durationText(tester), '25분');
-  });
-
-  testWidgets('duration preset chip jumps straight to that length',
-      (tester) async {
-    final repo = await repoWithSegment();
-    await growSurface(tester);
-    await tester.pumpWidget(wrap(repo));
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.widgetWithText(ChoiceChip, '60분'));
-    await tester.pumpAndSettle();
-
-    expect(durationText(tester), '60분');
-  });
 
   testWidgets('turning off the alarm hides lead-warning and snooze fields',
       (tester) async {

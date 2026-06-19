@@ -14,6 +14,16 @@ final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 /// stacked in the Navigator don't let each other's dispose() re-show it.
 final ValueNotifier<int> fabSuppressionCount = ValueNotifier<int>(0);
 
+/// Bottom inset a screen's body should reserve (e.g. as a `Padding` around
+/// its scrollable content) so nothing ever ends up underneath the global
+/// bottom-left quick-add FAB drawn in app.dart: that FAB itself is 56px
+/// plus 16px padding on every side (88px total), sitting inside a
+/// [SafeArea] — so on top of that 88px, the screen also needs to clear
+/// whatever the device's own bottom system inset is (gesture nav bar,
+/// etc), or this undershoots on exactly the devices where it matters most.
+double fabAvoidingBottomInset(BuildContext context) =>
+    88 + MediaQuery.of(context).padding.bottom;
+
 /// Wrap a full-screen page's [Scaffold] in this when it has its own
 /// full-width button pinned near the bottom (onboarding's "다음", Focus's
 /// 완료/스누즈/다음 할 일) — otherwise the global FAB sits right on top of

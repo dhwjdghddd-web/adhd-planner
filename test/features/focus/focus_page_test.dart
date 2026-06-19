@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:adhd_planner/core/time_geometry.dart';
 import 'package:adhd_planner/data/models/completion.dart';
 import 'package:adhd_planner/data/models/micro_step_progress.dart';
 import 'package:adhd_planner/data/models/routine.dart';
@@ -43,37 +44,41 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('shows the current routine with its countdown', (tester) async {
+  testWidgets('shows the current routine, with no countdown -- it stays current until '
+      'whatever starts next, however long that takes', (tester) async {
     final repo = FakePlannerRepository();
     await repo.upsertRoutine(Routine(
       id: 'r1',
       segmentId: 's1',
       title: '약 먹기',
       startMinute: _currentMinuteOfNow(),
-      durationMin: 30,
     ));
 
     await openFocusPage(tester, repo);
 
     expect(find.text('약 먹기'), findsOneWidget);
-    expect(find.textContaining('남음'), findsOneWidget);
+    expect(find.textContaining('남음'), findsNothing);
   });
 
-  testWidgets('shows "다음 루틴까지 N분" when only a future routine exists',
-      (tester) async {
+  testWidgets('shows the next routine and its absolute start time when only a future '
+      'routine exists', (tester) async {
     final repo = FakePlannerRepository();
+    // clamp, not % -- wrapping past midnight would put this "earlier
+    // today" under the new (no-duration) status model, which makes it
+    // current rather than upcoming (see Routine's doc comment: a routine
+    // stays current indefinitely once started, there's no fixed end).
+    final startMinute = (_currentMinuteOfNow() + 60).clamp(0, 24 * 60 - 1);
     await repo.upsertRoutine(Routine(
       id: 'r1',
       segmentId: 's1',
       title: '나중 할 일',
-      startMinute: (_currentMinuteOfNow() + 60) % (24 * 60),
-      durationMin: 30,
+      startMinute: startMinute,
     ));
 
     await openFocusPage(tester, repo);
 
-    expect(find.textContaining('다음 루틴까지'), findsOneWidget);
-    expect(find.text('나중 할 일'), findsOneWidget);
+    expect(find.text('다음: 나중 할 일'), findsOneWidget);
+    expect(find.text(TimeGeometry.formatMinute(startMinute)), findsOneWidget);
   });
 
   testWidgets('shows the empty state when there are no routines', (tester) async {
@@ -93,7 +98,6 @@ void main() {
       segmentId: 's1',
       title: '제외됨',
       startMinute: _currentMinuteOfNow(),
-      durationMin: 30,
       repeatDays: excludeToday,
     ));
 
@@ -110,7 +114,6 @@ void main() {
       segmentId: 's1',
       title: '약 먹기',
       startMinute: _currentMinuteOfNow(),
-      durationMin: 30,
     ));
     final snapshots = <List<Completion>>[];
     repo.watchCompletions().listen(snapshots.add);
@@ -118,7 +121,7 @@ void main() {
     await openFocusPage(tester, repo);
     expect(find.byType(FocusPage), findsOneWidget);
 
-    await tester.tap(find.text('완료'));
+    await tester.tap(find.text('모두 완료'));
     await tester.pumpAndSettle();
 
     expect(snapshots.last.any((c) => c.routineId == 'r1'), true);
@@ -133,7 +136,6 @@ void main() {
       segmentId: 's1',
       title: '약 먹기',
       startMinute: _currentMinuteOfNow(),
-      durationMin: 30,
     ));
     final snapshots = <List<Completion>>[];
     repo.watchCompletions().listen(snapshots.add);
@@ -147,31 +149,6 @@ void main() {
     expect(snapshots.last, isEmpty);
   });
 
-  testWidgets('미루기 postpones the routine, shows a snackbar, closes the screen, '
-      'and records no completion', (tester) async {
-    final repo = FakePlannerRepository();
-    await repo.upsertRoutine(Routine(
-      id: 'r1',
-      segmentId: 's1',
-      title: '약 먹기',
-      startMinute: _currentMinuteOfNow(),
-      durationMin: 30,
-      snoozeMin: 7,
-    ));
-    final snapshots = <List<Completion>>[];
-    repo.watchCompletions().listen(snapshots.add);
-
-    await openFocusPage(tester, repo);
-
-    await tester.tap(find.text('미루기'));
-    await tester.pump();
-
-    expect(find.text('7분 미뤘어요'), findsWidgets);
-    await tester.pumpAndSettle();
-    expect(find.byType(FocusPage), findsNothing);
-    expect(snapshots.last, isEmpty);
-  });
-
   testWidgets(
       'within the lead-warning window, the upcoming routine shows its micro-steps '
       'instead of just the countdown text',
@@ -181,8 +158,9 @@ void main() {
       id: 'r1',
       segmentId: 's1',
       title: '퇴근하기',
-      startMinute: (_currentMinuteOfNow() + 5) % (24 * 60),
-      durationMin: 30,
+      // clamp, not % -- see the previous test's comment on why wrapping
+      // past midnight would break this under the new status model.
+      startMinute: (_currentMinuteOfNow() + 5).clamp(0, 24 * 60 - 1),
       leadWarningMin: 5,
       microSteps: const ['퇴근준비하기'],
     ));
@@ -192,9 +170,8 @@ void main() {
     expect(find.textContaining('분 후 시작'), findsOneWidget);
     expect(find.text('퇴근하기'), findsOneWidget);
     expect(find.widgetWithText(CheckboxListTile, '퇴근준비하기'), findsOneWidget);
-    // Not current yet, so no completion/postpone actions — just a way back.
-    expect(find.text('완료'), findsNothing);
-    expect(find.text('미루기'), findsNothing);
+    // Not current yet, so no completion action — just a way back.
+    expect(find.text('모두 완료'), findsNothing);
     expect(find.text('닫기'), findsOneWidget);
   });
 
@@ -205,15 +182,15 @@ void main() {
       id: 'r1',
       segmentId: 's1',
       title: '퇴근하기',
-      startMinute: (_currentMinuteOfNow() + 10) % (24 * 60),
-      durationMin: 30,
+      // clamp, not % -- same reason as the test above.
+      startMinute: (_currentMinuteOfNow() + 10).clamp(0, 24 * 60 - 1),
       leadWarningMin: 5,
       microSteps: const ['퇴근준비하기'],
     ));
 
     await openFocusPage(tester, repo);
 
-    expect(find.textContaining('다음 루틴까지'), findsOneWidget);
+    expect(find.text('다음: 퇴근하기'), findsOneWidget);
     expect(find.text('퇴근준비하기'), findsNothing);
   });
 
@@ -225,7 +202,6 @@ void main() {
       segmentId: 's1',
       title: '퇴근하기',
       startMinute: _currentMinuteOfNow(),
-      durationMin: 30,
       leadWarningMin: 5,
       // Two steps: checking the first alone shouldn't trigger
       // auto-complete-on-all-checked, which would close the screen before
@@ -254,7 +230,6 @@ void main() {
       segmentId: 's1',
       title: '약 먹기',
       startMinute: _currentMinuteOfNow(),
-      durationMin: 30,
       microSteps: const ['손 씻기', '물 준비'],
     ));
 
@@ -282,7 +257,6 @@ void main() {
       segmentId: 's1',
       title: '약 먹기',
       startMinute: _currentMinuteOfNow(),
-      durationMin: 30,
       microSteps: const ['손 씻기', '물 준비'],
     ));
     final snapshots = <List<Completion>>[];
@@ -308,7 +282,6 @@ void main() {
       segmentId: 's1',
       title: '약 먹기',
       startMinute: _currentMinuteOfNow(),
-      durationMin: 30,
       microSteps: const ['손 씻기'],
     ));
 
@@ -319,14 +292,13 @@ void main() {
     expect(find.byType(FocusPage), findsNothing);
   });
 
-  testWidgets('완료 marks every micro-step as checked', (tester) async {
+  testWidgets('모두 완료 marks every micro-step as checked', (tester) async {
     final repo = FakePlannerRepository();
     await repo.upsertRoutine(Routine(
       id: 'r1',
       segmentId: 's1',
       title: '약 먹기',
       startMinute: _currentMinuteOfNow(),
-      durationMin: 30,
       microSteps: const ['손 씻기', '물 준비'],
     ));
     final snapshots = <List<MicroStepProgress>>[];
@@ -334,7 +306,7 @@ void main() {
 
     await openFocusPage(tester, repo);
 
-    await tester.tap(find.text('완료'));
+    await tester.tap(find.text('모두 완료'));
     await tester.pumpAndSettle();
 
     final saved = snapshots.last.firstWhere((p) => p.routineId == 'r1');
@@ -349,7 +321,6 @@ void main() {
       segmentId: 's1',
       title: '약 먹기',
       startMinute: _currentMinuteOfNow(),
-      durationMin: 30,
     ));
 
     await openFocusPage(tester, repo);
@@ -369,7 +340,6 @@ void main() {
       segmentId: 's1',
       title: '퇴근하기',
       startMinute: _currentMinuteOfNow(),
-      durationMin: 30,
       // Two steps, not one: checking just the first shouldn't trigger
       // auto-complete-on-all-checked and close the screen before the
       // "leave and reopen" part of this test even happens.
@@ -400,7 +370,6 @@ void main() {
       segmentId: 's1',
       title: '퇴근하기',
       startMinute: _currentMinuteOfNow(),
-      durationMin: 30,
       microSteps: const ['퇴근준비하기'],
     ));
     final yesterday = DateTime.now().subtract(const Duration(days: 1));

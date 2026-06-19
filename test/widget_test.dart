@@ -11,6 +11,13 @@ import 'package:adhd_planner/services/notification_service.dart';
 import 'fakes/fake_planner_repository.dart';
 
 void main() {
+  // pendingAlarmAlert/alarmDialogOpen are module-level singletons -- reset
+  // them so one test's leftover dialog state can't leak into the next.
+  setUp(() {
+    pendingAlarmAlert.value = null;
+    alarmDialogOpen.value = false;
+  });
+
   testWidgets('App boots and shows the circular planner home', (tester) async {
     // Onboarding is gated on AppSettings.onboardingComplete (STEP 12) — mark
     // it done here so this smoke test still exercises the home screen
@@ -55,7 +62,11 @@ void main() {
     await repo.saveSettings(const AppSettings.defaults().copyWith(onboardingComplete: true));
     await repo.upsertRoutine(Routine(id: 'r1', segmentId: 's1', title: '약 먹기', startMinute: 0));
 
-    pendingAlarmAlert.value = const PendingAlarmAlert(notificationId: 1, routineId: 'r1');
+    pendingAlarmAlert.value = const PendingAlarmAlert(
+      notificationId: 1,
+      routineId: 'r1',
+      isTransition: false,
+    );
     addTearDown(() => pendingAlarmAlert.value = null);
 
     await tester.pumpWidget(ProviderScope(
@@ -83,7 +94,11 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('오늘'), findsOneWidget);
 
-    pendingAlarmAlert.value = const PendingAlarmAlert(notificationId: 1, routineId: 'r1');
+    pendingAlarmAlert.value = const PendingAlarmAlert(
+      notificationId: 1,
+      routineId: 'r1',
+      isTransition: false,
+    );
     addTearDown(() => pendingAlarmAlert.value = null);
     await tester.pumpAndSettle();
 

@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 
 import '../../core/time_geometry.dart';
 import '../../data/models/routine.dart';
@@ -50,6 +51,22 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
     return now.hour * 60 + now.minute;
   }
 
+  // Mirrors RoutineEditorPage's own + button: routines need a segment to
+  // belong to, so nudge towards creating one first rather than opening a
+  // form whose auto-derived segment dropdown would just show 구간 없음.
+  void _openRoutineForm(BuildContext context) {
+    final segments = ref.read(segmentsProvider).value ?? const <Segment>[];
+    if (segments.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('먼저 구간을 만들어주세요.')));
+      return;
+    }
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const RoutineFormPage()));
+  }
+
   @override
   void dispose() {
     _ticker?.cancel();
@@ -61,6 +78,12 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
     final segmentsAsync = ref.watch(segmentsProvider);
     final routinesAsync = ref.watch(routinesProvider);
     final postponements = ref.watch(routinePostponementsProvider).value ?? const [];
+    final completions = ref.watch(completionsProvider).value ?? const [];
+    final todayKey = DateFormat('yyyy-MM-dd').format(DateTime.now());
+    final completedRoutineIds = {
+      for (final c in completions)
+        if (c.dateKey == todayKey) c.routineId,
+    };
 
     return Scaffold(
       appBar: AppBar(
@@ -116,6 +139,7 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
                   routines: routines,
                   displayRoutines: applyTodaysPostponements(routines, postponements),
                   currentMinute: _currentMinute,
+                  completedRoutineIds: completedRoutineIds,
                 ),
                 loading: () => const Center(child: CircularProgressIndicator()),
                 error: (e, st) => Center(child: Text('오류: $e')),
@@ -125,6 +149,17 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
             ),
           ),
         ],
+      ),
+      // Same shape/corner as the global quick-add FAB (bottom-left, see
+      // app.dart) but mirrored to the opposite corner -- a direct shortcut
+      // to adding a routine, instead of having to go through 루틴 관리 first.
+      floatingActionButton: Semantics(
+        label: '루틴 추가',
+        child: FloatingActionButton(
+          heroTag: 'planner-add-routine',
+          onPressed: () => _openRoutineForm(context),
+          child: const Icon(Icons.add),
+        ),
       ),
     );
   }
@@ -136,6 +171,7 @@ class _Dial extends StatelessWidget {
     required this.routines,
     required this.displayRoutines,
     required this.currentMinute,
+    required this.completedRoutineIds,
   });
 
   // The permanent, never-postponed schedule -- only used to resolve a
@@ -148,6 +184,10 @@ class _Dial extends StatelessWidget {
   // doing today.
   final List<Routine> displayRoutines;
   final int currentMinute;
+  // Routines with a Completion recorded for today -- drawn with a small
+  // checkmark badge on their dial marker so "did I do this today" is
+  // visible at a glance without opening Focus or the routine list.
+  final Set<String> completedRoutineIds;
 
   @override
   Widget build(BuildContext context) {
@@ -178,6 +218,7 @@ class _Dial extends StatelessWidget {
                         labelStyle: theme.textTheme.labelSmall ??
                             const TextStyle(fontSize: 11),
                         handColor: theme.colorScheme.error,
+                        completedRoutineIds: completedRoutineIds,
                       ),
                     ),
                     _CenterSummary(status: status, currentMinute: currentMinute),
@@ -326,13 +367,19 @@ class _CenterSummary extends StatelessWidget {
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  status.isCurrent
-                      ? '${status.remainingMinutes}분 남음'
-                      : '${status.remainingMinutes}분 후 시작',
-                  style: theme.textTheme.bodySmall,
-                ),
+                // Only for "다음": absolute time, not a countdown -- a
+                // routine that's already current has no length to count
+                // down from (see Routine's doc comment for why), and an
+                // upcoming one stays put either way until its own alarm
+                // actually fires, so the exact remaining minutes were
+                // never something to act on in the meantime.
+                if (!status.isCurrent) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    TimeGeometry.formatMinute(routine.startMinute),
+                    style: theme.textTheme.bodySmall,
+                  ),
+                ],
               ],
               const SizedBox(height: 8),
               FilledButton.tonal(

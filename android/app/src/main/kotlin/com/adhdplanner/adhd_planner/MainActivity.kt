@@ -64,6 +64,12 @@ class MainActivity : FlutterActivity() {
                     "previewVibration" -> {
                         previewVibration(call, result)
                     }
+                    "scheduleVibrationAlarm" -> {
+                        scheduleVibrationAlarm(call, result)
+                    }
+                    "cancelVibrationAlarm" -> {
+                        cancelVibrationAlarm(call, result)
+                    }
                     else -> result.notImplemented()
                 }
             }
@@ -124,6 +130,39 @@ class MainActivity : FlutterActivity() {
             @Suppress("DEPRECATION")
             vibrator.vibrate(VibrationEffect.createWaveform(vibrationPattern, -1))
         }
+        result.success(null)
+    }
+
+    // See VibrationAlarmReceiver's doc comment for why this exists
+    // alongside the actual notification: a Notification channel's own
+    // vibration is silenced by Samsung OneUI's "무음" ringer mode even on
+    // a USAGE_ALARM channel, but a directly-triggered Vibrator call isn't.
+    private fun scheduleVibrationAlarm(call: MethodCall, result: MethodChannel.Result) {
+        // Read every numeric arg via Number().toLong()/toInt() rather than
+        // a direct Int/Long cast -- the platform channel doesn't guarantee
+        // which boxed type a given Dart int arrives as.
+        val requestCode = (call.argument<Number>("requestCode"))!!.toInt()
+        val triggerAtMillis = (call.argument<Number>("triggerAtMillis"))!!.toLong()
+        val pattern = call.argument<List<*>>("pattern")!!
+            .map { (it as Number).toLong() }
+            .toLongArray()
+        val durationMs = (call.argument<Number>("durationMs"))!!.toLong()
+        val repeatIntervalMs = (call.argument<Number>("repeatIntervalMs"))!!.toLong()
+
+        VibrationAlarmReceiver.schedule(
+            applicationContext,
+            requestCode,
+            triggerAtMillis,
+            pattern,
+            durationMs,
+            repeatIntervalMs,
+        )
+        result.success(null)
+    }
+
+    private fun cancelVibrationAlarm(call: MethodCall, result: MethodChannel.Result) {
+        val requestCode = (call.argument<Number>("requestCode"))!!.toInt()
+        VibrationAlarmReceiver.cancel(applicationContext, requestCode)
         result.success(null)
     }
 
