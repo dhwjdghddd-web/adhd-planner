@@ -79,6 +79,12 @@ class _FocusPageState extends ConsumerState<FocusPage> {
   Widget build(BuildContext context) {
     final routinesAsync = ref.watch(routinesProvider);
     final postponements = ref.watch(routinePostponementsProvider).value ?? const [];
+    final completions = ref.watch(completionsProvider).value ?? const [];
+    final todayKey = DateFormat('yyyy-MM-dd').format(DateTime.now());
+    final completedRoutineIds = {
+      for (final c in completions)
+        if (c.dateKey == todayKey) c.routineId,
+    };
     final theme = Theme.of(context);
     final reduceMotion =
         ref.watch(settingsProvider).value?.reduceMotion ?? false;
@@ -95,6 +101,7 @@ class _FocusPageState extends ConsumerState<FocusPage> {
                     applyTodaysPostponements(routines, postponements),
                     _currentMinute,
                     _isoWeekday,
+                    completedRoutineIds: completedRoutineIds,
                   ),
                 ),
                 loading: () => const Center(child: CircularProgressIndicator()),

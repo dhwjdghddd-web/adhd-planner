@@ -192,7 +192,12 @@ class _Dial extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final status = findRoutineStatus(displayRoutines, currentMinute, DateTime.now().weekday);
+    final status = findRoutineStatus(
+      displayRoutines,
+      currentMinute,
+      DateTime.now().weekday,
+      completedRoutineIds: completedRoutineIds,
+    );
 
     return LayoutBuilder(
       builder: (context, constraints) {

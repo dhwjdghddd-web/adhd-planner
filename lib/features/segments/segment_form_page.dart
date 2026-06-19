@@ -153,15 +153,20 @@ class _SegmentFormPageState extends ConsumerState<SegmentFormPage> {
     return Scaffold(
       appBar: AppBar(
         title: Text(_isEditing ? '구간 수정' : '구간 추가'),
-        actions: [
-          if (_isEditing)
-            IconButton(
-              icon: const Icon(Icons.delete_outline),
-              tooltip: '삭제',
-              onPressed: _confirmDelete,
-            ),
-        ],
       ),
+      // Delete FAB: bottom-right, mirroring the global memo FAB on the left.
+      // Only shown in edit mode — new segments have nothing to delete yet.
+      floatingActionButton: _isEditing
+          ? FloatingActionButton(
+              heroTag: 'segment-delete',
+              onPressed: _confirmDelete,
+              tooltip: '구간 삭제',
+              backgroundColor: Theme.of(context).colorScheme.errorContainer,
+              foregroundColor: Theme.of(context).colorScheme.onErrorContainer,
+              child: const Icon(Icons.delete_outline),
+            )
+          : null,
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       // Shrinks the visible body area itself (rather than padding inside
       // the ListView, which only shows up once scrolled all the way down)
       // so the 저장 button and the fields above it never end up under the

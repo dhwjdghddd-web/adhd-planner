@@ -98,7 +98,108 @@ void main() {
       expect(status.isCurrent, false);
       expect(status.remainingMinutes, 0);
     });
+
+    test('completing the most-recent routine falls through to next -- does NOT go backwards', () {
+      // This is the key regression: before the fix, completing C would show B
+      // (an earlier routine) as "지금". After the fix it shows D (next future)
+      // or nothing -- never a past routine.
+      final a = _routine(id: 'a', startMinute: 20 * 60); // 20:00
+      final b = _routine(id: 'b', startMinute: 21 * 60); // 21:00
+      final c = _routine(id: 'c', startMinute: 22 * 60); // 22:00  ← most recent
+      final d = _routine(id: 'd', startMinute: 23 * 60); // 23:00  ← not started yet
+
+      // At 22:30, C is most recently started (not completed) → current.
+      final before = findRoutineStatus([a, b, c, d], 22 * 60 + 30, 1);
+      expect(before.routine, c);
+      expect(before.isCurrent, true);
+
+      // After completing C: most recent (C) is done → fall through to next.
+      // D starts at 23:00 which is still in the future → shown as "next".
+      // A or B (older past routines) must NOT appear as "지금".
+      final after = findRoutineStatus(
+        [a, b, c, d],
+        22 * 60 + 30,
+        1,
+        completedRoutineIds: {'c'},
+      );
+      expect(after.routine, d);
+      expect(after.isCurrent, false);
+      expect(after.remainingMinutes, 30); // 23:00 - 22:30
+    });
+
+    test('completing the most-recent routine shows nothing when no future routines remain', () {
+      final a = _routine(id: 'a', startMinute: 20 * 60);
+      final b = _routine(id: 'b', startMinute: 21 * 60);
+      final c = _routine(id: 'c', startMinute: 22 * 60); // ← most recent, no routines after
+
+      // At 22:30, completing C: no future routines → null (오늘 일정 없어요).
+      final status = findRoutineStatus(
+        [a, b, c],
+        22 * 60 + 30,
+        1,
+        completedRoutineIds: {'c'},
+      );
+      expect(status.routine, isNull);
+      expect(status.isCurrent, false);
+    });
+
+    test('completed routine with delta=0 does not reappear as "0분 후 시작"', () {
+      // Regression: completing A at exactly its startMinute (delta=0) used to
+      // show A again in the next search as remainingMinutes=0 ("0분 후 시작").
+      final a = _routine(id: 'a', startMinute: 10 * 60); // 10:00
+      final b = _routine(id: 'b', startMinute: 11 * 60); // 11:00
+
+      // At 10:00, A has just started (delta=0). After completing it,
+      // A must NOT appear as "다음" — B should be shown instead.
+      final status = findRoutineStatus(
+        [a, b],
+        10 * 60,
+        1,
+        completedRoutineIds: {'a'},
+      );
+      expect(status.routine, b);
+      expect(status.isCurrent, false);
+      expect(status.remainingMinutes, 60); // 11:00 - 10:00
+    });
+
+    test('completing the most-recent routine (when the previous is also completed) shows next', () {
+      final done1 = _routine(id: 'done1', startMinute: 9 * 60);  // 09:00
+      final done2 = _routine(id: 'done2', startMinute: 10 * 60); // 10:00 ← most recent
+      final upcoming = _routine(id: 'next', startMinute: 11 * 60); // 11:00 (not started)
+      // At 10:30, done2 is most recent and completed → fall through.
+      // upcoming starts at 11:00, delta=30 → shown as next.
+      final status = findRoutineStatus(
+        [done1, done2, upcoming],
+        10 * 60 + 30,
+        1,
+        completedRoutineIds: {'done1', 'done2'},
+      );
+      expect(status.routine, upcoming);
+      expect(status.isCurrent, false);
+      expect(status.remainingMinutes, 30);
+    });
+
+    test('completing the only started routine shows nothing current', () {
+      final r = _routine(id: 'r1', startMinute: 9 * 60);
+      final status = findRoutineStatus(
+        [r],
+        9 * 60 + 10,
+        1,
+        completedRoutineIds: {'r1'},
+      );
+      expect(status.routine, isNull);
+      expect(status.isCurrent, false);
+    });
+
+    test('empty completedRoutineIds behaves identically to the default', () {
+      final r = _routine(id: 'r1', startMinute: 9 * 60);
+      final withEmpty = findRoutineStatus([r], 9 * 60 + 10, 1, completedRoutineIds: {});
+      final withDefault = findRoutineStatus([r], 9 * 60 + 10, 1);
+      expect(withEmpty.routine, withDefault.routine);
+      expect(withEmpty.isCurrent, withDefault.isCurrent);
+    });
   });
+
 
   group('applyTodaysPostponements', () {
     final today = DateTime(2026, 6, 19);

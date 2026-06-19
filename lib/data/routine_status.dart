@@ -17,31 +17,49 @@ class RoutineStatus {
 }
 
 /// Finds whichever routine on [isoWeekday] (1=Mon..7=Sun) started most
-/// recently at or before [nowMinute] -- it stays "current" for the rest of
-/// the day, however long that actually takes, rather than expiring after
-/// some fixed duration: there's no length to set on a [Routine] for exactly
-/// this reason, since "ran out of time" isn't a state this app wants to put
-/// anyone in. Falls back to the soonest routine still ahead today if none
-/// has started yet. Routines whose `repeatDays` excludes [isoWeekday] are
+/// recently at or before [nowMinute] — it stays "current" for the rest of
+/// the day, unless it has been completed. Falls back to the soonest routine
+/// still ahead today if none has started yet (or if the most recent one was
+/// already completed). Routines whose `repeatDays` excludes [isoWeekday] are
 /// skipped entirely.
-RoutineStatus findRoutineStatus(List<Routine> routines, int nowMinute, int isoWeekday) {
-  Routine? current;
+///
+/// [completedRoutineIds]: today's completed routine ids (filtered by dateKey).
+/// Only the single most-recently-started routine is checked against this set:
+/// if it's completed we fall straight through to the "next" search rather
+/// than walking backwards through earlier past routines. That prevents the
+/// wrong behaviour where completing a routine causes an even earlier one to
+/// appear as "지금" instead of the next upcoming one.
+RoutineStatus findRoutineStatus(
+  List<Routine> routines,
+  int nowMinute,
+  int isoWeekday, {
+  Set<String> completedRoutineIds = const {},
+}) {
+  // 1. Find the single most-recently-started routine (completed or not).
+  Routine? mostRecent;
   var latestStart = -1;
   for (final routine in routines) {
     if (!routine.occursOn(isoWeekday)) continue;
     if (routine.startMinute <= nowMinute && routine.startMinute > latestStart) {
       latestStart = routine.startMinute;
-      current = routine;
+      mostRecent = routine;
     }
   }
-  if (current != null) {
-    return RoutineStatus(routine: current, isCurrent: true);
+
+  // 2. Return it as current only if the user hasn't finished it yet.
+  //    If it's already done, fall through — treat the slot as over.
+  if (mostRecent != null && !completedRoutineIds.contains(mostRecent.id)) {
+    return RoutineStatus(routine: mostRecent, isCurrent: true);
   }
 
+  // 3. No active current routine: find the next upcoming one.
+  //    Also skip completed routines here — a completed routine with delta=0
+  //    (started exactly at nowMinute) must not reappear as "0분 후 시작".
   Routine? next;
   var bestDelta = TimeGeometry.minutesPerDay + 1;
   for (final routine in routines) {
     if (!routine.occursOn(isoWeekday)) continue;
+    if (completedRoutineIds.contains(routine.id)) continue;
     final delta = routine.startMinute - nowMinute;
     if (delta >= 0 && delta < bestDelta) {
       bestDelta = delta;
