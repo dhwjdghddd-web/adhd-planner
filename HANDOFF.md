@@ -11,56 +11,70 @@
 
 ---
 
-## 0. 가장 먼저 할 일 — 미해결 버그 (최우선)
+## 0. 이 문서 이후의 변경 (필독 — 아래 §0-A가 현행 최신 상태)
 
-**증상**: Focus("지금") 화면에서 마이크로스텝 없는 루틴을 "모두 완료"로
-완료 처리한 뒤 다시 "지금" 화면에 들어가면, 방금 완료한 루틴이 여전히
-"지금"으로 표시된다. 사용자는 "다음 할 일 + 절대 시각"이 나오길 기대했다.
-마이크로스텝 유무와는 무관하게 재현됨(아래 원인 참고).
+**주의:** 이 HANDOFF.md의 §1~§6 본문은 커밋 `0b7cb05` 시점(2026-06-19)에
+작성됐고, **그 이후 3개 커밋에서 더 많은 변경이 있었다.** §1~§6을 읽되,
+그것들이 묘사하는 "미해결 버그(원래 §0)"와 일부 동작은 **이미 바뀌었으니**
+반드시 이 §0-A를 먼저 읽고 최신 상태를 기준으로 판단할 것. (원래 §0에 있던
+"완료해도 지금 화면에 같은 루틴이 남는 버그"는 **해결됐다** — 아래 참고.)
 
-**근본 원인**: `lib/data/routine_status.dart`의 `findRoutineStatus()`가
-"지금"을 판단할 때 **완료(Completion) 여부를 전혀 보지 않는다.** 오늘
-오후에 진행한 설계 변경(아래 8번 항목)으로 `Routine`에서 `durationMin`을
-완전히 제거하면서, "지금"의 정의를 다음과 같이 바꿨다:
+### §0-A. HANDOFF 이후 커밋별 변경 요약
 
-> 오늘 가장 최근에 시작된 루틴이, 그 다음 루틴이 시작되기 전까지
-> 계속 "지금"으로 남는다. 정해진 길이가 끝나서 만료되는 일은 없다.
+**커밋 `ee7ae53` — 완료 후 지금 화면/다이얼 상태 버그 수정 (원래 §0 버그 해결)**
+- Google의 Antigravity 에이전트가 이 HANDOFF.md를 읽고 원래 §0의 버그를
+  수정했다. 단, 제안된 "완료 루틴 건너뛰기" 방식 대신 **더 근본적으로**
+  재작성: `findRoutineStatus`는 이제 `completedRoutineIds`(오늘 완료된 id
+  집합)를 인자로 받아, **가장 최근에 시작된 루틴 하나만** current 후보로 보고
+  그게 완료됐으면 즉시 "다음" 탐색으로 직행한다(과거 루틴으로 역행하지 않음).
+- 추가 버그도 같이 수정: 완료 시각이 시작 시각과 정확히 일치(delta=0)할 때
+  "0분 후 시작"으로 재표시되던 문제 → next 탐색에서도 완료 루틴 제외.
+- UI: 루틴/구간 수정 화면의 삭제 버튼을 AppBar에서 우측 하단 FAB으로 이동
+  (좌측 메모 FAB과 대칭).
+- → 즉 **원래 §0은 이미 끝난 일.** `findRoutineStatus`의 시그니처는 지금
+  `findRoutineStatus(routines, nowMinute, isoWeekday, {Set<String> completedRoutineIds})`.
 
-이 정의는 시작 시각만으로 결정되고, `Completion`(완료 기록)은 전혀
-참조하지 않는다. 그래서 루틴을 완료해도 "다음 루틴이 시작하기 전"이라면
-같은 루틴이 계속 "지금"으로 뜬다. 길이(duration)가 있던 예전에는 이 문제가
-30분짜리 좁은 창에 가려져 잘 안 보였을 뿐, 구조적으로는 똑같이 있었다.
+**커밋 `489a832` — '넘기기'(오늘 건너뛰기) 기능 추가**
+- 완료/미루기와 별개인 세 번째 동작: 오늘만 그 루틴을 건너뛴다. 오늘 지금/
+  다음 어디에도 안 뜨고, 오늘 남은 알람도 취소되며, 다음 주 같은 요일엔 정상
+  복귀.
+- 신규: `RoutineSkip` 모델(`lib/data/models/routine_skip.dart`,
+  dateKey+routineId), `PlannerRepository`/Firestore/Hive/Fake 전부에
+  `watchRoutineSkips`/`saveRoutineSkip` 추가, `routineSkipsProvider`.
+- `routine_status.dart`에 `excludeTodaysSkips(routines, skips, {now})` 추가 —
+  `findRoutineStatus` 호출 **전에** 건너뛴 루틴을 걸러낸다(지금/다음 양쪽 제외).
+- `NotificationService.skipToday(routineId)`: 건너뛰기 기록 저장 + 오늘 알람
+  취소. `rescheduleAll`은 오늘 건너뛴 루틴을 다음 주로 재예약
+  (`_nextInstanceRespectingSkip`).
+- Focus 화면(지금/다음/곧시작) + 알람 다이얼로그(전환예고/본알람)에 "넘기기"
+  버튼. 다이얼 중앙 요약도 같은 필터 적용.
 
-**수정 방향 (구현은 아직 안 함)**:
+**커밋 `2639a3b` — 알람 코드 전반 점검 후 버그/일관성 수정 5건**
+- **(1) 무한 진동 위험 제거**: `VibrationAlarmReceiver.kt`가 무한 반복 파형 +
+  Handler.postDelayed로 정지하던 구조 → **durationMs 길이의 유한 파형**으로
+  변경. 잠금/종료 상태에서 프로세스가 죽어도 진동이 스스로 끝난다(재부팅 전까지
+  무한 진동하던 최악 시나리오 차단).
+- **(2) 포그라운드 와처 넘기기 누락**: `_ForegroundAlarmWatcher`가
+  `excludeTodaysSkips`를 적용하지 않아, 넘긴 루틴인데도 그 시각에 앱을 보고
+  있으면 다이얼로그가 또 뜨던 버그 수정.
+- **(3,4) 알림 액션 버튼(미루기/완료) 제거**: 액션 버튼 경로에서 진동이 안
+  꺼지던 문제 + '완료' 액션이 재설계(확인=완료 아님)와 모순되던 문제를 한 번에
+  해결. 모든 알람 조작은 이제 **AlarmAlertDialog 한 곳**으로 통일. 죽은
+  백그라운드 핸들러(`_handlePostpone`/`_handleComplete`/`_resolveUid`)와 관련
+  import 제거.
+- **(5) skipToday 전환예고 슬롯 가드 결함**: 전환예고는 본알람보다 일찍
+  발화하므로, 그 사이 시각에 넘기기하면 다음 주 전환예고를 잘못 취소하던 문제를
+  자기 시각 기준 판정으로 수정.
+- **보류(의도적): `notificationIdFor`의 hashCode 충돌** — 공식을 바꾸면
+  구버전 ID로 등록된 네이티브 진동 알람이 고아로 남아 매주 알림 없이 진동만
+  울리는 더 심한 버그가 생겨, 안전한 마이그레이션이 가능할 때까지 둠. 확률적
+  저위험.
 
-1. `findRoutineStatus`에 오늘 완료된 루틴 id 목록을 추가 인자로 받게
-   한다. 예: `findRoutineStatus(routines, nowMinute, isoWeekday, completedRoutineIds: <String>{})`.
-2. "현재" 판정 루프(파일의 `current`/`latestStart` 루프, 27~39번 줄)에서
-   `completedRoutineIds.contains(routine.id)`인 루틴은 건너뛴다. 그러면
-   자연히 그 다음으로 최근에 시작된(아직 완료 안 한) 루틴이 "지금"이
-   되거나, 없으면 "다음" 루틴 탐색 분기로 넘어가 절대 시각이 뜬다.
-3. "다음" 판정 루프는 그대로 둬도 된다 — 미래 루틴은 정상 흐름에서
-   완료될 수 없으므로 완료 필터가 필요 없다(다만 일관성을 위해 같이
-   걸러도 무해함).
-4. 호출부 두 곳 모두 고쳐야 한다:
-   - `lib/features/focus/focus_page.dart` 94번 줄 근처 `findRoutineStatus(...)`
-     호출. 이미 `ref.watch(microStepProgressProvider)`처럼 watch하고 있으니,
-     `ref.watch(completionsProvider)`를 추가하고 오늘 날짜(dateKey)로 필터링한
-     `Set<String>`을 만들어 넘긴다. `planner_page.dart`에 이미 똑같은 패턴
-     (`completedRoutineIds` 계산, 다이얼 배지용)이 있으니 그대로 복사해서
-     쓰면 된다 — 중복이 싫으면 `routine_status.dart`나 별도 헬퍼로
-     `todaysCompletedRoutineIds(completions, {DateTime? now})` 함수를 만들어
-     두 곳에서 공유해도 좋다.
-   - `lib/features/planner/planner_page.dart` 195번 줄 근처 `findRoutineStatus(...)`
-     호출(다이얼 중앙 요약용). 이 파일은 이미 `completedRoutineIds`를
-     계산해두고 있으므로(다이얼 배지에 쓰는 그 변수) 그냥 같은 변수를
-     넘기면 된다.
-5. 수정 후 `test/data/routine_status_test.dart`에 "오늘 완료된 루틴은
-   current에서 제외되고 다음 루틴(또는 빈 상태)로 넘어간다"는 테스트를
-   추가하고, `focus_page_test.dart`에도 "완료 후 재진입하면 다음 할 일이
-   뜬다" 통합 테스트를 추가할 것.
-6. 늘 하던 절차대로 `puro flutter analyze` → `puro flutter test` →
-   `puro flutter build apk --debug` → adb install → 사용자에게 폰 검증 요청.
+### §0-B. 다음 작업으로 잡힌 것 — 구글 계정 멀티유저 연동
+
+별도 계획서 **`GOOGLE_AUTH_PLAN.md`** 참조(이 HANDOFF와 같은 디렉터리). 멀티유저로
+가면서 §3의 "고정 UID hack 제거 + firestore.rules 복원"을 그 작업에서 함께
+처리한다. 즉 **§3의 보안 약화 항목은 그 계획서가 해소할 예정**이다.
 
 ---
 
@@ -366,10 +380,12 @@ allow read, write: if request.auth != null;
 - **#58~60 (보류, 메모리에도 기록됨)**: 앱 내 도움말(튜토리얼) 페이지
   작성, 설정 화면에 진입점 추가, 테스트 작성. 사용자가 "현재 기능 수정
   작업을 끝낸 뒤에" 하자고 명시적으로 미뤄둔 작업.
-- **Google 로그인 업그레이드**: 익명 계정을 실제 Google 계정으로 업그레이드
-  하는 기능. 범위는 잡혀 있으나(설정 화면에 "계정 업그레이드"
-  버튼은 이미 있고 "곧 지원" SnackBar만 뜨는 상태) 아직 구현 시작
-  안 함. 디자인 합의 사항: 로그인이 아니라 "연결(link)" 방식으로.
+- **Google 로그인 → 멀티유저 연동 (다음 작업으로 확정)**: 익명 계정에 Google을
+  "연결(link)"하는 방식으로 합의됐고, **멀티유저 + 새로 시작(기존 고정 UID
+  데이터 마이그레이션 없음)**으로 범위가 정해졌다. 상세 구현 계획은
+  **`GOOGLE_AUTH_PLAN.md`** 참조. 이 작업이 §3의 고정 UID hack 제거와
+  firestore.rules 복원을 함께 처리한다. (설정 화면 "업그레이드" 버튼은 아직
+  "곧 지원" SnackBar 상태.)
 - **알림 오버레이(2단계)**: 다른 앱을 보고 있을 때도 알람 다이얼로그가
   자동으로 뜨는 기능. SYSTEM_ALERT_WINDOW 권한 + 네이티브 오버레이
   윈도우가 필요한 더 큰 작업으로, 1단계(자기 앱 포그라운드일 때만)만
@@ -402,12 +418,15 @@ allow read, write: if request.auth != null;
 
 ---
 
-## 6. 이번 세션 종료 시점 코드 상태 요약
+## 6. 코드 상태 요약
 
-- 마지막 커밋: `0b7cb05` (origin/main에 푸시 완료)
+> 아래는 원래 작성 시점(`0b7cb05`) 기준이었고, §0-A의 후속 커밋들로 갱신됨.
+
+- **최신 커밋: `2639a3b`** (origin/main에 푸시 완료). 그 뒤로 작업이 더
+  있었다면 `git log --oneline -10`으로 실제 HEAD를 확인할 것.
 - `puro flutter analyze`: 0 에러
-- `puro flutter test`: 전체 통과(160개 전후, 정확한 숫자는 위 변경
-  반영 후 재실행해서 확인할 것 — 0번 버그 수정 시 테스트가 추가/변경되니
-  숫자가 달라짐)
-- 사용자 폰에 설치된 마지막 빌드: 길이(duration) 제거 버전("안티그래비티"로
-  사용자가 직접 빌드·설치) — 0번 항목 버그가 바로 그 빌드에서 발견됨
+- `puro flutter test`: **전체 179개 통과**(커밋 `2639a3b` 시점). 변경 시
+  재실행해서 확인.
+- 사용자 폰(삼성 SM-F766N): 위 모든 변경(넘기기 + 알람 점검 5건)이 설치·검증
+  완료된 상태. 무음+잠금 진동 정지, 넘기기 동작까지 사용자 직접 확인함.
+- **다음 작업**: 구글 계정 멀티유저 연동 — `GOOGLE_AUTH_PLAN.md` 참조(§0-B).
