@@ -6,6 +6,7 @@ import '../../models/memo.dart';
 import '../../models/micro_step_progress.dart';
 import '../../models/routine.dart';
 import '../../models/routine_postponement.dart';
+import '../../models/routine_skip.dart';
 import '../../models/segment.dart';
 import '../planner_repository.dart';
 
@@ -20,6 +21,7 @@ class HivePlannerRepository implements PlannerRepository {
   static const completionsBoxName = 'completions';
   static const microStepProgressBoxName = 'microStepProgress';
   static const routinePostponementsBoxName = 'routinePostponements';
+  static const routineSkipsBoxName = 'routineSkips';
   static const settingsBoxName = 'settings';
   static const _settingsKey = 'settings';
 
@@ -29,6 +31,7 @@ class HivePlannerRepository implements PlannerRepository {
   final Box _completionsBox;
   final Box _microStepProgressBox;
   final Box _routinePostponementsBox;
+  final Box _routineSkipsBox;
   final Box _settingsBox;
 
   HivePlannerRepository._(
@@ -38,6 +41,7 @@ class HivePlannerRepository implements PlannerRepository {
     this._completionsBox,
     this._microStepProgressBox,
     this._routinePostponementsBox,
+    this._routineSkipsBox,
     this._settingsBox,
   );
 
@@ -48,6 +52,7 @@ class HivePlannerRepository implements PlannerRepository {
     final completions = await Hive.openBox(completionsBoxName);
     final microStepProgress = await Hive.openBox(microStepProgressBoxName);
     final routinePostponements = await Hive.openBox(routinePostponementsBoxName);
+    final routineSkips = await Hive.openBox(routineSkipsBoxName);
     final settings = await Hive.openBox(settingsBoxName);
     return HivePlannerRepository._(
       segments,
@@ -56,6 +61,7 @@ class HivePlannerRepository implements PlannerRepository {
       completions,
       microStepProgress,
       routinePostponements,
+      routineSkips,
       settings,
     );
   }
@@ -69,6 +75,7 @@ class HivePlannerRepository implements PlannerRepository {
     await _completionsBox.close();
     await _microStepProgressBox.close();
     await _routinePostponementsBox.close();
+    await _routineSkipsBox.close();
     await _settingsBox.close();
   }
 
@@ -134,6 +141,15 @@ class HivePlannerRepository implements PlannerRepository {
   @override
   Future<void> saveRoutinePostponement(RoutinePostponement p) =>
       _routinePostponementsBox.put(p.id, p.toMap());
+
+  // Routine skips
+  @override
+  Stream<List<RoutineSkip>> watchRoutineSkips() =>
+      _watchAll(_routineSkipsBox, RoutineSkip.fromMap);
+
+  @override
+  Future<void> saveRoutineSkip(RoutineSkip s) =>
+      _routineSkipsBox.put(s.id, s.toMap());
 
   // Settings
   @override

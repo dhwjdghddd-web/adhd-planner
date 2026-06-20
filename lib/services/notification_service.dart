@@ -14,6 +14,7 @@ import '../data/models/app_settings.dart';
 import '../data/models/completion.dart';
 import '../data/models/routine.dart';
 import '../data/models/routine_postponement.dart';
+import '../data/models/routine_skip.dart';
 import '../data/providers.dart';
 import '../data/repositories/firestore/firestore_planner_repository.dart';
 import '../data/repositories/planner_repository.dart';
@@ -189,6 +190,27 @@ tz.TZDateTime nextInstanceOf(int isoWeekday, int minuteOfDay) {
     scheduled = scheduled.add(const Duration(days: 1));
   }
   return scheduled;
+}
+
+/// [nextInstanceOf], but pushed a further week ahead when [routineId] has
+/// been skipped ("넘기기") for today and the naive next-instance would
+/// otherwise land on today -- see [NotificationService.rescheduleAll]'s
+/// doc comment for why this matters (without it, the very next
+/// rescheduleAll before today's original time passes would immediately
+/// resurrect the skip).
+tz.TZDateTime _nextInstanceRespectingSkip(
+  int isoWeekday,
+  int minuteOfDay,
+  String routineId,
+  Set<String> skippedTodayRoutineIds,
+) {
+  final candidate = nextInstanceOf(isoWeekday, minuteOfDay);
+  if (!skippedTodayRoutineIds.contains(routineId)) return candidate;
+  final now = tz.TZDateTime.now(tz.local);
+  final isToday = candidate.year == now.year &&
+      candidate.month == now.month &&
+      candidate.day == now.day;
+  return isToday ? candidate.add(const Duration(days: 7)) : candidate;
 }
 
 /// Next moment at [minuteOfDay] strictly after [now], regardless of
@@ -373,13 +395,31 @@ class NotificationService {
     await _ensureChannels(settings);
     await _plugin.cancelAll();
 
+    // Routines skipped ("넘기기") for today: without this, the very next
+    // rescheduleAll (app start, any routine/settings edit) before today's
+    // original time has passed would immediately resurrect the skip, since
+    // nextInstanceOf just finds the next time at/after now -- which is
+    // still today. See _nextInstanceRespectingSkip.
+    final dateKey = DateFormat('yyyy-MM-dd').format(DateTime.now());
+    final skips = await _repository.watchRoutineSkips().first;
+    final skippedTodayRoutineIds = {
+      for (final s in skips)
+        if (s.dateKey == dateKey) s.routineId,
+    };
+
     final specs = buildSchedule(routines);
     for (final spec in specs) {
+      final triggerAt = _nextInstanceRespectingSkip(
+        spec.isoWeekday,
+        spec.minuteOfDay,
+        spec.routineId,
+        skippedTodayRoutineIds,
+      );
       await _plugin.zonedSchedule(
         spec.id,
         spec.title,
         spec.body,
-        nextInstanceOf(spec.isoWeekday, spec.minuteOfDay),
+        triggerAt,
         NotificationDetails(android: _androidDetailsFor(spec, settings)),
         uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
         // alarmClock (AlarmManager.setAlarmClock under the hood), not just
@@ -401,7 +441,7 @@ class NotificationService {
       // matchDateTimeComponents above without Dart needing to be running.
       await _scheduleVibrationAlarm(
         requestCode: spec.id,
-        triggerAt: nextInstanceOf(spec.isoWeekday, spec.minuteOfDay),
+        triggerAt: triggerAt,
         pattern: vibrationPatternFor(settings.vibrationPattern),
         durationMs: spec.isTransition ? _transitionRepeatMs : _mainAlarmRepeatMs,
         repeatInterval: const Duration(days: 7),
@@ -537,6 +577,38 @@ class NotificationService {
       durationMs: _mainAlarmRepeatMs,
       repeatInterval: Duration.zero,
     );
+  }
+
+  /// "넘기기": removes today's occurrence of [routineId] from consideration
+  /// entirely -- it won't show as 지금/다음 anywhere today (see
+  /// `excludeTodaysSkips`) and reappears normally on its next scheduled day.
+  /// Unlike 미루기 (shifts today's time) or 완료 (marks today's occurrence
+  /// done), this is "don't bother me with this today at all".
+  ///
+  /// Slot 2/3 (미루기's one-off reschedules for today) are always safe to
+  /// cancel outright. Slot 0/1 (the permanent weekly recurrence) are only
+  /// cancelled while today's occurrence genuinely hasn't fired yet -- once
+  /// it has, the recurring chain (flutter_local_notifications' own
+  /// matchDateTimeComponents handling, and VibrationAlarmReceiver alongside
+  /// it) has already self-rescheduled itself to *next* week, so cancelling
+  /// now would wrongly kill that instead of today's (already-fired, nothing
+  /// left to cancel) occurrence.
+  Future<void> skipToday(String routineId) async {
+    final routine = await _findRoutine(_repository, routineId);
+    if (routine == null) return;
+
+    final dateKey = DateFormat('yyyy-MM-dd').format(DateTime.now());
+    await _repository.saveRoutineSkip(RoutineSkip(dateKey: dateKey, routineId: routine.id));
+
+    await cancelNotification(notificationIdFor(routine.id, 0, 2));
+    await cancelNotification(notificationIdFor(routine.id, 0, 3));
+
+    final now = DateTime.now();
+    if (routine.startMinute > now.hour * 60 + now.minute) {
+      final today = now.weekday;
+      await cancelNotification(notificationIdFor(routine.id, today, 0));
+      await cancelNotification(notificationIdFor(routine.id, today, 1));
+    }
   }
 
   /// Dismisses a still-showing notification outright — needed when a UI

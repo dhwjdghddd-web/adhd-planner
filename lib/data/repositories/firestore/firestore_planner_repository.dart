@@ -6,6 +6,7 @@ import '../../models/memo.dart';
 import '../../models/micro_step_progress.dart';
 import '../../models/routine.dart';
 import '../../models/routine_postponement.dart';
+import '../../models/routine_skip.dart';
 import '../../models/segment.dart';
 import '../planner_repository.dart';
 
@@ -88,6 +89,15 @@ class FirestorePlannerRepository implements PlannerRepository {
   @override
   Future<void> saveRoutinePostponement(RoutinePostponement p) =>
       _collection('routinePostponements').doc(p.id).set(p.toMap());
+
+  // Routine skips
+  @override
+  Stream<List<RoutineSkip>> watchRoutineSkips() =>
+      _watchAll('routineSkips', RoutineSkip.fromMap);
+
+  @override
+  Future<void> saveRoutineSkip(RoutineSkip s) =>
+      _collection('routineSkips').doc(s.id).set(s.toMap());
 
   // Settings
   @override

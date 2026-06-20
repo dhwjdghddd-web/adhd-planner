@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:adhd_planner/data/models/routine.dart';
 import 'package:adhd_planner/data/models/routine_postponement.dart';
+import 'package:adhd_planner/data/models/routine_skip.dart';
 import 'package:adhd_planner/data/routine_status.dart';
 
 Routine _routine({
@@ -256,6 +257,56 @@ void main() {
 
       expect(result.firstWhere((r) => r.id == 'a').startMinute, 9 * 60 + 5);
       expect(result.firstWhere((r) => r.id == 'b').startMinute, 10 * 60);
+    });
+  });
+
+  group('excludeTodaysSkips', () {
+    final today = DateTime(2026, 6, 19);
+
+    test('removes a routine skipped today entirely from the list', () {
+      final a = _routine(id: 'a', startMinute: 9 * 60);
+      final b = _routine(id: 'b', startMinute: 10 * 60);
+      final result = excludeTodaysSkips(
+        [a, b],
+        [RoutineSkip.today('a', at: today)],
+        now: today,
+      );
+
+      expect(result, [b]);
+    });
+
+    test('leaves the list unchanged (same instance) when nothing is skipped today', () {
+      final a = _routine(id: 'a', startMinute: 9 * 60);
+      final routines = [a];
+      final result = excludeTodaysSkips(routines, const [], now: today);
+
+      expect(result, same(routines));
+    });
+
+    test('ignores a skip from a different day', () {
+      final a = _routine(id: 'a', startMinute: 9 * 60);
+      final yesterday = today.subtract(const Duration(days: 1));
+      final result = excludeTodaysSkips(
+        [a],
+        [RoutineSkip.today('a', at: yesterday)],
+        now: today,
+      );
+
+      expect(result, [a]);
+    });
+
+    test('a skipped-then-excluded routine falls through to next in findRoutineStatus', () {
+      final a = _routine(id: 'a', startMinute: 9 * 60);
+      final b = _routine(id: 'b', startMinute: 11 * 60);
+      final visible = excludeTodaysSkips(
+        [a, b],
+        [RoutineSkip.today('a', at: today)],
+        now: today,
+      );
+      final status = findRoutineStatus(visible, 9 * 60 + 30, today.weekday);
+
+      expect(status.routine, b);
+      expect(status.isCurrent, false);
     });
   });
 }

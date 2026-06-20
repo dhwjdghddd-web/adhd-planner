@@ -78,6 +78,7 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
     final segmentsAsync = ref.watch(segmentsProvider);
     final routinesAsync = ref.watch(routinesProvider);
     final postponements = ref.watch(routinePostponementsProvider).value ?? const [];
+    final skips = ref.watch(routineSkipsProvider).value ?? const [];
     final completions = ref.watch(completionsProvider).value ?? const [];
     final todayKey = DateFormat('yyyy-MM-dd').format(DateTime.now());
     final completedRoutineIds = {
@@ -134,13 +135,17 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
           Expanded(
             child: segmentsAsync.when(
               data: (segments) => routinesAsync.when(
-                data: (routines) => _Dial(
-                  segments: segments,
-                  routines: routines,
-                  displayRoutines: applyTodaysPostponements(routines, postponements),
-                  currentMinute: _currentMinute,
-                  completedRoutineIds: completedRoutineIds,
-                ),
+                data: (routines) {
+                  final displayRoutines = applyTodaysPostponements(routines, postponements);
+                  return _Dial(
+                    segments: segments,
+                    routines: routines,
+                    displayRoutines: displayRoutines,
+                    statusRoutines: excludeTodaysSkips(displayRoutines, skips),
+                    currentMinute: _currentMinute,
+                    completedRoutineIds: completedRoutineIds,
+                  );
+                },
                 loading: () => const Center(child: CircularProgressIndicator()),
                 error: (e, st) => Center(child: Text('오류: $e')),
               ),
@@ -170,6 +175,7 @@ class _Dial extends StatelessWidget {
     required this.segments,
     required this.routines,
     required this.displayRoutines,
+    required this.statusRoutines,
     required this.currentMinute,
     required this.completedRoutineIds,
   });
@@ -179,10 +185,15 @@ class _Dial extends StatelessWidget {
   final List<Segment> segments;
   final List<Routine> routines;
   // Today's postponements overlaid on top of [routines] -- what's actually
-  // drawn on the dial and fed to findRoutineStatus, so the marker position
-  // and the "지금/다음" summary always agree with what alarms are actually
-  // doing today.
+  // drawn on the dial, so the marker position matches what alarms are
+  // actually doing today. A 넘기기'd routine still keeps its marker here
+  // (it's still on the permanent schedule, just skipped for today) --
+  // [statusRoutines] is the one that excludes it from 지금/다음.
   final List<Routine> displayRoutines;
+  // [displayRoutines] with today's 넘기기'd routines removed -- fed to
+  // findRoutineStatus so the center summary's 지금/다음 agrees with
+  // FocusPage about what's actually still in play today.
+  final List<Routine> statusRoutines;
   final int currentMinute;
   // Routines with a Completion recorded for today -- drawn with a small
   // checkmark badge on their dial marker so "did I do this today" is
@@ -193,7 +204,7 @@ class _Dial extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final status = findRoutineStatus(
-      displayRoutines,
+      statusRoutines,
       currentMinute,
       DateTime.now().weekday,
       completedRoutineIds: completedRoutineIds,

@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import '../core/time_geometry.dart';
 import 'models/routine.dart';
 import 'models/routine_postponement.dart';
+import 'models/routine_skip.dart';
 
 /// Whatever the home dial and the focus screen agree is "happening now" (or
 /// coming up next), for a given moment in time. Both screens must call
@@ -98,4 +99,27 @@ List<Routine> applyTodaysPostponements(
       else
         routine,
   ];
+}
+
+/// Removes routines explicitly skipped ("넘기기") for today via
+/// [RoutineSkip] from consideration entirely. Unlike postponement (shifts
+/// time) or completion (only affects the "지금" pass -- see
+/// [findRoutineStatus]'s `completedRoutineIds`), a skip means "don't show
+/// this to me today at all": it must not appear as either 지금 or 다음,
+/// and reappears normally tomorrow (or its next scheduled day) since
+/// [RoutineSkip] is dateKey-scoped. Returns [routines] unchanged when
+/// nothing today has been skipped, so this is cheap to call on every
+/// rebuild.
+List<Routine> excludeTodaysSkips(
+  List<Routine> routines,
+  List<RoutineSkip> skips, {
+  DateTime? now,
+}) {
+  final dateKey = DateFormat('yyyy-MM-dd').format(now ?? DateTime.now());
+  final skippedIds = {
+    for (final s in skips)
+      if (s.dateKey == dateKey) s.routineId,
+  };
+  if (skippedIds.isEmpty) return routines;
+  return routines.where((r) => !skippedIds.contains(r.id)).toList();
 }

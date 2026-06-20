@@ -69,6 +69,10 @@ class AlarmAlertDialog extends ConsumerWidget {
       ),
       actions: [
         TextButton(
+          onPressed: () => _skip(context, ref, routine!),
+          child: const Text('넘기기'),
+        ),
+        TextButton(
           onPressed: () => _postpone(context, ref, routine!),
           child: const Text('미루기'),
         ),
@@ -112,6 +116,16 @@ class AlarmAlertDialog extends ConsumerWidget {
     _showFeedback('${routine.snoozeMin}분 후 다시 알려드려요');
   }
 
+  // "넘기기": today's occurrence is done with entirely, not just snoozed --
+  // see NotificationService.skipToday for why this also needs to cancel
+  // today's still-armed alarms (not just this one) rather than only this
+  // notification.
+  void _skip(BuildContext context, WidgetRef ref, Routine routine) {
+    unawaited(_trySkip(ref, routine.id));
+    Navigator.of(context).maybePop();
+    _showFeedback('${routine.title}을(를) 내일로 넘겼어요');
+  }
+
   // The dialog's own context is gone right after maybePop() -- this app's
   // single shared Navigator's current context is what's left on screen
   // once the dialog finishes closing, same trick app.dart's launcher uses
@@ -143,6 +157,16 @@ class AlarmAlertDialog extends ConsumerWidget {
     final service = ref.read(notificationServiceProvider);
     try {
       await service.postpone(routineId, settings);
+      await service.cancelNotification(notificationId);
+    } catch (_) {
+      // No platform channel available (e.g. under flutter test).
+    }
+  }
+
+  Future<void> _trySkip(WidgetRef ref, String routineId) async {
+    final service = ref.read(notificationServiceProvider);
+    try {
+      await service.skipToday(routineId);
       await service.cancelNotification(notificationId);
     } catch (_) {
       // No platform channel available (e.g. under flutter test).

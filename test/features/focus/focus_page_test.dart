@@ -87,6 +87,59 @@ void main() {
     expect(find.text('오늘 일정이 없어요'), findsOneWidget);
   });
 
+  testWidgets('넘기기 on the current routine skips it for today and falls through to next',
+      (tester) async {
+    final repo = FakePlannerRepository();
+    final nextStart = (_currentMinuteOfNow() + 60).clamp(0, 24 * 60 - 1);
+    await repo.upsertRoutine(Routine(
+      id: 'r1',
+      segmentId: 's1',
+      title: '약 먹기',
+      startMinute: _currentMinuteOfNow(),
+    ));
+    await repo.upsertRoutine(Routine(
+      id: 'r2',
+      segmentId: 's1',
+      title: '나중 할 일',
+      startMinute: nextStart,
+    ));
+
+    await openFocusPage(tester, repo);
+    expect(find.text('약 먹기'), findsOneWidget);
+
+    await tester.tap(find.text('넘기기'));
+    await tester.pump();
+    expect(find.text('약 먹기을(를) 내일로 넘겼어요'), findsOneWidget);
+
+    await tester.pumpAndSettle();
+    expect(find.text('약 먹기'), findsNothing);
+    expect(find.text('다음: 나중 할 일'), findsOneWidget);
+
+    final skips = await repo.watchRoutineSkips().first;
+    expect(skips.single.routineId, 'r1');
+  });
+
+  testWidgets('넘기기 on the next routine skips it for today, with nothing else to show',
+      (tester) async {
+    final repo = FakePlannerRepository();
+    final startMinute = (_currentMinuteOfNow() + 60).clamp(0, 24 * 60 - 1);
+    await repo.upsertRoutine(Routine(
+      id: 'r1',
+      segmentId: 's1',
+      title: '나중 할 일',
+      startMinute: startMinute,
+    ));
+
+    await openFocusPage(tester, repo);
+    expect(find.text('다음: 나중 할 일'), findsOneWidget);
+
+    await tester.tap(find.text('넘기기'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('다음: 나중 할 일'), findsNothing);
+    expect(find.text('오늘 일정이 없어요'), findsOneWidget);
+  });
+
   testWidgets('a routine excluded by repeatDays does not show as current',
       (tester) async {
     final repo = FakePlannerRepository();
@@ -170,9 +223,32 @@ void main() {
     expect(find.textContaining('분 후 시작'), findsOneWidget);
     expect(find.text('퇴근하기'), findsOneWidget);
     expect(find.widgetWithText(CheckboxListTile, '퇴근준비하기'), findsOneWidget);
-    // Not current yet, so no completion action — just a way back.
+    // Not current yet, so no completion action — just a way back, and a
+    // way to skip today's occurrence entirely.
     expect(find.text('모두 완료'), findsNothing);
     expect(find.text('닫기'), findsOneWidget);
+    expect(find.text('넘기기'), findsOneWidget);
+  });
+
+  testWidgets('넘기기 within the lead-warning window skips that routine for today',
+      (tester) async {
+    final repo = FakePlannerRepository();
+    await repo.upsertRoutine(Routine(
+      id: 'r1',
+      segmentId: 's1',
+      title: '퇴근하기',
+      startMinute: (_currentMinuteOfNow() + 5).clamp(0, 24 * 60 - 1),
+      leadWarningMin: 5,
+    ));
+
+    await openFocusPage(tester, repo);
+    expect(find.text('퇴근하기'), findsOneWidget);
+
+    await tester.tap(find.text('넘기기'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('퇴근하기'), findsNothing);
+    expect(find.text('오늘 일정이 없어요'), findsOneWidget);
   });
 
   testWidgets('outside the lead-warning window, the upcoming routine shows no micro-steps',

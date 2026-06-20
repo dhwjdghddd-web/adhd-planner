@@ -174,4 +174,33 @@ void main() {
       expect(postponements, isEmpty);
     });
   });
+
+  group('NotificationService.skipToday', () {
+    test('persists a skip record for the routine', () async {
+      final repo = FakePlannerRepository();
+      await repo.upsertRoutine(_routine(id: 'r1'));
+      final service = NotificationService(repo);
+
+      // cancelNotification's platform-channel calls have no real
+      // implementation under flutter test -- the skip record is already
+      // written before that point, so swallowing the resulting
+      // MissingPluginException is safe (same pattern as postpone above).
+      try {
+        await service.skipToday('r1');
+      } catch (_) {}
+
+      final skips = await repo.watchRoutineSkips().first;
+      expect(skips.single.routineId, 'r1');
+    });
+
+    test('does nothing when the routine no longer exists', () async {
+      final repo = FakePlannerRepository();
+      final service = NotificationService(repo);
+
+      await service.skipToday('missing');
+
+      final skips = await repo.watchRoutineSkips().first;
+      expect(skips, isEmpty);
+    });
+  });
 }

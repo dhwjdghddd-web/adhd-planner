@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:adhd_planner/data/models/completion.dart';
 import 'package:adhd_planner/data/models/routine.dart';
 import 'package:adhd_planner/data/models/routine_postponement.dart';
+import 'package:adhd_planner/data/models/routine_skip.dart';
 import 'package:adhd_planner/data/providers.dart';
 import 'package:adhd_planner/features/focus/alarm_alert_dialog.dart';
 import 'package:adhd_planner/features/focus/focus_page.dart';
@@ -173,5 +174,29 @@ void main() {
     expect(find.byType(AlarmAlertDialog), findsNothing);
     final saved = postponements.last.firstWhere((p) => p.routineId == 'r1');
     expect(saved.offsetMinutes, 5);
+  });
+
+  testWidgets('넘기기 records a skip, closes the dialog, and records no completion',
+      (tester) async {
+    final repo = FakePlannerRepository();
+    await repo.upsertRoutine(Routine(
+      id: 'r1',
+      segmentId: 's1',
+      title: '약 먹기',
+      startMinute: 9 * 60,
+    ));
+    final completions = <List<Completion>>[];
+    repo.watchCompletions().listen(completions.add);
+    final skips = <List<RoutineSkip>>[];
+    repo.watchRoutineSkips().listen(skips.add);
+
+    await openAlarmAlert(tester, repo);
+
+    await tester.tap(find.text('넘기기'));
+    await tester.pumpAndSettle();
+
+    expect(completions.last, isEmpty);
+    expect(find.byType(AlarmAlertDialog), findsNothing);
+    expect(skips.last.single.routineId, 'r1');
   });
 }

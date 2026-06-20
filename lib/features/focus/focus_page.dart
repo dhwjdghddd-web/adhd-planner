@@ -12,6 +12,7 @@ import '../../data/models/micro_step_progress.dart';
 import '../../data/models/routine.dart';
 import '../../data/providers.dart';
 import '../../data/routine_status.dart';
+import '../../services/notification_service.dart';
 import '../memos/quick_add_button.dart';
 import '../memos/quick_add_sheet.dart';
 import '../rewards/streak_badge.dart';
@@ -79,6 +80,7 @@ class _FocusPageState extends ConsumerState<FocusPage> {
   Widget build(BuildContext context) {
     final routinesAsync = ref.watch(routinesProvider);
     final postponements = ref.watch(routinePostponementsProvider).value ?? const [];
+    final skips = ref.watch(routineSkipsProvider).value ?? const [];
     final completions = ref.watch(completionsProvider).value ?? const [];
     final todayKey = DateFormat('yyyy-MM-dd').format(DateTime.now());
     final completedRoutineIds = {
@@ -98,7 +100,10 @@ class _FocusPageState extends ConsumerState<FocusPage> {
                 data: (routines) => _buildContent(
                   context,
                   findRoutineStatus(
-                    applyTodaysPostponements(routines, postponements),
+                    excludeTodaysSkips(
+                      applyTodaysPostponements(routines, postponements),
+                      skips,
+                    ),
                     _currentMinute,
                     _isoWeekday,
                     completedRoutineIds: completedRoutineIds,
@@ -231,29 +236,41 @@ class _FocusPageState extends ConsumerState<FocusPage> {
 
       if (!upcoming) {
         final startTime = TimeGeometry.formatMinute(routine.startMinute);
-        return Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Semantics(
-              label: '다음 할 일: ${routine.title}, $startTime',
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    '다음: ${routine.title}',
-                    style: theme.textTheme.headlineMedium,
-                    textAlign: TextAlign.center,
+        return Column(
+          children: [
+            Expanded(
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Semantics(
+                    label: '다음 할 일: ${routine.title}, $startTime',
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          '다음: ${routine.title}',
+                          style: theme.textTheme.headlineMedium,
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          startTime,
+                          style: theme.textTheme.titleMedium,
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
                   ),
-                  const SizedBox(height: 12),
-                  Text(
-                    startTime,
-                    style: theme.textTheme.titleMedium,
-                    textAlign: TextAlign.center,
-                  ),
-                ],
+                ),
               ),
             ),
-          ),
+            _bottomActions([
+              OutlinedButton(
+                onPressed: () => _skip(routine),
+                child: const Text('넘기기'),
+              ),
+            ]),
+          ],
         );
       }
 
@@ -287,6 +304,10 @@ class _FocusPageState extends ConsumerState<FocusPage> {
             OutlinedButton(
               onPressed: () => Navigator.of(context).pop(),
               child: const Text('닫기'),
+            ),
+            OutlinedButton(
+              onPressed: () => _skip(routine),
+              child: const Text('넘기기'),
             ),
           ]),
         ],
@@ -336,6 +357,10 @@ class _FocusPageState extends ConsumerState<FocusPage> {
             // _toggleMicroStep's autoCompleteWhenAllChecked) -- pressing it
             // marks every micro-step checked too, not just the routine.
             child: const Text('모두 완료'),
+          ),
+          FilledButton.tonal(
+            onPressed: () => _skip(routine),
+            child: const Text('넘기기'),
           ),
         ]),
       ],
@@ -433,5 +458,26 @@ class _FocusPageState extends ConsumerState<FocusPage> {
     }
 
     if (mounted) Navigator.of(context).pop();
+  }
+
+  // "넘기기": skips today's occurrence of [routine] entirely -- it drops
+  // out of both 지금/다음 here and the dial's center summary for the rest
+  // of today (see NotificationService.skipToday), and today's still-armed
+  // alarms for it are cancelled so it doesn't ring later today either.
+  // Stays open (doesn't pop) so the screen can immediately show whatever
+  // comes next, since that's the whole point of pressing it from here.
+  void _skip(Routine routine) {
+    unawaited(_trySkipToday(routine.id));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('${routine.title}을(를) 내일로 넘겼어요')),
+    );
+  }
+
+  Future<void> _trySkipToday(String routineId) async {
+    try {
+      await ref.read(notificationServiceProvider).skipToday(routineId);
+    } catch (_) {
+      // No platform channel available (e.g. under flutter test).
+    }
   }
 }

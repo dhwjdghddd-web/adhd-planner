@@ -6,6 +6,7 @@ import 'models/memo.dart';
 import 'models/micro_step_progress.dart';
 import 'models/routine.dart';
 import 'models/routine_postponement.dart';
+import 'models/routine_skip.dart';
 import 'models/segment.dart';
 import 'repositories/planner_repository.dart';
 
@@ -42,6 +43,10 @@ final microStepProgressProvider = StreamProvider<List<MicroStepProgress>>(
 
 final routinePostponementsProvider = StreamProvider<List<RoutinePostponement>>(
   (ref) => ref.watch(plannerRepositoryProvider).watchRoutinePostponements(),
+);
+
+final routineSkipsProvider = StreamProvider<List<RoutineSkip>>(
+  (ref) => ref.watch(plannerRepositoryProvider).watchRoutineSkips(),
 );
 
 final settingsProvider = StreamProvider<AppSettings>(

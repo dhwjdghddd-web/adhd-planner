@@ -6,6 +6,7 @@ import 'package:adhd_planner/data/models/memo.dart';
 import 'package:adhd_planner/data/models/micro_step_progress.dart';
 import 'package:adhd_planner/data/models/routine.dart';
 import 'package:adhd_planner/data/models/routine_postponement.dart';
+import 'package:adhd_planner/data/models/routine_skip.dart';
 import 'package:adhd_planner/data/models/segment.dart';
 import 'package:adhd_planner/data/repositories/planner_repository.dart';
 
@@ -19,6 +20,7 @@ class FakePlannerRepository implements PlannerRepository {
   final Map<String, Completion> _completions = {};
   final Map<String, MicroStepProgress> _microStepProgress = {};
   final Map<String, RoutinePostponement> _routinePostponements = {};
+  final Map<String, RoutineSkip> _routineSkips = {};
   AppSettings _settings = const AppSettings.defaults();
 
   final _segmentsStream = _ReplayStream<List<Segment>>();
@@ -27,6 +29,7 @@ class FakePlannerRepository implements PlannerRepository {
   final _completionsStream = _ReplayStream<List<Completion>>();
   final _microStepProgressStream = _ReplayStream<List<MicroStepProgress>>();
   final _routinePostponementsStream = _ReplayStream<List<RoutinePostponement>>();
+  final _routineSkipsStream = _ReplayStream<List<RoutineSkip>>();
   final _settingsStream = _ReplayStream<AppSettings>();
 
   FakePlannerRepository() {
@@ -36,6 +39,7 @@ class FakePlannerRepository implements PlannerRepository {
     _completionsStream.add(const []);
     _microStepProgressStream.add(const []);
     _routinePostponementsStream.add(const []);
+    _routineSkipsStream.add(const []);
     _settingsStream.add(_settings);
   }
 
@@ -122,6 +126,15 @@ class FakePlannerRepository implements PlannerRepository {
   Future<void> saveRoutinePostponement(RoutinePostponement p) async {
     _routinePostponements[p.id] = p;
     _routinePostponementsStream.add(_routinePostponements.values.toList());
+  }
+
+  @override
+  Stream<List<RoutineSkip>> watchRoutineSkips() => _routineSkipsStream.stream;
+
+  @override
+  Future<void> saveRoutineSkip(RoutineSkip s) async {
+    _routineSkips[s.id] = s;
+    _routineSkipsStream.add(_routineSkips.values.toList());
   }
 
   @override
