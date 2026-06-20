@@ -19,7 +19,7 @@ import '../routines/routine_editor_page.dart';
 import '../routines/routine_form_page.dart';
 import '../segments/segment_editor_page.dart';
 import '../segments/segment_form_page.dart';
-import '../memos/quick_add_button.dart' show showAppSnackBar;
+import '../memos/quick_add_button.dart' show showAppSnackBar, MultiFabRow, GlobalQuickAddButton;
 import '../settings/settings_page.dart';
 import 'dial_painter.dart';
 
@@ -155,17 +155,18 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
           ),
         ],
       ),
-      // Same shape/corner as the global quick-add FAB (bottom-left, see
-      // app.dart) but mirrored to the opposite corner -- a direct shortcut
-      // to adding a routine, instead of having to go through 루틴 관리 first.
-      floatingActionButton: Semantics(
-        label: '루틴 추가',
-        child: FloatingActionButton(
-          heroTag: 'planner-add-routine',
-          onPressed: () => _openRoutineForm(context),
-          child: const Icon(Icons.add),
+      floatingActionButton: MultiFabRow(
+        left: const GlobalQuickAddButton(),
+        right: Semantics(
+          label: '루틴 추가',
+          child: FloatingActionButton(
+            heroTag: 'planner-add-routine',
+            onPressed: () => _openRoutineForm(context),
+            child: const Icon(Icons.add),
+          ),
         ),
       ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
     );
   }
 }

@@ -73,6 +73,10 @@ class _MemoInboxPageState extends ConsumerState<MemoInboxPage> {
           ),
         ],
       ),
+      floatingActionButton: const MultiFabRow(
+        left: GlobalQuickAddButton(),
+      ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
     );
   }
 }

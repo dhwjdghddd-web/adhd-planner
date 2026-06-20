@@ -32,11 +32,15 @@ class SegmentEditorPage extends ConsumerWidget {
           error: (e, st) => Center(child: Text('오류: $e')),
         ),
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _openForm(context),
-        icon: const Icon(Icons.add),
-        label: const Text('구간 추가'),
+      floatingActionButton: MultiFabRow(
+        left: const GlobalQuickAddButton(),
+        right: FloatingActionButton.extended(
+          onPressed: () => _openForm(context),
+          icon: const Icon(Icons.add),
+          label: const Text('구간 추가'),
+        ),
       ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
     );
   }
 }

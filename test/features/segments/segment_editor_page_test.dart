@@ -66,7 +66,7 @@ void main() {
     await tester.pumpWidget(wrap(repo));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byType(FloatingActionButton));
+    await tester.tap(find.widgetWithText(FloatingActionButton, '구간 추가'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), '오후');
     await tester.pumpAndSettle();

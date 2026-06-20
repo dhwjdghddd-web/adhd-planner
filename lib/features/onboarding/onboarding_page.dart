@@ -6,7 +6,6 @@ import '../../core/constants.dart';
 import '../../data/models/app_settings.dart';
 import '../../data/models/segment.dart';
 import '../../data/providers.dart';
-import '../memos/quick_add_button.dart';
 import '../segments/segments_controller.dart';
 import '../settings/settings_controller.dart';
 
@@ -123,80 +122,78 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
     final theme = Theme.of(context);
     final isLast = _page == _slides.length - 1;
 
-    return SuppressGlobalFab(
-      child: Scaffold(
-        body: SafeArea(
-          child: Column(
-            children: [
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton(
-                  onPressed: () => _finish(withDefaultSegments: false),
-                  child: const Text('건너뛰기'),
-                ),
+    return Scaffold(
+      body: SafeArea(
+        child: Column(
+          children: [
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: () => _finish(withDefaultSegments: false),
+                child: const Text('건너뛰기'),
               ),
-              Expanded(
-                child: PageView(
-                  controller: _pageController,
-                  onPageChanged: (i) => setState(() => _page = i),
-                  children: [
-                    for (final slide in _slides) _SlideView(slide: slide),
-                  ],
-                ),
+            ),
+            Expanded(
+              child: PageView(
+                controller: _pageController,
+                onPageChanged: (i) => setState(() => _page = i),
+                children: [
+                  for (final slide in _slides) _SlideView(slide: slide),
+                ],
               ),
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    for (var i = 0; i < _slides.length; i++)
-                      Container(
-                        margin: const EdgeInsets.symmetric(horizontal: 4),
-                        width: 8,
-                        height: 8,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: i == _page
-                              ? theme.colorScheme.primary
-                              : theme.colorScheme.surfaceContainerHighest,
-                        ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  for (var i = 0; i < _slides.length; i++)
+                    Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 4),
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: i == _page
+                            ? theme.colorScheme.primary
+                            : theme.colorScheme.surfaceContainerHighest,
                       ),
-                  ],
-                ),
+                    ),
+                ],
               ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-                child: Column(
-                  children: [
-                    if (isLast) ...[
-                      SizedBox(
-                        width: double.infinity,
-                        child: FilledButton(
-                          onPressed: () => _finish(withDefaultSegments: true),
-                          child: const Text('기본 구간(오전·오후·저녁) 만들고 시작하기'),
-                        ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+              child: Column(
+                children: [
+                  if (isLast) ...[
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton(
+                        onPressed: () => _finish(withDefaultSegments: true),
+                        child: const Text('기본 구간(오전·오후·저녁) 만들고 시작하기'),
                       ),
-                      const SizedBox(height: 12),
-                      SizedBox(
-                        width: double.infinity,
-                        child: OutlinedButton(
-                          onPressed: () => _finish(withDefaultSegments: false),
-                          child: const Text('그냥 시작하기'),
-                        ),
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton(
+                        onPressed: () => _finish(withDefaultSegments: false),
+                        child: const Text('그냥 시작하기'),
                       ),
-                    ] else
-                      SizedBox(
-                        width: double.infinity,
-                        child: FilledButton(
-                          onPressed: _next,
-                          child: const Text('다음'),
-                        ),
+                    ),
+                  ] else
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton(
+                        onPressed: _next,
+                        child: const Text('다음'),
                       ),
-                  ],
-                ),
+                    ),
+                ],
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

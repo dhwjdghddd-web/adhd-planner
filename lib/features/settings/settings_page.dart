@@ -172,6 +172,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                 ? Center(child: Text('오류: ${settingsAsync.error}'))
                 : _buildBody(settings),
       ),
+      floatingActionButton: const MultiFabRow(
+        left: GlobalQuickAddButton(),
+      ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
     );
   }
 

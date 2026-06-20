@@ -92,99 +92,97 @@ class _FocusPageState extends ConsumerState<FocusPage> {
     final reduceMotion =
         ref.watch(settingsProvider).value?.reduceMotion ?? false;
 
-    return SuppressGlobalFab(
-      child: Scaffold(
-        body: SafeArea(
-          child: Stack(
-            children: [
-              routinesAsync.when(
-                data: (routines) => _buildContent(
-                  context,
-                  findRoutineStatus(
-                    excludeTodaysSkips(
-                      applyTodaysPostponements(routines, postponements),
-                      skips,
-                    ),
-                    _currentMinute,
-                    _isoWeekday,
-                    completedRoutineIds: completedRoutineIds,
+    return Scaffold(
+      body: SafeArea(
+        child: Stack(
+          children: [
+            routinesAsync.when(
+              data: (routines) => _buildContent(
+                context,
+                findRoutineStatus(
+                  excludeTodaysSkips(
+                    applyTodaysPostponements(routines, postponements),
+                    skips,
+                  ),
+                  _currentMinute,
+                  _isoWeekday,
+                  completedRoutineIds: completedRoutineIds,
+                ),
+              ),
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (e, st) => Center(child: Text('오류: $e')),
+            ),
+            Positioned(
+              top: 4,
+              left: 4,
+              child: IconButton(
+                icon: const Icon(Icons.arrow_back),
+                tooltip: '닫기',
+                onPressed: () => Navigator.of(context).pop(),
+              ),
+            ),
+            // The global quick-add FAB is suppressed on this screen (see
+            // SuppressGlobalFab above) and replaced with this one, in the
+            // exact same bottom-left spot and shape as everywhere else —
+            // reached directly through this page's own context rather
+            // than the navigatorKey workaround the global one needs,
+            // since this page is already inside the real Navigator.
+            // _buildContent reserves room for it in the action buttons
+            // below so the two never overlap.
+            Align(
+              alignment: Alignment.bottomLeft,
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Semantics(
+                  label: '빠른 메모 추가',
+                  child: FloatingActionButton(
+                    heroTag: 'focus-quick-add',
+                    onPressed: () => showQuickAddSheet(context),
+                    child: const Icon(Icons.edit_note),
                   ),
                 ),
-                loading: () => const Center(child: CircularProgressIndicator()),
-                error: (e, st) => Center(child: Text('오류: $e')),
               ),
-              Positioned(
-                top: 4,
-                left: 4,
-                child: IconButton(
-                  icon: const Icon(Icons.arrow_back),
-                  tooltip: '닫기',
-                  onPressed: () => Navigator.of(context).pop(),
-                ),
-              ),
-              // The global quick-add FAB is suppressed on this screen (see
-              // SuppressGlobalFab above) and replaced with this one, in the
-              // exact same bottom-left spot and shape as everywhere else —
-              // reached directly through this page's own context rather
-              // than the navigatorKey workaround the global one needs,
-              // since this page is already inside the real Navigator.
-              // _buildContent reserves room for it in the action buttons
-              // below so the two never overlap.
-              Align(
-                alignment: Alignment.bottomLeft,
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Semantics(
-                    label: '빠른 메모 추가',
-                    child: FloatingActionButton(
-                      heroTag: 'focus-quick-add',
-                      onPressed: () => showQuickAddSheet(context),
-                      child: const Icon(Icons.edit_note),
-                    ),
-                  ),
-                ),
-              ),
-              if (_celebrating)
-                Positioned.fill(
-                  child: IgnorePointer(
-                    child: Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        if (!reduceMotion)
-                          Align(
-                            alignment: Alignment.topCenter,
-                            child: ConfettiWidget(
-                              confettiController: _confettiController,
-                              blastDirection: math.pi / 2,
-                              numberOfParticles: 24,
-                              gravity: 0.3,
-                              shouldLoop: false,
-                            ),
+            ),
+            if (_celebrating)
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      if (!reduceMotion)
+                        Align(
+                          alignment: Alignment.topCenter,
+                          child: ConfettiWidget(
+                            confettiController: _confettiController,
+                            blastDirection: math.pi / 2,
+                            numberOfParticles: 24,
+                            gravity: 0.3,
+                            shouldLoop: false,
                           ),
-                        reduceMotion
-                            ? Icon(
-                                Icons.check_circle,
-                                size: 96,
-                                color: theme.colorScheme.primary,
-                              )
-                            : TweenAnimationBuilder<double>(
-                                tween: Tween(begin: 0.4, end: 1.0),
-                                duration: const Duration(milliseconds: 350),
-                                curve: Curves.elasticOut,
-                                builder: (context, scale, child) =>
-                                    Transform.scale(scale: scale, child: child),
-                                child: Icon(
+                        ),
+                      reduceMotion
+                          ? Icon(
+                              Icons.check_circle,
+                              size: 96,
+                              color: theme.colorScheme.primary,
+                            )
+                          : TweenAnimationBuilder<double>(
+                              tween: Tween(begin: 0.4, end: 1.0),
+                              duration: const Duration(milliseconds: 350),
+                              curve: Curves.elasticOut,
+                              builder: (context, scale, child) =>
+                                  Transform.scale(scale: scale, child: child),
+                              child: Icon(
                                   Icons.check_circle,
                                   size: 96,
                                   color: theme.colorScheme.primary,
                                 ),
-                              ),
-                      ],
-                    ),
+                            ),
+                    ],
                   ),
                 ),
-            ],
-          ),
+              ),
+          ],
         ),
       ),
     );

@@ -43,11 +43,15 @@ class RoutineEditorPage extends ConsumerWidget {
           error: (e, st) => Center(child: Text('오류: $e')),
         ),
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _openForm(context, ref),
-        icon: const Icon(Icons.add),
-        label: const Text('루틴 추가'),
+      floatingActionButton: MultiFabRow(
+        left: const GlobalQuickAddButton(),
+        right: FloatingActionButton.extended(
+          onPressed: () => _openForm(context, ref),
+          icon: const Icon(Icons.add),
+          label: const Text('루틴 추가'),
+        ),
       ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
     );
   }
 

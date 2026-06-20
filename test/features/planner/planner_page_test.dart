@@ -53,7 +53,12 @@ void main() {
       (w) => w is CustomPaint && w.painter is DialPainter,
     );
     final dialCenter = tester.getCenter(dialFinder);
-    await tester.tapAt(dialCenter + const Offset(0, -40));
+    final side = tester.getSize(dialFinder).width;
+    final outerR = DialGeometry.outerRadius(side);
+    final laneR = DialGeometry.laneRadius(outerR, 0);
+    final ringOffset = TimeGeometry.pointOnCircle(Offset.zero, laneR, 0);
+
+    await tester.tapAt(dialCenter + ringOffset);
     await tester.pumpAndSettle();
 
     expect(find.byType(SegmentFormPage), findsOneWidget);

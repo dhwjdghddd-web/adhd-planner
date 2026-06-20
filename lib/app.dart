@@ -41,29 +41,7 @@ class App extends ConsumerWidget {
           data: mediaQuery.copyWith(textScaler: TextScaler.linear(settings.fontScale)),
           child: Stack(
             children: [
-              ?child,
-              // snackBarVisible이 true일 동안 스낵바 높이(58 dp)만큼
-              // 위로 AnimatedPadding으로 밀어올린다.
-              // Scaffold FAB(루틴추가)은 fixed 모드로 자동 상승하고,
-              // 전역 메모 FAB도 동일 애니메이션으로 함께 올라간다.
-              ValueListenableBuilder<bool>(
-                valueListenable: snackBarVisible,
-                builder: (context, visible, child) => AnimatedPadding(
-                  duration: const Duration(milliseconds: 250),
-                  curve: visible ? Curves.easeOut : Curves.easeIn,
-                  padding: EdgeInsets.only(bottom: visible ? 58.0 : 0.0),
-                  child: child!,
-                ),
-                child: const SafeArea(
-                  child: Align(
-                    alignment: Alignment.bottomLeft,
-                    child: Padding(
-                      padding: EdgeInsets.all(16),
-                      child: GlobalQuickAddButton(),
-                    ),
-                  ),
-                ),
-              ),
+              child!,
               const _AlarmAlertLauncher(),
               const _ForegroundAlarmWatcher(),
               const _AccountAlarmSync(),
