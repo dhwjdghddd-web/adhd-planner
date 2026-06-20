@@ -1,5 +1,3 @@
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -11,14 +9,11 @@ import 'package:timezone/timezone.dart' as tz;
 
 import '../core/time_geometry.dart';
 import '../data/models/app_settings.dart';
-import '../data/models/completion.dart';
 import '../data/models/routine.dart';
 import '../data/models/routine_postponement.dart';
 import '../data/models/routine_skip.dart';
 import '../data/providers.dart';
-import '../data/repositories/firestore/firestore_planner_repository.dart';
 import '../data/repositories/planner_repository.dart';
-import '../firebase_options.dart';
 
 // v3/v2: base channel ids keep getting bumped because Android notification
 // channels are immutable after creation on a given install — every time a
@@ -30,8 +25,6 @@ const _routineChannelBase = 'routine_v2';
 const _routineChannelName = '루틴 알람';
 const _transitionChannelBase = 'transition_v3';
 const _transitionChannelName = '전환 예고';
-const _actionPostpone = 'postpone';
-const _actionComplete = 'complete';
 
 // USAGE_ALARM is what makes these ring/vibrate through the alarm stream
 // instead of the notification stream — the same reason a normal alarm clock
@@ -248,12 +241,17 @@ AndroidNotificationDetails _androidDetailsFor(ScheduledSpec spec, AppSettings se
       additionalFlags: _insistentFlag,
       timeoutAfter: _transitionRepeatMs,
       // Tapping the body must not silently stop the sound/vibration before
-      // the alert dialog's own 확인/미루기 is pressed -- autoCancel's
+      // the alert dialog's own 확인/미루기/넘기기 is pressed -- autoCancel's
       // default (true) would dismiss (and so stop) it right on tap.
       autoCancel: false,
-      actions: const [
-        AndroidNotificationAction(_actionPostpone, '미루기'),
-      ],
+      // No action buttons by design: every alarm interaction goes through
+      // AlarmAlertDialog (auto-popped in the foreground, fullScreenIntent /
+      // body-tap otherwise), which is the only path that reliably stops the
+      // separate native Vibrator alarm too. A notification action button
+      // taps in a background isolate that can't reach the native channel,
+      // so it would leave the vibration running -- and a '완료' button there
+      // would record a completion, which the redesigned 확인 deliberately
+      // does not (completion is an explicit Focus-screen action).
     );
   }
   return AndroidNotificationDetails(
@@ -276,10 +274,7 @@ AndroidNotificationDetails _androidDetailsFor(ScheduledSpec spec, AppSettings se
     // on an ordinary notification even with USAGE_ALARM set — unconfirmed,
     // worth re-checking once this ships.
     fullScreenIntent: true,
-    actions: const [
-      AndroidNotificationAction(_actionPostpone, '미루기'),
-      AndroidNotificationAction(_actionComplete, '완료'),
-    ],
+    // No action buttons -- see the transition channel's comment above.
   );
 }
 
@@ -597,17 +592,37 @@ class NotificationService {
     final routine = await _findRoutine(_repository, routineId);
     if (routine == null) return;
 
-    final dateKey = DateFormat('yyyy-MM-dd').format(DateTime.now());
+    final now = DateTime.now();
+    final dateKey = DateFormat('yyyy-MM-dd').format(now);
     await _repository.saveRoutineSkip(RoutineSkip(dateKey: dateKey, routineId: routine.id));
 
+    // Slot 2/3 (today's one-off 미루기 reschedules) are always safe to cancel.
     await cancelNotification(notificationIdFor(routine.id, 0, 2));
     await cancelNotification(notificationIdFor(routine.id, 0, 3));
 
-    final now = DateTime.now();
-    if (routine.startMinute > now.hour * 60 + now.minute) {
-      final today = now.weekday;
+    // Slot 0/1 (the permanent weekly recurrence): only cancel an occurrence
+    // that genuinely hasn't fired yet today. Once an occurrence fires it
+    // self-reschedules to next week, so cancelling it then would wrongly
+    // kill next week's, not today's (already-fired) one.
+    final nowMinute = now.hour * 60 + now.minute;
+    final today = now.weekday;
+    if (routine.startMinute > nowMinute) {
       await cancelNotification(notificationIdFor(routine.id, today, 0));
-      await cancelNotification(notificationIdFor(routine.id, today, 1));
+    }
+    // The transition (slot 1) fires at startMinute - leadWarningMin, *earlier*
+    // than the main alarm, so it has to be checked against its own time, not
+    // the main's -- otherwise, in the window between the transition and the
+    // main start, this would cancel a slot-1 alarm that already fired and
+    // rescheduled itself to next week. Restricted to the non-midnight-
+    // wrapping case (transition later today AND before the main): a wrapped
+    // transition (transitionMinute > startMinute) fired the previous evening
+    // and is likewise already rescheduled, so it's left alone.
+    if (routine.leadWarningMin > 0) {
+      final transitionMinute =
+          (routine.startMinute - routine.leadWarningMin) % TimeGeometry.minutesPerDay;
+      if (transitionMinute > nowMinute && transitionMinute < routine.startMinute) {
+        await cancelNotification(notificationIdFor(routine.id, today, 1));
+      }
     }
   }
 
@@ -705,65 +720,25 @@ void handleNotificationResponseBackground(NotificationResponse response) {
   _handleResponse(response);
 }
 
-Future<void> _handleResponse(NotificationResponse response) async {
+// The notifications carry no action buttons (see _androidDetailsFor), so
+// this only ever handles a plain body-tap or the system auto-launching the
+// app via fullScreenIntent -- both arrive as PendingIntent.getActivity in
+// the main isolate, where App's launcher can safely pick up the pending
+// alert. Everything the user can do (확인/미루기/넘기기) happens in
+// AlarmAlertDialog, never on the notification itself.
+void _handleResponse(NotificationResponse response) {
   final payload = response.payload;
   if (payload == null) return;
   final parts = payload.split(':');
   if (parts.length != 2) return;
   final isTransition = parts[0] == 'transition';
   final routineId = parts[1];
-
-  if (response.actionId == _actionPostpone) {
-    // 미루기 is offered on both the lead-warning and the main alarm.
-    await _handlePostpone(routineId);
-  } else if (response.actionId == _actionComplete) {
-    await _handleComplete(routineId);
-  } else if (response.id != null) {
-    // A plain tap, or the system auto-launching the app via
-    // fullScreenIntent -- both arrive as PendingIntent.getActivity (unlike
-    // the action buttons above, which are getBroadcast and so can run in
-    // the background isolate this function might be on), so this always
-    // runs in the main isolate and App's launcher can safely act on it.
-    pendingAlarmAlert.value = PendingAlarmAlert(
-      notificationId: response.id!,
-      routineId: routineId,
-      isTransition: isTransition,
-    );
-  }
-}
-
-// May run in a fresh background isolate with no app state (Android killed
-// the process before delivering this action), so it re-initializes Firebase
-// and resolves the signed-in user itself rather than assuming either is
-// already set up. `Firebase.apps.isEmpty` distinguishes that case from
-// running in the app's existing isolate, where re-initializing would throw
-// a duplicate-app error.
-Future<String?> _resolveUid() async {
-  if (Firebase.apps.isEmpty) {
-    await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-  }
-  final current = FirebaseAuth.instance.currentUser;
-  if (current != null) return current.uid;
-  final restored = await FirebaseAuth.instance
-      .authStateChanges()
-      .firstWhere((u) => u != null)
-      .timeout(const Duration(seconds: 5), onTimeout: () => null);
-  return restored?.uid;
-}
-
-Future<void> _handlePostpone(String routineId) async {
-  final uid = await _resolveUid();
-  if (uid == null) return;
-  final repository = FirestorePlannerRepository(uid);
-  final settings = await repository.watchSettings().first;
-  await NotificationService(repository).postpone(routineId, settings);
-}
-
-Future<void> _handleComplete(String routineId) async {
-  final uid = await _resolveUid();
-  if (uid == null) return;
-  final repository = FirestorePlannerRepository(uid);
-  await repository.setCompletion(Completion.now(routineId));
+  if (response.id == null) return;
+  pendingAlarmAlert.value = PendingAlarmAlert(
+    notificationId: response.id!,
+    routineId: routineId,
+    isTransition: isTransition,
+  );
 }
 
 Future<Routine?> _findRoutine(PlannerRepository repository, String id) async {

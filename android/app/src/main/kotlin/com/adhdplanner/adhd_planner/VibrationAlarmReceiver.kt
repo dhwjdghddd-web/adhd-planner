@@ -6,8 +6,6 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.os.Build
-import android.os.Handler
-import android.os.Looper
 import android.os.VibrationAttributes
 import android.os.VibrationEffect
 import android.os.Vibrator
@@ -84,22 +82,52 @@ class VibrationAlarmReceiver : BroadcastReceiver() {
 
         private fun startVibration(context: Context, pattern: LongArray, durationMs: Long) {
             val vibrator = vibratorFor(context)
-            // repeatIndex 0 (not -1): loops the whole pattern from the
-            // start, matching the notification channel's own INSISTENT
-            // repeat-until-dismissed behaviour, with the postDelayed below
-            // as this path's equivalent of timeoutAfter.
+            // A *finite* waveform sized to fill durationMs, played once
+            // (repeatIndex -1) -- NOT an infinitely-repeating waveform
+            // (repeatIndex 0) stopped by a delayed Handler callback. A
+            // BroadcastReceiver's process can be killed the moment
+            // onReceive() returns (routine when the screen is off / app
+            // killed), which would never run that callback -- leaving an
+            // infinite vibration buzzing until reboot. A finite effect stops
+            // on its own with no callback needed; cancel() (below) still
+            // works for an explicit 확인/미루기/넘기기 stop.
+            val waveform = if (durationMs > 0L) finitePattern(pattern, durationMs) else pattern
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 val attrs = VibrationAttributes.Builder()
                     .setUsage(VibrationAttributes.USAGE_ALARM)
                     .build()
-                vibrator.vibrate(VibrationEffect.createWaveform(pattern, 0), attrs)
+                vibrator.vibrate(VibrationEffect.createWaveform(waveform, -1), attrs)
             } else {
                 @Suppress("DEPRECATION")
-                vibrator.vibrate(VibrationEffect.createWaveform(pattern, 0))
+                vibrator.vibrate(VibrationEffect.createWaveform(waveform, -1))
             }
-            if (durationMs > 0L) {
-                Handler(Looper.getMainLooper()).postDelayed({ vibrator.cancel() }, durationMs)
+        }
+
+        // Repeats [pattern]'s buzz cycle (everything after its leading
+        // pause at index 0) until the total duration reaches [durationMs],
+        // so the resulting one-shot waveform lasts about as long as the old
+        // infinite-loop-for-durationMs approach did -- but stops by itself.
+        private fun finitePattern(pattern: LongArray, durationMs: Long): LongArray {
+            if (pattern.size < 2) return pattern
+            // Guard against a degenerate pattern whose buzz cycle sums to 0,
+            // which would never reach durationMs and loop forever here.
+            var cycleSum = 0L
+            for (i in 1 until pattern.size) cycleSum += pattern[i]
+            if (cycleSum <= 0L) return pattern
+
+            val out = ArrayList<Long>(pattern.size)
+            var total = 0L
+            for (v in pattern) {
+                out.add(v)
+                total += v
             }
+            while (total < durationMs) {
+                for (i in 1 until pattern.size) {
+                    out.add(pattern[i])
+                    total += pattern[i]
+                }
+            }
+            return out.toLongArray()
         }
 
         private fun vibratorFor(context: Context): Vibrator {

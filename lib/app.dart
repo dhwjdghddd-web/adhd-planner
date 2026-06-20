@@ -195,7 +195,16 @@ class _ForegroundAlarmWatcherState extends ConsumerState<_ForegroundAlarmWatcher
     final routines = ref.read(routinesProvider).value;
     if (routines == null) return;
     final postponements = ref.read(routinePostponementsProvider).value ?? const [];
-    final effective = applyTodaysPostponements(routines, postponements, now: now);
+    final skips = ref.read(routineSkipsProvider).value ?? const [];
+    // excludeTodaysSkips so a routine the user already 넘기기'd today doesn't
+    // still auto-pop the dialog at its original time -- skipToday cancels
+    // its OS notification, but this foreground watcher is a separate path
+    // and would otherwise fire on the bare startMinute match regardless.
+    final effective = excludeTodaysSkips(
+      applyTodaysPostponements(routines, postponements, now: now),
+      skips,
+      now: now,
+    );
     final dateKey = DateFormat('yyyy-MM-dd').format(now);
 
     for (final routine in effective) {
