@@ -194,8 +194,10 @@ class _SegmentFormPageState extends ConsumerState<SegmentFormPage> {
               spacing: 12,
               runSpacing: 12,
               children: kSegmentPalette.map((color) {
+                final brightness = Theme.of(context).brightness;
+                final displayColor = getEffectiveSegmentColor(color, brightness);
                 final value = color.toARGB32();
-                final selected = value == _colorValue;
+                final selected = getEffectiveSegmentColor(Color(_colorValue), brightness).toARGB32() == displayColor.toARGB32();
                 return Semantics(
                   label: '색상 선택',
                   selected: selected,
@@ -205,7 +207,7 @@ class _SegmentFormPageState extends ConsumerState<SegmentFormPage> {
                       width: kMinTapTarget,
                       height: kMinTapTarget,
                       decoration: BoxDecoration(
-                        color: color,
+                        color: displayColor,
                         shape: BoxShape.circle,
                         border: selected
                             ? Border.all(

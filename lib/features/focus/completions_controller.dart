@@ -16,7 +16,7 @@ class CompletionsController {
 
   Future<void> complete(String routineId, {DateTime? now}) {
     return _ref
-        .read(plannerRepositoryProvider)
+        .read(plannerRepositoryProvider)!
         .setCompletion(Completion.now(routineId, at: now));
   }
 }

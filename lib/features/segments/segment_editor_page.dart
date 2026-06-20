@@ -156,7 +156,7 @@ class _SegmentTile extends StatelessWidget {
         child: ListTile(
           onTap: onTap,
           leading: CircleAvatar(
-            backgroundColor: segment.color,
+            backgroundColor: segment.themeColor(context),
             child: Icon(iconForKey(segment.iconKey), color: Colors.white),
           ),
           title: Text(segment.name),

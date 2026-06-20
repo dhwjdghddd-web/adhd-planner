@@ -272,7 +272,7 @@ class _RoutineFormPageState extends ConsumerState<RoutineFormPage> {
                 children: [
                   Icon(
                     iconForKey(autoSegment?.iconKey ?? ''),
-                    color: autoSegment?.color ?? theme.disabledColor,
+                    color: autoSegment?.themeColor(context) ?? theme.disabledColor,
                     size: 20,
                   ),
                   const SizedBox(width: 8),

@@ -25,12 +25,12 @@ class MemosController {
       source: source,
       createdAtIso: DateTime.now().toIso8601String(),
     );
-    return _ref.read(plannerRepositoryProvider).addMemo(memo);
+    return _ref.read(plannerRepositoryProvider)!.addMemo(memo);
   }
 
   Future<void> setReviewed(Memo memo, bool reviewed) {
-    return _ref.read(plannerRepositoryProvider).updateMemo(memo.copyWith(reviewed: reviewed));
+    return _ref.read(plannerRepositoryProvider)!.updateMemo(memo.copyWith(reviewed: reviewed));
   }
 
-  Future<void> delete(String id) => _ref.read(plannerRepositoryProvider).deleteMemo(id);
+  Future<void> delete(String id) => _ref.read(plannerRepositoryProvider)!.deleteMemo(id);
 }

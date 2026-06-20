@@ -18,6 +18,7 @@ import '../memos/quick_add_sheet.dart';
 import '../rewards/streak_badge.dart';
 import 'completions_controller.dart';
 import 'micro_step_progress_controller.dart';
+import 'waiting_illustration.dart';
 
 /// '지금' focus screen: shows exactly one routine — whichever started most
 /// recently and hasn't been superseded by a later one yet — full-screen
@@ -216,8 +217,10 @@ class _FocusPageState extends ConsumerState<FocusPage> {
     final routine = status.routine;
 
     if (routine == null) {
-      return Center(
-        child: Text('오늘 일정이 없어요', style: theme.textTheme.titleMedium),
+      final reduceMotion = ref.watch(settingsProvider).value?.reduceMotion ?? false;
+      return WaitingIllustration(
+        reduceMotion: reduceMotion,
+        message: '오늘 일정이 없어요\n지금은 편히 쉬셔도 좋습니다.',
       );
     }
 
@@ -236,32 +239,13 @@ class _FocusPageState extends ConsumerState<FocusPage> {
 
       if (!upcoming) {
         final startTime = TimeGeometry.formatMinute(routine.startMinute);
+        final reduceMotion = ref.watch(settingsProvider).value?.reduceMotion ?? false;
         return Column(
           children: [
             Expanded(
-              child: Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Semantics(
-                    label: '다음 할 일: ${routine.title}, $startTime',
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          '다음: ${routine.title}',
-                          style: theme.textTheme.headlineMedium,
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 12),
-                        Text(
-                          startTime,
-                          style: theme.textTheme.titleMedium,
-                          textAlign: TextAlign.center,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
+              child: WaitingIllustration(
+                reduceMotion: reduceMotion,
+                message: '다음: ${routine.title}\n$startTime',
               ),
             ),
             _bottomActions([
@@ -358,7 +342,7 @@ class _FocusPageState extends ConsumerState<FocusPage> {
             // marks every micro-step checked too, not just the routine.
             child: const Text('모두 완료'),
           ),
-          FilledButton.tonal(
+          OutlinedButton(
             onPressed: () => _skip(routine),
             child: const Text('넘기기'),
           ),
@@ -468,9 +452,7 @@ class _FocusPageState extends ConsumerState<FocusPage> {
   // comes next, since that's the whole point of pressing it from here.
   void _skip(Routine routine) {
     unawaited(_trySkipToday(routine.id));
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('${routine.title}을(를) 내일로 넘겼어요')),
-    );
+    showAppSnackBar(context, Text('${routine.title}을(를) 내일로 넘겼어요'));
   }
 
   Future<void> _trySkipToday(String routineId) async {

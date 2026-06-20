@@ -17,6 +17,7 @@ Segment _segment(String id, int start, int end) => Segment(
 DialPainter _painter({
   required List<Segment> segments,
   required int currentMinute,
+  Brightness brightness = Brightness.light,
 }) {
   return DialPainter(
     segments: segments,
@@ -25,6 +26,7 @@ DialPainter _painter({
     tickColor: Colors.black,
     labelStyle: const TextStyle(fontSize: 11),
     handColor: Colors.red,
+    brightness: brightness,
   );
 }
 

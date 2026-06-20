@@ -8,7 +8,7 @@ import '../../data/models/app_settings.dart';
 import '../../data/models/routine.dart';
 import '../../data/providers.dart';
 import '../../services/notification_service.dart';
-import '../memos/quick_add_button.dart' show appNavigatorKey, fabAvoidingBottomInset;
+import '../memos/quick_add_button.dart' show appNavigatorKey, showAppSnackBar;
 import 'focus_page.dart';
 
 /// Small dialog popped over whatever's on screen — not a full page — when
@@ -59,26 +59,102 @@ class AlarmAlertDialog extends ConsumerWidget {
       );
     }
 
-    return AlertDialog(
-      icon: const Icon(Icons.alarm),
-      title: Text(routine.title),
-      content: Text(
-        isTransition
-            ? '${TimeGeometry.formatMinute(routine.startMinute)}에 시작해요'
-            : TimeGeometry.formatMinute(routine.startMinute),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => _skip(context, ref, routine!),
-          child: const Text('넘기기'),
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        // 1. Centered Alert Dialog
+        Align(
+          alignment: Alignment.center,
+          child: AlertDialog(
+            icon: Icon(
+              Icons.access_time_filled,
+              size: 40,
+              color: theme.colorScheme.primary,
+            ),
+            title: Text(
+              routine.title,
+              style: theme.textTheme.headlineMedium,
+              textAlign: TextAlign.center,
+            ),
+            content: Text(
+              isTransition
+                  ? '${TimeGeometry.formatMinute(routine.startMinute)}에 시작해요'
+                  : TimeGeometry.formatMinute(routine.startMinute),
+              style: theme.textTheme.titleMedium?.copyWith(
+                color: isDark ? const Color(0xFFA6B2BE) : const Color(0xFF525C68),
+              ),
+              textAlign: TextAlign.center,
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => _skip(context, ref, routine!),
+                child: const Text('넘기기'),
+              ),
+              TextButton(
+                onPressed: () => _postpone(context, ref, routine!),
+                child: const Text('미루기'),
+              ),
+              FilledButton(
+                onPressed: () => _confirm(context, ref),
+                child: const Text('확인'),
+              ),
+            ],
+          ),
         ),
-        TextButton(
-          onPressed: () => _postpone(context, ref, routine!),
-          child: const Text('미루기'),
-        ),
-        FilledButton(
-          onPressed: () => _confirm(context, ref),
-          child: const Text('확인'),
+        
+        // 2. Floating Top Banner
+        Positioned(
+          top: 56,
+          left: 16,
+          right: 16,
+          child: Material(
+            color: Colors.transparent,
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF1E2630) : const Color(0xFFFFFFFF),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: theme.colorScheme.outline.withValues(alpha: 0.15),
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.12),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.notifications_active,
+                      color: theme.colorScheme.primary,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 10),
+                    Flexible(
+                      child: Text(
+                        isTransition
+                            ? '${routine.title} 곧 시작할 시간이에요'
+                            : '${routine.title} 지금 시작할 시간이에요',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: isDark ? const Color(0xFFE9EEF3) : const Color(0xFF171C22),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
         ),
       ],
     );
@@ -133,16 +209,7 @@ class AlarmAlertDialog extends ConsumerWidget {
   void _showFeedback(String message) {
     final context = appNavigatorKey.currentContext;
     if (context == null) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        behavior: SnackBarBehavior.floating,
-        // Clears the global bottom-left quick-add FAB the same way the
-        // body padding on every other screen does -- a default
-        // full-width/fixed SnackBar would sit right under it.
-        margin: EdgeInsets.fromLTRB(fabAvoidingBottomInset(context), 0, 16, 16),
-      ),
-    );
+    showAppSnackBar(context, Text(message));
   }
 
   Future<void> _tryCancelNotification(WidgetRef ref) async {

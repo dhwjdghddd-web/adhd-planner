@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -8,6 +7,7 @@ import 'package:permission_handler/permission_handler.dart';
 import '../../data/models/app_settings.dart';
 import '../../data/providers.dart';
 import '../../services/alarm_sound_picker.dart';
+import '../../services/auth_service.dart';
 import '../../services/notification_service.dart';
 import '../memos/quick_add_button.dart';
 import 'settings_controller.dart';
@@ -28,10 +28,23 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   PermissionStatus? _exactAlarm;
   PermissionStatus? _microphone;
 
+  /// 스크롤 위치를 State에서 관리: 계정 전환으로 화면이 리빌드돼도 위치 유지.
+  final ScrollController _scrollController = ScrollController();
+
+  /// 마지막으로 성공적으로 받은 설정값. 계정 전환 중 loading 구간에
+  /// 이 값을 그대로 표시해 깜빡임(loading → data)을 막는다.
+  AppSettings? _lastKnownSettings;
+
   @override
   void initState() {
     super.initState();
     _refreshPermissions();
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
   }
 
   // Defensive: on a real device a failed platform call here would just be
@@ -128,6 +141,14 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   Widget build(BuildContext context) {
     final settingsAsync = ref.watch(settingsProvider);
 
+    // 새 값이 도착하면 캐시를 갱신한다.
+    final incoming = settingsAsync.valueOrNull;
+    if (incoming != null) _lastKnownSettings = incoming;
+
+    // 표시할 설정값: 캐시(이전 값)를 우선 사용 → loading 구간에도 화면이
+    // 그대로 유지되어 깜빡임이 없다.
+    final settings = _lastKnownSettings;
+
     return Scaffold(
       appBar: AppBar(title: const Text('설정')),
       // Shrinks the visible body area itself (rather than padding inside
@@ -136,30 +157,75 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       // before scrolling.
       body: Padding(
         padding: EdgeInsets.only(bottom: fabAvoidingBottomInset(context)),
-        child: settingsAsync.when(
-          data: _buildBody,
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (e, st) => Center(child: Text('오류: $e')),
-        ),
+        child: settings == null
+            // 최초 로드 시에만 스피너 표시 (캐시가 없을 때)
+            ? settingsAsync.when(
+                data: (s) {
+                  _lastKnownSettings = s;
+                  return _buildBody(s);
+                },
+                loading: () => const Center(child: CircularProgressIndicator()),
+                error: (e, st) => Center(child: Text('오류: $e')),
+              )
+            // 캐시가 있으면 에러가 아닌 한 항상 본문을 표시
+            : settingsAsync.hasError
+                ? Center(child: Text('오류: ${settingsAsync.error}'))
+                : _buildBody(settings),
       ),
     );
   }
 
-  // Defensive for the same reason as _safeStatus: under `flutter test` there
-  // is no Firebase app at all, so FirebaseAuth.instance itself throws.
-  User? _currentUser() {
-    try {
-      return FirebaseAuth.instance.currentUser;
-    } catch (_) {
-      return null;
+  Future<void> _linkGoogle() async {
+    final outcome = await ref.read(authServiceProvider).linkGoogle();
+    if (!mounted) return;
+    switch (outcome) {
+      case AuthOutcome.linked:
+        showAppSnackBar(context, const Text('구글 계정이 연결됐어요.'));
+      case AuthOutcome.signedIn:
+        showAppSnackBar(context,
+            const Text('기존 구글 계정으로 로그인했어요. 그 계정의 데이터를 불러옵니다.'));
+      case AuthOutcome.cancelled:
+        break; // 조용히 무시
+      case AuthOutcome.failed:
+        showAppSnackBar(context, const Text('연결에 실패했어요. 다시 시도해 주세요.'));
     }
   }
 
+  // 로그아웃하면 이 기기는 빈 익명 계정으로 돌아갑니다(데이터는 계정에 남아
+  // 있고 다시 로그인하면 복구). 확인 다이얼로그로 실수로 누른 경우를 막는다.
+  Future<void> _signOut() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('로그아웃'),
+        content: const Text('로그아웃하면 이 기기는 빈 익명 계정으로 시작해요.\n'
+            '같은 구글 계정으로 다시 연결하면 데이터가 복구돼요.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('로그아웃'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    await ref.read(authServiceProvider).signOutToAnonymous();
+    if (!mounted) return;
+    showAppSnackBar(context, const Text('로그아웃했어요.'));
+  }
+
   Widget _buildBody(AppSettings settings) {
-    final user = _currentUser();
+    final user = ref.watch(firebaseUserProvider).valueOrNull;
+    final isSignedIn = user != null && !user.isAnonymous;
     final controller = ref.read(settingsControllerProvider);
 
+    // ScrollController를 State에서 유지하여 리빌드 시 스크롤 위치 보존.
     return ListView(
+      controller: _scrollController,
       children: [
         const _SectionHeader('권한'),
         _PermissionRow(
@@ -262,15 +328,25 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         ),
         const Divider(),
         const _SectionHeader('계정'),
-        ListTile(
-          leading: const Icon(Icons.person_outline),
-          title: Text(user == null || user.isAnonymous ? '익명으로 사용 중' : '로그인됨'),
-          subtitle: const Text('Google 계정으로 업그레이드하면 기기를 바꿔도 데이터가 유지돼요.'),
-          trailing: OutlinedButton(
-            onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Google 로그인은 추후 지원될 예정입니다.')),
-            ),
-            child: const Text('업그레이드'),
+        // 계정 전환 중에는 AnimatedSwitcher로 자연스럽게 전환
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 300),
+          child: ListTile(
+            key: ValueKey(isSignedIn),
+            leading: const Icon(Icons.person_outline),
+            title: Text(isSignedIn ? (user.email ?? '로그인됨') : '익명으로 사용 중'),
+            subtitle: Text(isSignedIn
+                ? '다른 기기에서 같은 구글 계정으로 로그인하면 이 데이터가 따라와요.'
+                : 'Google 계정을 연결하면 기기를 바꿔도 데이터가 유지돼요.'),
+            trailing: isSignedIn
+                ? OutlinedButton(
+                    onPressed: _signOut,
+                    child: const Text('로그아웃'),
+                  )
+                : OutlinedButton(
+                    onPressed: _linkGoogle,
+                    child: const Text('Google 연결'),
+                  ),
           ),
         ),
       ],

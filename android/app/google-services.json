@@ -12,7 +12,20 @@
           "package_name": "com.adhdplanner.adhd_planner"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "704421480832-33j64fpd88vh54k16dg8vkgbe4mes2b9.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.adhdplanner.adhd_planner",
+            "certificate_hash": "3224a8930024626468069b4cf95dca54ff8dffed"
+          }
+        },
+        {
+          "client_id": "704421480832-2qt5sg4pmob78gu06di6fjot8fjmjtp1.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyAygAJi-WmkoXlvdkWlJDeK5ORgQoLPycc"
@@ -20,7 +33,12 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "704421480832-2qt5sg4pmob78gu06di6fjot8fjmjtp1.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }

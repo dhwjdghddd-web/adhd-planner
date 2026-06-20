@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/constants.dart';
 import '../../core/time_geometry.dart';
 
 /// A user-defined slice of the day (e.g. "오전", "퇴근 후") rendered as a
@@ -27,6 +28,10 @@ class Segment {
   });
 
   Color get color => Color(colorValue);
+
+  Color themeColor(BuildContext context) {
+    return getEffectiveSegmentColor(Color(colorValue), Theme.of(context).brightness);
+  }
 
   int get lengthMinutes => TimeGeometry.lengthMinutes(startMinute, endMinute);
 

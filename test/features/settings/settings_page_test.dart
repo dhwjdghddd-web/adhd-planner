@@ -118,14 +118,18 @@ void main() {
     expect(settingsLog.last.reduceMotion, true);
   });
 
-  testWidgets('the account upgrade button shows a coming-soon snackbar', (tester) async {
+  testWidgets('the account section renders as anonymous with no Firebase app initialized',
+      (tester) async {
+    // Under flutter test there's no Firebase app at all, so
+    // firebaseUserProvider's stream errors out -- the account section should
+    // degrade to the anonymous state rather than crash. Real sign-in flow is
+    // platform-dependent and isn't exercised by widget tests (see
+    // GOOGLE_AUTH_PLAN.md §9).
     await growSurface(tester);
     await tester.pumpWidget(wrap(FakePlannerRepository()));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('업그레이드'));
-    await tester.pumpAndSettle();
-
-    expect(find.textContaining('추후 지원될 예정'), findsOneWidget);
+    expect(find.text('익명으로 사용 중'), findsOneWidget);
+    expect(find.text('Google 연결'), findsOneWidget);
   });
 }

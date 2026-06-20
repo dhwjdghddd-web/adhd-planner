@@ -46,3 +46,8 @@ app.*.map.json
 
 # Claude Code local settings (machine-specific, not project config)
 .claude/
+
+logcat_capture.txt
+*.log
+window_dump.xml
+screen*.png

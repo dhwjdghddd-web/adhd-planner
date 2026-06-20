@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
+import '../../core/theme.dart';
 import '../../core/time_geometry.dart';
 import '../../data/models/routine.dart';
 import '../../data/models/segment.dart';
@@ -18,6 +19,7 @@ import '../routines/routine_editor_page.dart';
 import '../routines/routine_form_page.dart';
 import '../segments/segment_editor_page.dart';
 import '../segments/segment_form_page.dart';
+import '../memos/quick_add_button.dart' show showAppSnackBar;
 import '../settings/settings_page.dart';
 import 'dial_painter.dart';
 
@@ -57,9 +59,7 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
   void _openRoutineForm(BuildContext context) {
     final segments = ref.read(segmentsProvider).value ?? const <Segment>[];
     if (segments.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('먼저 구간을 만들어주세요.')));
+      showAppSnackBar(context, const Text('먼저 구간을 만들어주세요.'));
       return;
     }
     Navigator.of(
@@ -232,8 +232,9 @@ class _Dial extends StatelessWidget {
                         currentMinute: currentMinute,
                         tickColor: theme.colorScheme.onSurface,
                         labelStyle: theme.textTheme.labelSmall ??
-                            const TextStyle(fontSize: 11),
-                        handColor: theme.colorScheme.error,
+                            const TextStyle(fontSize: 12, fontFamily: 'Pretendard'),
+                        handColor: theme.colorScheme.primary,
+                        brightness: Theme.of(context).brightness,
                         completedRoutineIds: completedRoutineIds,
                       ),
                     ),
@@ -253,6 +254,7 @@ class _Dial extends StatelessWidget {
     final outerR = DialGeometry.outerRadius(side);
     final lanes = DialGeometry.assignLanes(segments);
 
+    // 루틴 마커 hit-test: 마커 중심 ±(markerRadius+10) 이내.
     final tappedRoutine = _nearestRoutine(center, local, outerR, lanes);
     if (tappedRoutine != null) {
       Navigator.of(context).push(
@@ -261,8 +263,9 @@ class _Dial extends StatelessWidget {
       return;
     }
 
-    final minute = TimeGeometry.offsetToMinute(center, local);
-    final tappedSegment = _nearestSegment(segments, minute);
+    // 구간 호(arc) hit-test: 탭 좌표가 해당 구간의 lane 반지름 위에 있고
+    // 각도도 구간 범위 안에 있어야만 수정 화면을 연다.
+    final tappedSegment = _segmentAtPoint(center, local, outerR, lanes);
     if (tappedSegment != null) {
       Navigator.of(context).push(
         MaterialPageRoute(builder: (_) => SegmentFormPage(existing: tappedSegment)),
@@ -301,32 +304,33 @@ class _Dial extends StatelessWidget {
     return null;
   }
 
-  Segment? _nearestSegment(List<Segment> segments, int minute) {
+  /// 탭 좌표가 구간 호(arc) 위에 정확히 있는지 검사한다.
+  ///
+  /// 조건 두 가지를 모두 만족해야 구간을 반환한다:
+  /// 1. 탭 지점의 중심 거리가 해당 구간 lane의 반지름 ±(ringThickness/2 + 여유 4px) 이내
+  /// 2. 탭 지점의 각도(분 환산)가 구간 startMinute~endMinute 범위 안에 있음
+  ///
+  /// 두 조건 중 하나라도 벗어나면 null을 반환하므로, 구간 밖 빈 영역을 탭해도
+  /// 수정 화면이 열리지 않는다.
+  Segment? _segmentAtPoint(
+      Offset center, Offset tapPoint, double outerR, Map<String, int> lanes) {
+    final tapDist = (tapPoint - center).distance;
+    const tolerance = DialGeometry.ringThickness / 2 + 4;
+
     for (final segment in segments) {
+      final lane = lanes[segment.id] ?? 0;
+      final laneR = DialGeometry.laneRadius(outerR, lane);
+
+      // 반지름 거리 검사.
+      if ((tapDist - laneR).abs() > tolerance) continue;
+
+      // 각도(분) 검사: containsMinute로 wrap-around 처리.
+      final minute = TimeGeometry.offsetToMinute(center, tapPoint);
       if (segment.containsMinute(minute)) return segment;
     }
-    if (segments.isEmpty) return null;
-
-    Segment? nearest;
-    var bestDistance = TimeGeometry.minutesPerDay;
-    for (final segment in segments) {
-      final distance = math.min(
-        _wrapDistance(minute, segment.startMinute),
-        _wrapDistance(minute, segment.endMinute),
-      );
-      if (distance < bestDistance) {
-        bestDistance = distance;
-        nearest = segment;
-      }
-    }
-    return nearest;
+    return null;
   }
 
-  int _wrapDistance(int a, int b) {
-    final forward = TimeGeometry.lengthMinutes(a, b);
-    final backward = TimeGeometry.lengthMinutes(b, a);
-    return math.min(forward, backward);
-  }
 }
 
 class _CenterSummary extends StatelessWidget {
@@ -340,19 +344,27 @@ class _CenterSummary extends StatelessWidget {
     final theme = Theme.of(context);
     final routine = status.routine;
 
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Container(
       width: 160,
       height: 160,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: theme.colorScheme.surface,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.08),
-            blurRadius: 12,
-          ),
-        ],
+        color: AppTheme.surface3(context),
+        border: isDark
+            ? null
+            : Border.all(color: const Color(0xFFE4E9EF), width: 1),
+        boxShadow: isDark
+            ? null
+            : [
+                BoxShadow(
+                  color: const Color(0xFF141E32).withValues(alpha: 0.07),
+                  blurRadius: 3,
+                  offset: const Offset(0, 1),
+                ),
+              ],
       ),
       // This circle has a fixed physical size (it sits inside the dial's own
       // geometry), so it can't grow with the user's font-size setting the
@@ -398,7 +410,7 @@ class _CenterSummary extends StatelessWidget {
                 ],
               ],
               const SizedBox(height: 8),
-              FilledButton.tonal(
+              FilledButton(
                 onPressed: () => Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const FocusPage()),
                 ),

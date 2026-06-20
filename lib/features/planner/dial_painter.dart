@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../../core/constants.dart';
 import '../../core/time_geometry.dart';
 import '../../data/models/routine.dart';
 import '../../data/models/segment.dart';
@@ -12,14 +13,14 @@ import '../segments/segment_icons.dart';
 class DialGeometry {
   const DialGeometry._();
 
-  static const double ringThickness = 28;
+  static const double ringThickness = 24;
   static const double laneGap = 6;
   static const double tickLength = 10;
-  static const double routineMarkerRadius = 11;
+  static const double routineMarkerRadius = 17; // Diameter 34
 
   /// Outer radius of the first (outermost) segment ring for a dial that
   /// fills a square of [side] pixels.
-  static double outerRadius(double side) => side / 2 - 28;
+  static double outerRadius(double side) => side / 2 - 24;
 
   static double laneRadius(double outerR, int lane) =>
       outerR - lane * (ringThickness + laneGap);
@@ -54,7 +55,7 @@ class DialGeometry {
 
 /// Paints the 24h circular dial: outer rim, hour ticks + labels, coloured
 /// segment arcs (overlapping segments pushed onto inner lanes), routine
-/// markers, and the red current-time hand.
+/// markers, and the primary current-time hand.
 class DialPainter extends CustomPainter {
   DialPainter({
     required this.segments,
@@ -63,6 +64,7 @@ class DialPainter extends CustomPainter {
     required this.tickColor,
     required this.labelStyle,
     required this.handColor,
+    required this.brightness,
     this.completedRoutineIds = const {},
   }) : _lanes = DialGeometry.assignLanes(segments);
 
@@ -72,6 +74,7 @@ class DialPainter extends CustomPainter {
   final Color tickColor;
   final TextStyle labelStyle;
   final Color handColor;
+  final Brightness brightness;
   final Set<String> completedRoutineIds;
 
   final Map<String, int> _lanes;
@@ -81,6 +84,7 @@ class DialPainter extends CustomPainter {
     final center = Offset(size.width / 2, size.height / 2);
     final outerR = DialGeometry.outerRadius(math.min(size.width, size.height));
 
+    _paintTracks(canvas, center, outerR);
     _paintRim(canvas, center, outerR);
     _paintTicks(canvas, center, outerR);
     _paintSegmentArcs(canvas, center, outerR);
@@ -88,38 +92,75 @@ class DialPainter extends CustomPainter {
     _paintHand(canvas, center, outerR);
   }
 
+  void _paintTracks(Canvas canvas, Offset center, double outerR) {
+    final trackPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = DialGeometry.ringThickness
+      ..color = tickColor.withValues(alpha: 0.05);
+
+    final outlinePaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.0
+      ..color = tickColor.withValues(alpha: 0.12);
+
+    final lanesCount = _lanes.values.isEmpty ? 1 : _lanes.values.reduce(math.max) + 1;
+    for (var lane = 0; lane < lanesCount; lane++) {
+      final radius = DialGeometry.laneRadius(outerR, lane);
+      // Main track body
+      canvas.drawCircle(center, radius, trackPaint);
+      // Inner outline
+      canvas.drawCircle(center, radius - DialGeometry.ringThickness / 2, outlinePaint);
+      // Outer outline
+      canvas.drawCircle(center, radius + DialGeometry.ringThickness / 2, outlinePaint);
+    }
+  }
+
   void _paintRim(Canvas canvas, Offset center, double outerR) {
     final rimPaint = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5
-      ..color = tickColor.withValues(alpha: 0.4);
+      ..strokeWidth = 1.0
+      ..color = tickColor.withValues(alpha: 0.15);
     canvas.drawCircle(center, outerR + DialGeometry.ringThickness / 2 + 4, rimPaint);
   }
 
   void _paintTicks(Canvas canvas, Offset center, double outerR) {
     final tickRadius = outerR + DialGeometry.ringThickness / 2 + 4;
-    final tickPaint = Paint()
+
+    // 1. Dashed ring effect using fine dots/dashes
+    final dashPaint = Paint()
       ..style = PaintingStyle.stroke
-      ..color = tickColor;
+      ..strokeWidth = 1.0
+      ..color = tickColor.withValues(alpha: 0.2);
 
-    for (var hour = 0; hour < 24; hour++) {
+    // Draw small dashes every 15 minutes
+    for (var min = 0; min < TimeGeometry.minutesPerDay; min += 15) {
+      final inner = TimeGeometry.pointOnCircle(center, tickRadius - 1.5, min);
+      final outer = TimeGeometry.pointOnCircle(center, tickRadius + 1.5, min);
+      canvas.drawLine(inner, outer, dashPaint);
+    }
+
+    // 2. 4 major ticks: 0, 6, 12, 18
+    final majorPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.5
+      ..color = tickColor.withValues(alpha: 0.5);
+
+    final majorHours = [0, 6, 12, 18];
+    for (final hour in majorHours) {
       final minute = hour * 60;
-      final isMajor = hour % 6 == 0;
-      tickPaint.strokeWidth = isMajor ? 2.5 : 1.2;
       final inner = TimeGeometry.pointOnCircle(
-          center, tickRadius - (isMajor ? DialGeometry.tickLength : DialGeometry.tickLength * 0.55), minute);
+          center, tickRadius - DialGeometry.tickLength, minute);
       final outer = TimeGeometry.pointOnCircle(center, tickRadius, minute);
-      canvas.drawLine(inner, outer, tickPaint);
+      canvas.drawLine(inner, outer, majorPaint);
 
-      if (isMajor) {
-        final labelPoint =
-            TimeGeometry.pointOnCircle(center, tickRadius + 16, minute);
-        final tp = TextPainter(
-          text: TextSpan(text: '$hour시', style: labelStyle),
-          textDirection: TextDirection.ltr,
-        )..layout();
-        tp.paint(canvas, labelPoint - Offset(tp.width / 2, tp.height / 2));
-      }
+      // Major labels (0시, 6시, 12시, 18시)
+      final labelPoint =
+          TimeGeometry.pointOnCircle(center, tickRadius + 16, minute);
+      final tp = TextPainter(
+        text: TextSpan(text: '$hour시', style: labelStyle),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      tp.paint(canvas, labelPoint - Offset(tp.width / 2, tp.height / 2));
     }
   }
 
@@ -127,38 +168,40 @@ class DialPainter extends CustomPainter {
     final paint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = DialGeometry.ringThickness
-      ..strokeCap = StrokeCap.butt;
+      ..strokeCap = StrokeCap.round; // Round-cap spec
 
     for (final segment in segments) {
       if (segment.lengthMinutes <= 0) continue;
       final lane = _lanes[segment.id] ?? 0;
       final radius = DialGeometry.laneRadius(outerR, lane);
       final rect = Rect.fromCircle(center: center, radius: radius);
+      
+      // Calculate start angle and sweep in radians
       final startAngle = TimeGeometry.minuteToRadians(segment.startMinute);
       final sweep = segment.lengthMinutes / TimeGeometry.minutesPerDay * 2 * math.pi;
-      paint.color = segment.color;
+      
+      paint.color = getEffectiveSegmentColor(segment.color, brightness);
       canvas.drawArc(rect, startAngle, sweep, false, paint);
       _paintSegmentLabel(canvas, center, radius, segment);
     }
   }
 
   /// A short, horizontal (not curved) label at the midpoint of the
-  /// segment's own arc — labels the colored ring without the clutter of
-  /// spoke lines all the way to the center. Skipped entirely for a segment
-  /// too short to fit even a couple of characters, rather than overflowing
-  /// onto a neighboring arc.
+  /// segment's own arc.
   void _paintSegmentLabel(Canvas canvas, Offset center, double radius, Segment segment) {
     final arcLength = radius * (segment.lengthMinutes / TimeGeometry.minutesPerDay) * 2 * math.pi;
-    const minArcLength = 28.0;
+    const minArcLength = 34.0; // Increased due to larger font & padding
     if (arcLength < minArcLength) return;
 
     final midMinute = (segment.startMinute + segment.lengthMinutes / 2).round();
     final point = TimeGeometry.pointOnCircle(center, radius, midMinute);
-    final textColor = segment.color.computeLuminance() > 0.5 ? Colors.black87 : Colors.white;
+    
+    final themeColor = getEffectiveSegmentColor(segment.color, brightness);
+    final textColor = themeColor.computeLuminance() > 0.5 ? Colors.black87 : Colors.white;
     final tp = TextPainter(
       text: TextSpan(
         text: segment.name,
-        style: TextStyle(fontSize: 10, color: textColor, fontWeight: FontWeight.w600),
+        style: TextStyle(fontSize: 10, color: textColor, fontWeight: FontWeight.w600, fontFamily: 'Pretendard'),
       ),
       textDirection: TextDirection.ltr,
       maxLines: 1,
@@ -174,22 +217,28 @@ class DialPainter extends CustomPainter {
       final lane = segment != null ? (_lanes[segment.id] ?? 0) : 0;
       final radius = DialGeometry.laneRadius(outerR, lane);
       final point = TimeGeometry.pointOnCircle(center, radius, routine.startMinute);
-      final color = segment?.color ?? Colors.grey;
+      
+      final color = segment != null 
+          ? getEffectiveSegmentColor(segment.color, brightness)
+          : Colors.grey;
 
       final dotPaint = Paint()..color = color;
       final borderPaint = Paint()
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 2
+        ..strokeWidth = 2.5
         ..color = Colors.white;
+
+      // Draw outer circle indicator
       canvas.drawCircle(point, DialGeometry.routineMarkerRadius, dotPaint);
       canvas.drawCircle(point, DialGeometry.routineMarkerRadius, borderPaint);
 
+      // Draw segment icon inside the marker
       final icon = iconForKey(segment?.iconKey ?? '');
       final tp = TextPainter(
         text: TextSpan(
           text: String.fromCharCode(icon.codePoint),
           style: TextStyle(
-            fontSize: DialGeometry.routineMarkerRadius * 1.2,
+            fontSize: DialGeometry.routineMarkerRadius * 1.1, // Scale appropriately
             fontFamily: icon.fontFamily,
             package: icon.fontPackage,
             color: Colors.white,
@@ -205,19 +254,19 @@ class DialPainter extends CustomPainter {
     }
   }
 
-  /// Small checkmark badge over a marker's top-right edge -- the at-a-
-  /// glance "did I do this today" this dial otherwise can't show, since
-  /// the marker itself is always drawn from the permanent schedule (see
-  /// [routines] above), not whether today's instance is done.
+  /// Small checkmark badge over a marker's top-right edge.
   void _paintCompletedBadge(Canvas canvas, Offset markerPoint) {
     final badgeCenter = markerPoint +
         Offset(
           DialGeometry.routineMarkerRadius * 0.8,
           -DialGeometry.routineMarkerRadius * 0.8,
         );
-    const badgeRadius = DialGeometry.routineMarkerRadius * 0.65;
+    final badgeRadius = DialGeometry.routineMarkerRadius * 0.6;
     canvas.drawCircle(badgeCenter, badgeRadius + 1.5, Paint()..color = Colors.white);
-    canvas.drawCircle(badgeCenter, badgeRadius, Paint()..color = const Color(0xFF2E7D32));
+    
+    // Use the theme's success color if available, or a fallback green
+    final greenColor = brightness == Brightness.dark ? const Color(0xFF8FD0A6) : const Color(0xFF3F9D6A);
+    canvas.drawCircle(badgeCenter, badgeRadius, Paint()..color = greenColor);
 
     final tp = TextPainter(
       text: TextSpan(
@@ -237,17 +286,19 @@ class DialPainter extends CustomPainter {
   void _paintHand(Canvas canvas, Offset center, double outerR) {
     final handPaint = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.5
+      ..strokeWidth = 3.0 // 3px hand spec
       ..color = handColor;
+    
     final tip = TimeGeometry.pointOnCircle(
         center, outerR + DialGeometry.ringThickness / 2 + 4, currentMinute);
     canvas.drawLine(center, tip, handPaint);
-    canvas.drawCircle(center, 5, Paint()..color = handColor);
+    canvas.drawCircle(center, 6, Paint()..color = handColor);
   }
 
   @override
   bool shouldRepaint(DialPainter oldDelegate) {
     return oldDelegate.currentMinute != currentMinute ||
+        oldDelegate.brightness != brightness ||
         !_sameSegments(oldDelegate.segments, segments) ||
         !_sameRoutines(oldDelegate.routines, routines) ||
         oldDelegate.tickColor != tickColor ||

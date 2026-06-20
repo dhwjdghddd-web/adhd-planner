@@ -15,5 +15,5 @@ class SettingsController {
   final Ref _ref;
 
   Future<void> save(AppSettings settings) =>
-      _ref.read(plannerRepositoryProvider).saveSettings(settings);
+      _ref.read(plannerRepositoryProvider)!.saveSettings(settings);
 }

@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'app.dart';
-import 'data/providers.dart';
 import 'data/repositories/firestore/firestore_planner_repository.dart';
 import 'firebase_options.dart';
 import 'services/notification_service.dart';
@@ -15,15 +14,16 @@ void main() async {
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   FirebaseFirestore.instance.settings = const Settings(persistenceEnabled: true);
 
-  // Anonymous auth for Firestore authentication requirement.
-  var user = FirebaseAuth.instance.currentUser;
-  user ??= (await FirebaseAuth.instance.signInAnonymously()).user;
+  // 항상 로그인 상태 보장: 아무 계정도 없으면 익명으로 시작.
+  if (FirebaseAuth.instance.currentUser == null) {
+    await FirebaseAuth.instance.signInAnonymously();
+  }
+  final uid = FirebaseAuth.instance.currentUser!.uid;
 
-  // 고정 UID: 재설치 시 익명 UID가 바뀌어도 기존 데이터를 유지하기 위해
-  // 원본 사용자 UID를 직접 지정한다.
-  const fixedUid = 'LqBWKlX59ucI6KQ7W2rrlVZtQNv1';
-  final repository = FirestorePlannerRepository(fixedUid);
-
+  // 초기 알람 스케줄은 여기서 한 번. (계정 전환 시 재스케줄은 app.dart의
+  // _AccountAlarmSync.) 이 main 경로는 위젯 테스트가 타지 않으므로 플랫폼
+  // 채널을 써도 안전.
+  final repository = FirestorePlannerRepository(uid);
   final notificationService = NotificationService(repository);
   await notificationService.init();
   await notificationService.requestPermissions();
@@ -31,11 +31,7 @@ void main() async {
   final settings = await repository.watchSettings().first;
   await notificationService.rescheduleAll(routines, settings);
 
-  runApp(ProviderScope(
-    overrides: [
-      plannerRepositoryProvider.overrideWithValue(repository),
-      notificationServiceProvider.overrideWithValue(notificationService),
-    ],
-    child: const App(),
-  ));
+  // repo/service override는 더 이상 주입하지 않는다 — provider가 auth에서
+  // 스스로 빌드한다(data/providers.dart).
+  runApp(const ProviderScope(child: App()));
 }

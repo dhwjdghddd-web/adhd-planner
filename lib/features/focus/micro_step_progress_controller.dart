@@ -16,7 +16,7 @@ class MicroStepProgressController {
 
   Future<void> save(String routineId, Iterable<int> checkedIndices, {DateTime? now}) {
     return _ref
-        .read(plannerRepositoryProvider)
+        .read(plannerRepositoryProvider)!
         .saveMicroStepProgress(MicroStepProgress.today(routineId, checkedIndices, at: now));
   }
 }

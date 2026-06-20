@@ -14,6 +14,13 @@ final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 /// stacked in the Navigator don't let each other's dispose() re-show it.
 final ValueNotifier<int> fabSuppressionCount = ValueNotifier<int>(0);
 
+/// 스낵바가 현재 화면에 보이는지 여부.
+///
+/// [showAppSnackBar]가 스낵바를 띄울 때 true로, 닫힐 때 false로 설정한다.
+/// [app.dart]의 builder에서 [GlobalQuickAddButton]을 스낵바 높이만큼
+/// 위로 밀어올리는 데 사용한다.
+final ValueNotifier<bool> snackBarVisible = ValueNotifier<bool>(false);
+
 /// Bottom inset a screen's body should reserve (e.g. as a `Padding` around
 /// its scrollable content) so nothing ever ends up underneath the global
 /// bottom-left quick-add FAB drawn in app.dart: that FAB itself is 56px
@@ -24,8 +31,45 @@ final ValueNotifier<int> fabSuppressionCount = ValueNotifier<int>(0);
 double fabAvoidingBottomInset(BuildContext context) =>
     88 + MediaQuery.of(context).padding.bottom;
 
+/// 앱 전역 스낵바 표시 헬퍼.
+///
+/// 일반 [ScaffoldMessenger.showSnackBar] 대신 이 함수를 사용하면
+/// 스낵바가 뜨는 동안 Scaffold 내 루틴추가 FAB와 전역 메모 FAB이
+/// 함께 위로 밀려 올라갔다가 스낵바가 사라지면 내려온다.
+///
+/// 동작 원리:
+/// - [SnackBarBehavior.fixed] 모드: Scaffold가 내부 FAB을 자동으로 위로 밀어줌.
+/// - [snackBarVisible] 노티파이어: [GlobalQuickAddButton]이 이 값을 보고
+///   [AnimatedPadding]으로 동일 높이(58 dp)만큼 함께 올라감.
+/// - 스낵바가 닫히면 [snackBarVisible]을 false로 돌려 두 FAB이 함께 내려옴.
+void showAppSnackBar(
+  BuildContext context,
+  Widget content, {
+  Duration duration = const Duration(seconds: 3),
+  SnackBarAction? action,
+  Color? backgroundColor,
+}) {
+  snackBarVisible.value = true;
+  final controller = ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: content,
+      duration: duration,
+      action: action,
+      backgroundColor: backgroundColor,
+      behavior: SnackBarBehavior.fixed,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.only(
+          topLeft: Radius.circular(12),
+          topRight: Radius.circular(12),
+        ),
+      ),
+    ),
+  );
+  controller.closed.then((_) => snackBarVisible.value = false);
+}
+
 /// Wrap a full-screen page's [Scaffold] in this when it has its own
-/// full-width button pinned near the bottom (onboarding's "다음", Focus's
+/// full-width button pinned near the bottom (onboarding's \"다음\", Focus's
 /// 완료/스누즈/다음 할 일) — otherwise the global FAB sits right on top of
 /// it. Screens with their own bottom-*right* FAB (segments/routines
 /// editors) don't need this; there's no overlap to begin with.

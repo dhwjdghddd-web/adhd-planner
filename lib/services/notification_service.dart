@@ -49,9 +49,11 @@ const _mainAlarmRepeatMs = 60000;
 
 final _plugin = FlutterLocalNotificationsPlugin();
 
-final notificationServiceProvider = Provider<NotificationService>(
-  (ref) => NotificationService(ref.read(plannerRepositoryProvider)),
-);
+final notificationServiceProvider = Provider<NotificationService>((ref) {
+  // uid가 null인 순간(signOut ↔ signInAnonymously 사이)에는 repo가 null.
+  // NotificationService는 null repo로도 생성 가능하며, 실제 사용 시 !로 단언.
+  return NotificationService(ref.watch(plannerRepositoryProvider));
+});
 
 /// The actual millisecond vibration pattern for each named preset in
 /// [AlarmVibrationPattern] — `[pause, on, off, on, off, ...]`, same
@@ -350,7 +352,7 @@ Future<void> _ensureLocalTimezone() async {
 class NotificationService {
   NotificationService(this._repository);
 
-  final PlannerRepository _repository;
+  final PlannerRepository? _repository;
 
   Future<void> init() async {
     const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
@@ -387,7 +389,28 @@ class NotificationService {
   /// that choice changes so it takes effect immediately rather than next
   /// app start.
   Future<void> rescheduleAll(List<Routine> routines, AppSettings settings) async {
+    final repo = _repository;
+    if (repo == null) return; // auth 전환 중 — 알람 재스케줄 건너뜀
     await _ensureChannels(settings);
+
+    // 현재 등록된 모든 알림 ID를 읽어 flutter_local_notifications와 함께
+    // 네이티브 AlarmManager 진동 알람도 취소한다.
+    // _plugin.cancelAll()만으로는 Dart 레벨 알림만 취소되고, VibrationAlarmReceiver가
+    // 매주 스스로 재등록하는 AlarmManager 알람은 취소되지 않는다.
+    // 특히 Firestore 데이터가 초기화(로그아웃 등)된 경우 routines 목록이 비어 있어
+    // cancelRoutineAlarms를 호출할 수 없으므로, 여기서 반드시 처리해야 한다.
+    final pending = await _plugin.pendingNotificationRequests();
+    for (final n in pending) {
+      await _cancelVibrationAlarm(n.id);
+    }
+    // Firestore에 저장된 notificationIds로도 진동 알람 취소.
+    // pendingNotificationRequests는 아직 발동 전인 알림만 반환하므로,
+    // 이미 울린 후 AlarmManager가 재등록한 진동 알람은 여기서 취소한다.
+    for (final routine in routines) {
+      for (final id in routine.notificationIds) {
+        await _cancelVibrationAlarm(id);
+      }
+    }
     await _plugin.cancelAll();
 
     // Routines skipped ("넘기기") for today: without this, the very next
@@ -396,7 +419,7 @@ class NotificationService {
     // nextInstanceOf just finds the next time at/after now -- which is
     // still today. See _nextInstanceRespectingSkip.
     final dateKey = DateFormat('yyyy-MM-dd').format(DateTime.now());
-    final skips = await _repository.watchRoutineSkips().first;
+    final skips = await repo.watchRoutineSkips().first;
     final skippedTodayRoutineIds = {
       for (final s in skips)
         if (s.dateKey == dateKey) s.routineId,
@@ -449,7 +472,7 @@ class NotificationService {
     }
     for (final routine in routines) {
       final ids = idsByRoutine[routine.id] ?? const <int>[];
-      await _repository.upsertRoutine(routine.copyWith(notificationIds: ids));
+      await repo.upsertRoutine(routine.copyWith(notificationIds: ids));
     }
   }
 
@@ -472,14 +495,16 @@ class NotificationService {
   /// postponing the main alarm itself doesn't resurrect an already-past
   /// lead-warning.
   Future<void> postpone(String routineId, AppSettings settings) async {
-    final routine = await _findRoutine(_repository, routineId);
+    final repo = _repository;
+    if (repo == null) return; // auth 전환 중
+    final routine = await _findRoutine(repo, routineId);
     if (routine == null) return;
 
     await _ensureLocalTimezone();
     final now = tz.TZDateTime.now(tz.local);
     final dateKey = DateFormat('yyyy-MM-dd').format(DateTime.now());
 
-    final postponements = await _repository.watchRoutinePostponements().first;
+    final postponements = await repo.watchRoutinePostponements().first;
     var currentOffset = 0;
     for (final p in postponements) {
       if (p.routineId == routine.id && p.dateKey == dateKey) {
@@ -488,7 +513,7 @@ class NotificationService {
       }
     }
     final newOffset = currentOffset + routine.snoozeMin;
-    await _repository.saveRoutinePostponement(
+    await repo.saveRoutinePostponement(
       RoutinePostponement(dateKey: dateKey, routineId: routine.id, offsetMinutes: newOffset),
     );
 
@@ -594,7 +619,7 @@ class NotificationService {
 
     final now = DateTime.now();
     final dateKey = DateFormat('yyyy-MM-dd').format(now);
-    await _repository.saveRoutineSkip(RoutineSkip(dateKey: dateKey, routineId: routine.id));
+    await _repository!.saveRoutineSkip(RoutineSkip(dateKey: dateKey, routineId: routineId));
 
     // Slot 2/3 (today's one-off 미루기 reschedules) are always safe to cancel.
     await cancelNotification(notificationIdFor(routine.id, 0, 2));
@@ -741,7 +766,8 @@ void _handleResponse(NotificationResponse response) {
   );
 }
 
-Future<Routine?> _findRoutine(PlannerRepository repository, String id) async {
+Future<Routine?> _findRoutine(PlannerRepository? repository, String id) async {
+  if (repository == null) return null;
   final routines = await repository.watchRoutines().first;
   for (final routine in routines) {
     if (routine.id == id) return routine;

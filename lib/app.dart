@@ -42,17 +42,31 @@ class App extends ConsumerWidget {
           child: Stack(
             children: [
               ?child,
-              const SafeArea(
-                child: Align(
-                  alignment: Alignment.bottomLeft,
-                  child: Padding(
-                    padding: EdgeInsets.all(16),
-                    child: GlobalQuickAddButton(),
+              // snackBarVisible이 true일 동안 스낵바 높이(58 dp)만큼
+              // 위로 AnimatedPadding으로 밀어올린다.
+              // Scaffold FAB(루틴추가)은 fixed 모드로 자동 상승하고,
+              // 전역 메모 FAB도 동일 애니메이션으로 함께 올라간다.
+              ValueListenableBuilder<bool>(
+                valueListenable: snackBarVisible,
+                builder: (context, visible, child) => AnimatedPadding(
+                  duration: const Duration(milliseconds: 250),
+                  curve: visible ? Curves.easeOut : Curves.easeIn,
+                  padding: EdgeInsets.only(bottom: visible ? 58.0 : 0.0),
+                  child: child!,
+                ),
+                child: const SafeArea(
+                  child: Align(
+                    alignment: Alignment.bottomLeft,
+                    child: Padding(
+                      padding: EdgeInsets.all(16),
+                      child: GlobalQuickAddButton(),
+                    ),
                   ),
                 ),
               ),
               const _AlarmAlertLauncher(),
               const _ForegroundAlarmWatcher(),
+              const _AccountAlarmSync(),
             ],
           ),
         );
@@ -98,15 +112,44 @@ ThemeMode _toThemeMode(AppThemeMode mode) => switch (mode) {
 /// Shows the onboarding guide once, then the circular planner home — as a
 /// plain reactive widget swap rather than a Navigator push, so it keeps
 /// working even before settings have finished loading the first time.
-class _RootRouter extends ConsumerWidget {
+///
+/// [ConsumerStatefulWidget]으로 작성해 `_lastOnboarded` 상태를 유지한다.
+/// auth 전환(signOut → signInAnonymously) 중 [settingsProvider]가 잠깐
+/// loading/기본값(onboardingComplete: false) 상태가 되어도 마지막으로 확인된
+/// 라우팅 상태를 유지하므로, [OnboardingPage]([SuppressGlobalFab] 포함)가
+/// 순간적으로 mount됐다 unmount되며 [fabSuppressionCount]가 꼬이는 현상을 방지한다.
+class _RootRouter extends ConsumerStatefulWidget {
   const _RootRouter();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_RootRouter> createState() => _RootRouterState();
+}
+
+class _RootRouterState extends ConsumerState<_RootRouter> {
+  /// 마지막으로 확인된 onboardingComplete 값.
+  /// null이면 아직 첫 데이터를 받지 못한 것(앱 최초 로딩).
+  bool? _lastOnboarded;
+
+  @override
+  Widget build(BuildContext context) {
     final settingsAsync = ref.watch(settingsProvider);
+
+    // build 중에 직접 갱신(여분의 setState/microtask 없음).
+    // auth 전환으로 settingsProvider가 loading이다가 data로 돌아오면
+    // 이 build가 다시 호출되어 _lastOnboarded가 자동 유지된다.
+    settingsAsync.whenData((s) => _lastOnboarded = s.onboardingComplete);
+
+    // 컨테스트가 있으면 loading/error 구간에도 화면을 유지한다.
+    // 이로써 로그아웃 시 OnboardingPage([SuppressGlobalFab] 포함)가
+    // 좌대 mount/unmount되어 fabSuppressionCount가 꽔이는 현상을 방지한다.
+    final onboarded = _lastOnboarded;
+    if (onboarded != null) {
+      return onboarded ? const PlannerPage() : const OnboardingPage();
+    }
+
+    // 케시 없음 = 앱 최초 로딩.
     return settingsAsync.when(
-      data: (settings) =>
-          settings.onboardingComplete ? const PlannerPage() : const OnboardingPage(),
+      data: (s) => s.onboardingComplete ? const PlannerPage() : const OnboardingPage(),
       loading: () => const Scaffold(body: Center(child: CircularProgressIndicator())),
       error: (e, st) => Scaffold(body: Center(child: Text('오류: $e'))),
     );
@@ -251,4 +294,37 @@ class _ForegroundAlarmWatcherState extends ConsumerState<_ForegroundAlarmWatcher
 
   @override
   Widget build(BuildContext context) => const SizedBox.shrink();
+}
+
+/// No visual presence — watches [plannerRepositoryProvider] and, whenever the
+/// active account changes (익명→구글 연결로 uid가 보존되는 경우는 repo가
+/// 안 바뀌므로 여긴 안 탄다; 계정 전환/복구처럼 uid가 실제로 바뀔 때만),
+/// clears and reschedules every alarm under the new account. main()'s
+/// initial schedule (see main.dart) covers app startup; this covers
+/// switching accounts while the app is already running.
+class _AccountAlarmSync extends ConsumerWidget {
+  const _AccountAlarmSync();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    // repo가 "바뀔 때만" 재스케줄. fireImmediately를 쓰지 않는 이유:
+    //  - 초기 스케줄은 main()이 이미 한다.
+    //  - 위젯 테스트는 plannerRepositoryProvider를 "고정 Fake"로 override하므로
+    //    이 listener는 절대 발화하지 않는다 → 테스트가 플랫폼 채널을 안 건드림.
+    //    (fireImmediately를 켜면 테스트에서 rescheduleAll→cancelAll의
+    //    MissingPluginException으로 깨진다. 절대 켜지 말 것.)
+    ref.listen(plannerRepositoryProvider, (prev, next) async {
+      // uid가 null인 순간(signOut ↔ signInAnonymously 사이)에는 skip.
+      if (next == null) return;
+      if (identical(prev, next)) return;
+      final routines = await next.watchRoutines().first;
+      final settings = await next.watchSettings().first;
+      try {
+        await ref.read(notificationServiceProvider).rescheduleAll(routines, settings);
+      } catch (_) {
+        // 플랫폼 채널 부재(테스트 등) — 무시.
+      }
+    });
+    return const SizedBox.shrink();
+  }
 }

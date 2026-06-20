@@ -54,9 +54,7 @@ class RoutineEditorPage extends ConsumerWidget {
   void _openForm(BuildContext context, WidgetRef ref) {
     final segments = ref.read(segmentsProvider).value ?? const <Segment>[];
     if (segments.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('먼저 구간을 만들어주세요.')));
+      showAppSnackBar(context, const Text('먼저 구간을 만들어주세요.'));
       return;
     }
     Navigator.of(
@@ -203,7 +201,7 @@ class _RoutineTile extends StatelessWidget {
         child: ListTile(
           onTap: onTap,
           leading: CircleAvatar(
-            backgroundColor: segment?.color ?? Colors.grey,
+            backgroundColor: segment?.themeColor(context) ?? Colors.grey,
             child: Icon(
               iconForKey(segment?.iconKey ?? ''),
               color: Colors.white,

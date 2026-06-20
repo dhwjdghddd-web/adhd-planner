@@ -16,15 +16,15 @@ class SegmentsController {
   final Ref _ref;
 
   Future<void> upsert(Segment segment) =>
-      _ref.read(plannerRepositoryProvider).upsertSegment(segment);
+      _ref.read(plannerRepositoryProvider)!.upsertSegment(segment);
 
   Future<void> delete(String id) =>
-      _ref.read(plannerRepositoryProvider).deleteSegment(id);
+      _ref.read(plannerRepositoryProvider)!.deleteSegment(id);
 
   /// Persists a new ordering by rewriting the `order` field of every
   /// segment whose position changed.
   Future<void> reorder(List<Segment> orderedSegments) async {
-    final repo = _ref.read(plannerRepositoryProvider);
+    final repo = _ref.read(plannerRepositoryProvider)!;
     for (var i = 0; i < orderedSegments.length; i++) {
       final segment = orderedSegments[i];
       if (segment.order != i) {

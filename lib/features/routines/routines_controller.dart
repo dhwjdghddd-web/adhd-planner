@@ -18,12 +18,12 @@ class RoutinesController {
   final Ref _ref;
 
   Future<void> upsert(Routine routine) async {
-    await _ref.read(plannerRepositoryProvider).upsertRoutine(routine);
+    await _ref.read(plannerRepositoryProvider)!.upsertRoutine(routine);
     await _rescheduleAll();
   }
 
   Future<void> delete(String id) async {
-    final repo = _ref.read(plannerRepositoryProvider);
+    final repo = _ref.read(plannerRepositoryProvider)!;
     // Cancel before the routine is gone -- rescheduleAll only knows about
     // routines still in the list it rebuilds from, so a deleted routine's
     // alarms (and the Vibrator alarms riding alongside them) would
@@ -40,7 +40,7 @@ class RoutinesController {
   }
 
   Future<void> _rescheduleAll() async {
-    final repo = _ref.read(plannerRepositoryProvider);
+    final repo = _ref.read(plannerRepositoryProvider)!;
     final routines = await repo.watchRoutines().first;
     final settings = await repo.watchSettings().first;
     await _ref.read(notificationServiceProvider).rescheduleAll(routines, settings);
