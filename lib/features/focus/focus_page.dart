@@ -118,13 +118,21 @@ class _FocusPageState extends ConsumerState<FocusPage> {
       body: SafeArea(
         child: Stack(
           children: [
-            pinned != null
-                ? _buildContent(context, status!)
-                : routinesAsync.when(
-                    data: (_) => _buildContent(context, status!),
-                    loading: () => const Center(child: CircularProgressIndicator()),
-                    error: (e, st) => Center(child: Text('오류: $e')),
-                  ),
+            // Positioned.fill so the content always gets tight full-width
+            // constraints: a non-positioned Stack child is laid out loose and
+            // pinned top-start, so the body Column would otherwise shrink-wrap
+            // to its widest child and hug the left edge whenever nothing in it
+            // forces full width -- e.g. a "지금" routine with no micro-steps,
+            // where the (empty) checklist below no longer stretches the row.
+            Positioned.fill(
+              child: pinned != null
+                  ? _buildContent(context, status!)
+                  : routinesAsync.when(
+                      data: (_) => _buildContent(context, status!),
+                      loading: () => const Center(child: CircularProgressIndicator()),
+                      error: (e, st) => Center(child: Text('오류: $e')),
+                    ),
+            ),
             Positioned(
               top: 4,
               left: 4,

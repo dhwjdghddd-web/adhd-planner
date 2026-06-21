@@ -60,6 +60,24 @@ void main() {
     expect(find.textContaining('남음'), findsNothing);
   });
 
+  testWidgets('a current routine with no micro-steps stays horizontally centered '
+      '(regression: body Column used to shrink-wrap and hug the left edge)',
+      (tester) async {
+    final repo = FakePlannerRepository();
+    await repo.upsertRoutine(Routine(
+      id: 'r1',
+      segmentId: 's1',
+      title: '약 먹기', // no micro-steps -> nothing forces full width
+      startMinute: _currentMinuteOfNow(),
+    ));
+
+    await openFocusPage(tester, repo);
+
+    final screenCenterX = tester.view.physicalSize.width / tester.view.devicePixelRatio / 2;
+    final titleCenterX = tester.getCenter(find.text('약 먹기')).dx;
+    expect(titleCenterX, closeTo(screenCenterX, 1.0));
+  });
+
   testWidgets('shows the next routine and its absolute start time when only a future '
       'routine exists', (tester) async {
     final repo = FakePlannerRepository();
