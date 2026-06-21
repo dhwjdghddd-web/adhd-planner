@@ -5,7 +5,6 @@ import 'package:confetti/confetti.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:intl/intl.dart';
 
 import '../../core/debug_log.dart';
 import '../../core/time_geometry.dart';
@@ -13,6 +12,7 @@ import '../../data/models/micro_step_progress.dart';
 import '../../data/models/routine.dart';
 import '../../data/providers.dart';
 import '../../data/routine_status.dart';
+import '../../data/today.dart';
 import '../../services/notification_service.dart';
 import '../memos/quick_add_button.dart';
 import '../memos/quick_add_sheet.dart';
@@ -93,11 +93,7 @@ class _FocusPageState extends ConsumerState<FocusPage> {
     final postponements = ref.watch(routinePostponementsProvider).value ?? const [];
     final skips = ref.watch(routineSkipsProvider).value ?? const [];
     final completions = ref.watch(completionsProvider).value ?? const [];
-    final todayKey = DateFormat('yyyy-MM-dd').format(DateTime.now());
-    final completedRoutineIds = {
-      for (final c in completions)
-        if (c.dateKey == todayKey) c.routineId,
-    };
+    final completedRoutineIds = completedRoutineIdsOn(completions);
     final theme = Theme.of(context);
     final reduceMotion =
         ref.watch(settingsProvider).value?.reduceMotion ?? false;
@@ -267,7 +263,7 @@ class _FocusPageState extends ConsumerState<FocusPage> {
   /// routine) has no record yet, which is exactly how the reset-next-day
   /// behaviour falls out without any explicit "clear" step.
   void _hydrateChecked(Routine routine, List<MicroStepProgress> allProgress) {
-    final dateKey = DateFormat('yyyy-MM-dd').format(DateTime.now());
+    final dateKey = dayKeyFor();
     final key = '${routine.id}|$dateKey';
     if (_hydratedFor == key) return;
     _hydratedFor = key;

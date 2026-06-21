@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:intl/intl.dart';
 
 import '../../core/constants.dart';
 import '../../core/time_geometry.dart';
@@ -14,6 +13,7 @@ import '../../data/models/routine_skip.dart';
 import '../../data/models/segment.dart';
 import '../../data/providers.dart';
 import '../../data/routine_status.dart';
+import '../../data/today.dart';
 import '../focus/completions_controller.dart';
 import '../focus/micro_step_progress_controller.dart';
 import '../segments/segment_icons.dart';
@@ -80,13 +80,9 @@ class _Body extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isoWeekday = DateTime.now().weekday;
-    final dateKey = DateFormat('yyyy-MM-dd').format(DateTime.now());
-    final skippedIds = {
-      for (final s in skips) if (s.dateKey == dateKey) s.routineId,
-    };
-    final completedIds = {
-      for (final c in completions) if (c.dateKey == dateKey) c.routineId,
-    };
+    final dateKey = dayKeyFor();
+    final skippedIds = skippedRoutineIdsOn(skips);
+    final completedIds = completedRoutineIdsOn(completions);
     final checkedByRoutineId = {
       for (final p in microStepProgress)
         if (p.dateKey == dateKey) p.routineId: p.checkedIndices.toSet(),

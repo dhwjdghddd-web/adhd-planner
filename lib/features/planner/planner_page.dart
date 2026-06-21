@@ -3,7 +3,6 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:intl/intl.dart';
 
 import '../../core/theme.dart';
 import '../../core/time_geometry.dart';
@@ -11,6 +10,7 @@ import '../../data/models/routine.dart';
 import '../../data/models/segment.dart';
 import '../../data/providers.dart';
 import '../../data/routine_status.dart';
+import '../../data/today.dart';
 import '../focus/focus_page.dart';
 import '../memos/memo_inbox_page.dart';
 import '../rewards/daily_checklist_badge.dart';
@@ -80,11 +80,7 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
     final postponements = ref.watch(routinePostponementsProvider).value ?? const [];
     final skips = ref.watch(routineSkipsProvider).value ?? const [];
     final completions = ref.watch(completionsProvider).value ?? const [];
-    final todayKey = DateFormat('yyyy-MM-dd').format(DateTime.now());
-    final completedRoutineIds = {
-      for (final c in completions)
-        if (c.dateKey == todayKey) c.routineId,
-    };
+    final completedRoutineIds = completedRoutineIdsOn(completions);
 
     return Scaffold(
       appBar: AppBar(

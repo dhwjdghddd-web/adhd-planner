@@ -15,6 +15,12 @@ import '../data/models/routine_postponement.dart';
 import '../data/models/routine_skip.dart';
 import '../data/providers.dart';
 import '../data/repositories/planner_repository.dart';
+import 'notification_schedule.dart';
+// The pure scheduling logic lives in notification_schedule.dart; re-export it
+// so existing importers of this file (and notification_service_test) keep
+// seeing buildSchedule/ScheduledSpec/notificationIdFor/nextInstanceOf/
+// vibrationPatternFor unchanged.
+export 'notification_schedule.dart';
 
 // v3/v2: base channel ids keep getting bumped because Android notification
 // channels are immutable after creation on a given install — every time a
@@ -42,7 +48,7 @@ final _insistentFlag = Int32List.fromList([4]);
 // 2x one vibration cycle — a noticeably longer nudge than before, but still
 // just a heads-up, not something that needs to keep demanding attention
 // indefinitely.
-final _transitionRepeatMs = _vibrationCycleMs(AlarmVibrationPattern.defaultPattern) * 2;
+final _transitionRepeatMs = vibrationCycleMs(AlarmVibrationPattern.defaultPattern) * 2;
 // Repeats for a full minute, then the system cancels it on its own even if
 // the app isn't running — no snooze/dismiss needed for it to eventually
 // stop on its own.
@@ -55,25 +61,6 @@ final notificationServiceProvider = Provider<NotificationService>((ref) {
   // NotificationService는 null repo로도 생성 가능하며, 실제 사용 시 !로 단언.
   return NotificationService(ref.watch(plannerRepositoryProvider));
 });
-
-/// The actual millisecond vibration pattern for each named preset in
-/// [AlarmVibrationPattern] — `[pause, on, off, on, off, ...]`, same
-/// convention as `Vibrator.vibrate(long[])`.
-Int64List vibrationPatternFor(AlarmVibrationPattern preset) {
-  switch (preset) {
-    case AlarmVibrationPattern.defaultPattern:
-      return Int64List.fromList([0, 1000, 500, 1000, 500, 1000, 500, 1000]);
-    case AlarmVibrationPattern.short:
-      return Int64List.fromList([0, 300, 200, 300, 200, 300, 200, 300, 200, 300]);
-    case AlarmVibrationPattern.long:
-      return Int64List.fromList([0, 2000, 1000, 2000, 1000, 2000]);
-    case AlarmVibrationPattern.doublePulse:
-      return Int64List.fromList([0, 250, 150, 250, 600, 250, 150, 250, 600]);
-  }
-}
-
-int _vibrationCycleMs(AlarmVibrationPattern preset) =>
-    vibrationPatternFor(preset).fold(0, (sum, ms) => sum + ms);
 
 AndroidNotificationSound _soundFor(AppSettings settings) {
   final uri = settings.alarmSoundUri;
@@ -98,95 +85,6 @@ String _routineChannelId(AppSettings settings) => '${_routineChannelBase}_${_cha
 
 String _transitionChannelId(AppSettings settings) =>
     '${_transitionChannelBase}_${_channelSuffix(settings)}';
-
-/// One concrete alarm that should exist on the device: a single weekday
-/// occurrence of either a routine's main alarm or its transition warning.
-/// Kept as a plain value (rather than calling the plugin while iterating
-/// routines) so [buildSchedule] — the "which alarms should exist" logic —
-/// is unit-testable without a real Android runtime.
-class ScheduledSpec {
-  const ScheduledSpec({
-    required this.id,
-    required this.routineId,
-    required this.isTransition,
-    required this.isoWeekday,
-    required this.minuteOfDay,
-    required this.title,
-    required this.body,
-  });
-
-  final int id;
-  final String routineId;
-  final bool isTransition;
-  final int isoWeekday;
-  final int minuteOfDay;
-  final String title;
-  final String body;
-
-  String get payload => '${isTransition ? 'transition' : 'main'}:$routineId';
-}
-
-/// Deterministic notification id for a (routine, weekday, slot) triple, so a
-/// later `cancelAll` + reschedule always replaces exactly what it created
-/// before. slot 0 = main alarm, 1 = transition warning, 2 = one-off 미루기
-/// reschedule of the main alarm, 3 = one-off 미루기 reschedule of the
-/// transition warning.
-int notificationIdFor(String routineId, int isoWeekday, int slot) {
-  final base = routineId.hashCode.abs() % 100000;
-  return base * 100 + isoWeekday * 10 + slot;
-}
-
-/// Pure: turns the current routine list into the exact set of alarms that
-/// should exist on the device. No plugin calls here — [NotificationService
-/// .rescheduleAll] is the thin layer that applies this via
-/// `flutter_local_notifications`.
-List<ScheduledSpec> buildSchedule(List<Routine> routines) {
-  final specs = <ScheduledSpec>[];
-  for (final routine in routines) {
-    if (!routine.alarmEnabled) continue;
-    final days = routine.repeatDays.isEmpty
-        ? const [1, 2, 3, 4, 5, 6, 7]
-        : routine.repeatDays;
-    for (final day in days) {
-      specs.add(ScheduledSpec(
-        id: notificationIdFor(routine.id, day, 0),
-        routineId: routine.id,
-        isTransition: false,
-        isoWeekday: day,
-        minuteOfDay: routine.startMinute,
-        title: routine.title,
-        body: '지금 시작할 시간이에요',
-      ));
-      if (routine.leadWarningMin > 0) {
-        specs.add(ScheduledSpec(
-          id: notificationIdFor(routine.id, day, 1),
-          routineId: routine.id,
-          isTransition: true,
-          isoWeekday: day,
-          minuteOfDay:
-              (routine.startMinute - routine.leadWarningMin) % TimeGeometry.minutesPerDay,
-          title: '곧 전환: ${routine.title}',
-          body: '${routine.leadWarningMin}분 후 시작해요',
-        ));
-      }
-    }
-  }
-  return specs;
-}
-
-/// Next moment (today or later) that lands on [isoWeekday] (1=Mon..7=Sun) at
-/// [minuteOfDay], in the local timezone. Used as the anchor for a weekly
-/// recurring `zonedSchedule`.
-tz.TZDateTime nextInstanceOf(int isoWeekday, int minuteOfDay) {
-  final now = tz.TZDateTime.now(tz.local);
-  var scheduled = tz.TZDateTime(
-    tz.local, now.year, now.month, now.day, minuteOfDay ~/ 60, minuteOfDay % 60,
-  );
-  while (scheduled.weekday != isoWeekday || !scheduled.isAfter(now)) {
-    scheduled = scheduled.add(const Duration(days: 1));
-  }
-  return scheduled;
-}
 
 /// [nextInstanceOf], but pushed a further week ahead when [routineId] has
 /// been skipped ("넘기기") for today and the naive next-instance would

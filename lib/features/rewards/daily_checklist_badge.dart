@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:intl/intl.dart';
 
 import '../../data/providers.dart';
+import '../../data/today.dart';
 import '../checklist/today_checklist_page.dart';
 import 'daily_achievement.dart';
 
@@ -31,7 +31,7 @@ class DailyChecklistBadge extends ConsumerWidget {
     if (routines == null || progress == null) return const SizedBox.shrink();
 
     final today = DateTime.now().weekday;
-    final dateKey = DateFormat('yyyy-MM-dd').format(DateTime.now());
+    final dateKey = dayKeyFor();
 
     // Visibility is gated on "any routine today" rather than "any
     // micro-steps today" -- this badge is the only entry point to

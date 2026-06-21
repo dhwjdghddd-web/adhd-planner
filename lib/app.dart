@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:intl/intl.dart';
 
 import 'core/debug_log.dart';
 import 'core/theme.dart';
@@ -11,6 +10,7 @@ import 'data/models/achieved_day.dart';
 import 'data/models/app_settings.dart';
 import 'data/providers.dart';
 import 'data/routine_status.dart';
+import 'data/today.dart';
 import 'features/focus/alarm_alert_dialog.dart';
 import 'features/memos/quick_add_button.dart';
 import 'features/onboarding/onboarding_page.dart';
@@ -230,7 +230,7 @@ class _ForegroundAlarmWatcherState extends ConsumerState<_ForegroundAlarmWatcher
       skips,
       now: now,
     );
-    final dateKey = DateFormat('yyyy-MM-dd').format(now);
+    final dateKey = dayKeyFor(now);
 
     for (final routine in effective) {
       if (!routine.alarmEnabled) continue;
