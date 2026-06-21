@@ -75,6 +75,33 @@ void main() {
       expect(transition.minuteOfDay, 24 * 60 - 10); // 10 - 20 wraps to 1430
     });
 
+    test('a midnight-wrapping transition is scheduled on the previous weekday', () {
+      // 00:10 Monday routine with a 20-min warning must warn at 23:50 *Sunday*,
+      // the night before -- not 23:50 Monday (≈23h after the routine started).
+      final specs = buildSchedule([
+        _routine(id: 'r1', startMinute: 10, leadWarningMin: 20, repeatDays: const [1]),
+      ]);
+      final main = specs.firstWhere((s) => !s.isTransition);
+      final transition = specs.firstWhere((s) => s.isTransition);
+      expect(main.isoWeekday, 1); // start still Monday
+      expect(transition.isoWeekday, 7); // warning the night before = Sunday
+    });
+
+    test('a Monday-only transition that wraps lands on Sunday, never Saturday', () {
+      // Guards the 1 -> 7 wrap specifically (day == 1 must roll back to 7).
+      final specs = buildSchedule([
+        _routine(id: 'r1', startMinute: 5, leadWarningMin: 10, repeatDays: const [1]),
+      ]);
+      expect(specs.firstWhere((s) => s.isTransition).isoWeekday, 7);
+    });
+
+    test('a non-wrapping transition stays on the start weekday', () {
+      final specs = buildSchedule([
+        _routine(id: 'r1', startMinute: 9 * 60, leadWarningMin: 10, repeatDays: const [3]),
+      ]);
+      expect(specs.firstWhere((s) => s.isTransition).isoWeekday, 3);
+    });
+
     test('main alarm body/title use the routine title', () {
       final specs = buildSchedule(
           [_routine(id: 'r1', leadWarningMin: 0, repeatDays: const [2])]);

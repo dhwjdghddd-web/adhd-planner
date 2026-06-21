@@ -92,13 +92,21 @@ List<ScheduledSpec> buildSchedule(List<Routine> routines) {
         body: '지금 시작할 시간이에요',
       ));
       if (routine.leadWarningMin > 0) {
+        // When the lead warning lands before midnight relative to the start
+        // (startMinute - leadWarningMin < 0), it belongs to the *previous*
+        // calendar day, not the same weekday as the start -- e.g. a 00:10
+        // routine with a 30-min warning must warn at 23:40 the night before,
+        // which is the day before its occurrence. Scheduling it on `day`
+        // (alongside the start) would fire it ~23h after the start instead.
+        final raw = routine.startMinute - routine.leadWarningMin;
+        final transitionMinute = raw % TimeGeometry.minutesPerDay;
+        final transitionDay = raw < 0 ? (day == 1 ? 7 : day - 1) : day;
         specs.add(ScheduledSpec(
-          id: notificationIdFor(routine.id, day, 1),
+          id: notificationIdFor(routine.id, transitionDay, 1),
           routineId: routine.id,
           isTransition: true,
-          isoWeekday: day,
-          minuteOfDay:
-              (routine.startMinute - routine.leadWarningMin) % TimeGeometry.minutesPerDay,
+          isoWeekday: transitionDay,
+          minuteOfDay: transitionMinute,
           title: '곧 전환: ${routine.title}',
           body: '${routine.leadWarningMin}분 후 시작해요',
         ));

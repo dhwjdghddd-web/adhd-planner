@@ -33,6 +33,21 @@ void main() {
       final restored = Routine.fromMap(r.toMap());
       expect(restored.segmentId, 's1');
     });
+
+    test('copyWith leaves segmentId untouched when it is omitted', () {
+      final r = _routine(startMinute: 0); // segmentId 's1'
+      expect(r.copyWith(title: 'x').segmentId, 's1');
+    });
+
+    test('copyWith can explicitly clear segmentId to null', () {
+      final r = _routine(startMinute: 0); // segmentId 's1'
+      expect(r.copyWith(segmentId: null).segmentId, isNull);
+    });
+
+    test('copyWith can set a new non-null segmentId', () {
+      final r = _routine(startMinute: 0);
+      expect(r.copyWith(segmentId: 's2').segmentId, 's2');
+    });
   });
 
   group('Routine.occursOn', () {

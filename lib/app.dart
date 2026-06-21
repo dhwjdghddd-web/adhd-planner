@@ -234,7 +234,6 @@ class _ForegroundAlarmWatcherState extends ConsumerState<_ForegroundAlarmWatcher
 
     for (final routine in effective) {
       if (!routine.alarmEnabled) continue;
-      if (!routine.occursOn(now.weekday)) continue;
       // A 미루기'd routine's alarms were re-scheduled as one-off slot
       // 2/3 notifications (see notification_service.dart's postpone()) --
       // cancelling the wrong (still-recurring slot 0/1) id here would
@@ -243,7 +242,8 @@ class _ForegroundAlarmWatcherState extends ConsumerState<_ForegroundAlarmWatcher
       final postponedToday = postponements.any(
         (p) => p.routineId == routine.id && p.dateKey == dateKey && p.offsetMinutes > 0,
       );
-      if (routine.startMinute == minuteOfDay) {
+      // The main alarm belongs to today's occurrence.
+      if (routine.occursOn(now.weekday) && routine.startMinute == minuteOfDay) {
         _showAlarmDialog(
           routineId: routine.id,
           notificationId: postponedToday
@@ -253,17 +253,26 @@ class _ForegroundAlarmWatcherState extends ConsumerState<_ForegroundAlarmWatcher
         );
         break; // one dialog at a time is enough even if two start the same minute
       }
-      final warnMinute =
-          (routine.startMinute - routine.leadWarningMin) % TimeGeometry.minutesPerDay;
-      if (routine.leadWarningMin > 0 && warnMinute == minuteOfDay) {
-        _showAlarmDialog(
-          routineId: routine.id,
-          notificationId: postponedToday
-              ? notificationIdFor(routine.id, 0, 3)
-              : notificationIdFor(routine.id, now.weekday, 1),
-          isTransition: true,
-        );
-        break;
+      if (routine.leadWarningMin > 0) {
+        final raw = routine.startMinute - routine.leadWarningMin;
+        final warnMinute = raw % TimeGeometry.minutesPerDay;
+        // A warning that lands before midnight relative to the start fires
+        // *today* but precedes *tomorrow's* occurrence (e.g. 23:40 for a 00:10
+        // routine), so it's gated on tomorrow's weekday -- otherwise it would
+        // wrongly fire on a day the routine doesn't run, or skip the correct
+        // night-before alert. Mirrors buildSchedule's transitionDay. The id
+        // still uses now.weekday (the firing day = the scheduled transitionDay).
+        final occurrenceWeekday = raw < 0 ? (now.weekday % 7) + 1 : now.weekday;
+        if (routine.occursOn(occurrenceWeekday) && warnMinute == minuteOfDay) {
+          _showAlarmDialog(
+            routineId: routine.id,
+            notificationId: postponedToday
+                ? notificationIdFor(routine.id, 0, 3)
+                : notificationIdFor(routine.id, now.weekday, 1),
+            isTransition: true,
+          );
+          break;
+        }
       }
     }
   }
@@ -365,7 +374,19 @@ class _AchievementRecorderState extends ConsumerState<_AchievementRecorder> {
       completions: completions,
       progress: progress,
     );
-    final toPersist = computed.difference(storedKeys).difference(_persistRequested);
+    // Never bank *today*: today is still live and can fall back below the bar
+    // before midnight (un-checking a micro-step). streakDateKeys deliberately
+    // ignores any stored record for today and recomputes it live for exactly
+    // this reason -- so banking today here (the moment it first crosses 50%)
+    // would leave a permanent, never-removed record that wrongly counts
+    // tomorrow even if the day ended below the bar. Today is banked naturally
+    // the next time the app opens on a later day, when it's a settled past day.
+    final todayKey = dayKeyFor();
+    final toPersist = computed
+        .difference(storedKeys)
+        .difference(_persistRequested)
+        .where((k) => k != todayKey)
+        .toSet();
 
     if (toPersist.isNotEmpty) {
       _persistRequested.addAll(toPersist);

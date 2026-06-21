@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:intl/intl.dart';
 
 import '../../models/achieved_day.dart';
 import '../../models/app_settings.dart';
@@ -63,8 +64,18 @@ class FirestorePlannerRepository implements PlannerRepository {
   Future<void> deleteMemo(String id) => _collection('memos').doc(id).delete();
 
   // Completions
+  //
+  // Bounded to a recent window rather than _watchAll: these grow by one doc
+  // per routine per day forever, but every reader only ever needs today (the
+  // dial/Focus/checklist) or recent history (the achievement backfill that
+  // seeds AchievedDay). Once a past day is banked as an AchievedDay it's read
+  // from there, never recomputed from completions -- so an old completion
+  // outside this window is dead weight that would otherwise be re-streamed on
+  // every app start (and billed as a Firestore read). dateKey is a sortable
+  // "yyyy-MM-dd" string, so a single-field range query needs no index.
   @override
-  Stream<List<Completion>> watchCompletions() => _watchAll('completions', Completion.fromMap);
+  Stream<List<Completion>> watchCompletions() =>
+      _watchSince('completions', Completion.fromMap, _historyWindowDays);
 
   @override
   Future<void> setCompletion(Completion c) => _collection('completions').doc(c.id).set(c.toMap());
@@ -73,28 +84,33 @@ class FirestorePlannerRepository implements PlannerRepository {
   Future<void> removeCompletion(String dateKey, String routineId) =>
       _collection('completions').doc(Completion.keyFor(dateKey, routineId)).delete();
 
-  // Micro-step progress
+  // Micro-step progress -- same unbounded-growth/recent-window reasoning as
+  // completions above.
   @override
   Stream<List<MicroStepProgress>> watchMicroStepProgress() =>
-      _watchAll('microStepProgress', MicroStepProgress.fromMap);
+      _watchSince('microStepProgress', MicroStepProgress.fromMap, _historyWindowDays);
 
   @override
   Future<void> saveMicroStepProgress(MicroStepProgress p) =>
       _collection('microStepProgress').doc(p.id).set(p.toMap());
 
-  // Routine postponements
+  // Routine postponements -- only today's are ever read (they shift today's
+  // effective alarm time and nothing else), so an even tighter window than the
+  // history collections. A couple of days of slack absorbs the timezone/
+  // midnight boundary without ever loading months of stale offsets.
   @override
   Stream<List<RoutinePostponement>> watchRoutinePostponements() =>
-      _watchAll('routinePostponements', RoutinePostponement.fromMap);
+      _watchSince('routinePostponements', RoutinePostponement.fromMap, _todayWindowDays);
 
   @override
   Future<void> saveRoutinePostponement(RoutinePostponement p) =>
       _collection('routinePostponements').doc(p.id).set(p.toMap());
 
-  // Routine skips
+  // Routine skips -- like postponements, only today's matter, so the same
+  // tight window.
   @override
   Stream<List<RoutineSkip>> watchRoutineSkips() =>
-      _watchAll('routineSkips', RoutineSkip.fromMap);
+      _watchSince('routineSkips', RoutineSkip.fromMap, _todayWindowDays);
 
   @override
   Future<void> saveRoutineSkip(RoutineSkip s) =>
@@ -125,4 +141,28 @@ class FirestorePlannerRepository implements PlannerRepository {
         .snapshots()
         .map((snap) => snap.docs.map((d) => fromMap(d.data())).toList());
   }
+
+  /// [_watchAll], but only documents whose "yyyy-MM-dd" `dateKey` is within
+  /// the last [windowDays] days (inclusive of today). The cutoff is computed
+  /// once when the stream is created — fine for an app that re-subscribes on
+  /// each launch; a session left open across midnight just keeps a window
+  /// anchored to that launch day, which still includes today either way.
+  Stream<List<T>> _watchSince<T>(
+    String collection,
+    T Function(Map<String, dynamic>) fromMap,
+    int windowDays,
+  ) {
+    final cutoff = DateFormat('yyyy-MM-dd')
+        .format(DateTime.now().subtract(Duration(days: windowDays)));
+    return _collection(collection)
+        .where('dateKey', isGreaterThanOrEqualTo: cutoff)
+        .snapshots()
+        .map((snap) => snap.docs.map((d) => fromMap(d.data())).toList());
+  }
 }
+
+// How far back the date-keyed collections are read. Anything older is left in
+// Firestore (never deleted) but not streamed into the app — see the per-method
+// comments above for why each reader is safe with only this much history.
+const _historyWindowDays = 90; // completions, micro-step progress
+const _todayWindowDays = 2; // postponements, skips (only today is ever used)

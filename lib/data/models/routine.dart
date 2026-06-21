@@ -51,8 +51,14 @@ class Routine {
   bool occursOn(int isoWeekday) =>
       repeatDays.isEmpty || repeatDays.contains(isoWeekday);
 
+  // Sentinel so copyWith can tell "omitted" (keep current segmentId) apart
+  // from "explicitly cleared" (segmentId: null) -- the plain `?? this` pattern
+  // can't, and a routine's segment legitimately becomes null when the segment
+  // it belonged to is deleted (see SegmentsController.delete).
+  static const Object _unset = Object();
+
   Routine copyWith({
-    String? segmentId,
+    Object? segmentId = _unset,
     String? title,
     String? note,
     List<String>? microSteps,
@@ -65,7 +71,7 @@ class Routine {
   }) {
     return Routine(
       id: id,
-      segmentId: segmentId ?? this.segmentId,
+      segmentId: identical(segmentId, _unset) ? this.segmentId : segmentId as String?,
       title: title ?? this.title,
       note: note ?? this.note,
       microSteps: microSteps ?? this.microSteps,
