@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
+import 'core/debug_log.dart';
 import 'core/theme.dart';
 import 'core/time_geometry.dart';
 import 'data/models/achieved_day.dart';
@@ -302,8 +303,9 @@ class _AccountAlarmSync extends ConsumerWidget {
       final settings = await next.watchSettings().first;
       try {
         await ref.read(notificationServiceProvider).rescheduleAll(routines, settings);
-      } catch (_) {
+      } catch (e) {
         // 플랫폼 채널 부재(테스트 등) — 무시.
+        logSwallowed('계정 전환 후 알람 재스케줄', e);
       }
     });
     return const SizedBox.shrink();
@@ -375,10 +377,11 @@ class _AchievementRecorderState extends ConsumerState<_AchievementRecorder> {
         for (final dateKey in toPersist) {
           try {
             await repo.saveAchievedDay(AchievedDay(dateKey: dateKey));
-          } catch (_) {
+          } catch (e) {
             // 저장 실패(플랫폼/네트워크) — 다음 빌드에서 다시 시도되도록
             // _persistRequested에서 되돌린다.
             _persistRequested.remove(dateKey);
+            logSwallowed('달성일 저장', e);
           }
         }
       });

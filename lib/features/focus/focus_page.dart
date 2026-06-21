@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
+import '../../core/debug_log.dart';
 import '../../core/time_geometry.dart';
 import '../../data/models/micro_step_progress.dart';
 import '../../data/models/routine.dart';
@@ -481,8 +482,9 @@ class _FocusPageState extends ConsumerState<FocusPage> {
   Future<void> _trySkipToday(String routineId) async {
     try {
       await ref.read(notificationServiceProvider).skipToday(routineId);
-    } catch (_) {
+    } catch (e) {
       // No platform channel available (e.g. under flutter test).
+      logSwallowed('Focus 넘기기', e);
     }
   }
 }

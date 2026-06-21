@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/debug_log.dart';
 import '../../core/time_geometry.dart';
 import '../../data/models/app_settings.dart';
 import '../../data/models/routine.dart';
@@ -215,8 +216,9 @@ class AlarmAlertDialog extends ConsumerWidget {
   Future<void> _tryCancelNotification(WidgetRef ref) async {
     try {
       await ref.read(notificationServiceProvider).cancelNotification(notificationId);
-    } catch (_) {
+    } catch (e) {
       // No platform channel available (e.g. under flutter test).
+      logSwallowed('알람 확인-알림취소', e);
     }
   }
 
@@ -225,8 +227,9 @@ class AlarmAlertDialog extends ConsumerWidget {
     try {
       await service.postpone(routineId, settings);
       await service.cancelNotification(notificationId);
-    } catch (_) {
+    } catch (e) {
       // No platform channel available (e.g. under flutter test).
+      logSwallowed('알람 미루기', e);
     }
   }
 
@@ -235,8 +238,9 @@ class AlarmAlertDialog extends ConsumerWidget {
     try {
       await service.skipToday(routineId);
       await service.cancelNotification(notificationId);
-    } catch (_) {
+    } catch (e) {
       // No platform channel available (e.g. under flutter test).
+      logSwallowed('알람 넘기기', e);
     }
   }
 }

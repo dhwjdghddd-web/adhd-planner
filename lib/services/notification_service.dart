@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import 'package:timezone/data/latest_all.dart' as tz_data;
 import 'package:timezone/timezone.dart' as tz;
 
+import '../core/debug_log.dart';
 import '../core/time_geometry.dart';
 import '../data/models/app_settings.dart';
 import '../data/models/routine.dart';
@@ -317,11 +318,12 @@ Future<void> _ensureChannels(AppSettings settings) async {
       'soundUri': soundUri,
       'vibrationPattern': vibrationPattern.toList(),
     });
-  } catch (_) {
+  } catch (e) {
     // No such platform channel (iOS, flutter test). The plugin's own
     // zonedSchedule call below will fall back to creating an ordinary
     // channel itself — sound still works there, just not the silent-mode
     // vibration bypass.
+    logSwallowed('ensureAlarmChannel', e);
   }
 }
 
@@ -337,8 +339,9 @@ Future<void> _ensureLocalTimezone() async {
   try {
     final localTz = await FlutterTimezone.getLocalTimezone();
     tz.setLocalLocation(tz.getLocation(localTz.identifier));
-  } catch (_) {
+  } catch (e) {
     tz.setLocalLocation(tz.UTC);
+    logSwallowed('getLocalTimezone(UTC로 대체)', e);
   }
 }
 
@@ -696,8 +699,9 @@ class NotificationService {
         'durationMs': durationMs,
         'repeatIntervalMs': repeatInterval.inMilliseconds,
       });
-    } catch (_) {
+    } catch (e) {
       // No platform channel available (e.g. under flutter test).
+      logSwallowed('scheduleVibrationAlarm', e);
     }
   }
 
@@ -706,8 +710,9 @@ class NotificationService {
       await _alarmChannelChannel.invokeMethod('cancelVibrationAlarm', {
         'requestCode': requestCode,
       });
-    } catch (_) {
+    } catch (e) {
       // No platform channel available (e.g. under flutter test).
+      logSwallowed('cancelVibrationAlarm', e);
     }
   }
 }
