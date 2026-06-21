@@ -142,6 +142,14 @@ class _Body extends ConsumerWidget {
       }
       unawaited(controller.complete(routine.id));
     } else {
+      // Un-checking the routine is the exact mirror of checking it: checking
+      // filled every micro-step, so un-checking clears them all again. Without
+      // this the tile would drop back to "미완료" while its steps stayed fully
+      // ticked -- a contradictory state that also kept dragging the day's
+      // achievement ratio up off steps the user just said weren't done.
+      if (routine.microSteps.isNotEmpty) {
+        unawaited(ref.read(microStepProgressControllerProvider).save(routine.id, const {}));
+      }
       unawaited(controller.uncomplete(routine.id));
     }
   }

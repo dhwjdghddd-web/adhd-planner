@@ -170,6 +170,33 @@ void main() {
     expect(tester.widget<Checkbox>(find.byType(Checkbox).at(0)).value, isTrue);
   });
 
+  testWidgets('un-checking the routine clears every micro-step it had filled',
+      (tester) async {
+    final repo = FakePlannerRepository();
+    await repo.upsertRoutine(Routine(
+      id: 'r1',
+      segmentId: null,
+      title: '아침 루틴',
+      startMinute: 0,
+      microSteps: const ['세수하기', '옷 입기'],
+    ));
+
+    await tester.pumpWidget(wrap(repo));
+    await tester.pumpAndSettle();
+
+    // Complete via the routine checkbox: fills both micro-steps.
+    await tester.tap(find.byType(Checkbox).at(0));
+    await tester.pumpAndSettle();
+    expect(tester.widget<Checkbox>(find.byType(Checkbox).at(1)).value, isTrue);
+    expect(tester.widget<Checkbox>(find.byType(Checkbox).at(2)).value, isTrue);
+
+    // Un-check it again: both micro-steps must clear, not stay ticked.
+    await tester.tap(find.byType(Checkbox).at(0));
+    await tester.pumpAndSettle();
+    expect(tester.widget<Checkbox>(find.byType(Checkbox).at(1)).value, isFalse);
+    expect(tester.widget<Checkbox>(find.byType(Checkbox).at(2)).value, isFalse);
+  });
+
   testWidgets('marking a routine complete via its own checkbox checks every micro-step too',
       (tester) async {
     final repo = FakePlannerRepository();

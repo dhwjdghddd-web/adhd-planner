@@ -1,3 +1,6 @@
+import 'package:intl/intl.dart';
+
+import '../../data/models/achieved_day.dart';
 import '../../data/models/completion.dart';
 import '../../data/models/micro_step_progress.dart';
 import '../../data/models/routine.dart';
@@ -61,8 +64,11 @@ DailyAchievement dailyAchievementFor({
 }
 
 /// Every calendar day (by [Completion]/[MicroStepProgress] date-key) that
-/// counts as achieved under [DailyAchievement.isAchieved] -- the set streaks
-/// are built from.
+/// counts as achieved under [DailyAchievement.isAchieved], computed from the
+/// *current* routine list. Used only to seed [AchievedDay] records the first
+/// time the streak store is populated (a one-off backfill of pre-existing
+/// history) -- ongoing streaks read the persisted records via [streakDateKeys]
+/// instead, so later routine edits can't shift a day that was already earned.
 Set<String> achievedDateKeys({
   required List<Routine> routines,
   required List<RoutineSkip> skips,
@@ -82,4 +88,39 @@ Set<String> achievedDateKeys({
       progress: progress,
     ).isAchieved;
   }).toSet();
+}
+
+/// The day-key set streaks are actually built from: every day already
+/// recorded as achieved (permanent -- see [AchievedDay]), plus today if it
+/// meets the bar *right now*. Today is always recomputed live so crossing the
+/// 50% mark updates the streak immediately, before the recorder's write has
+/// round-tripped through storage -- and so that un-checking back below the bar
+/// before the day is over is still reflected, since today hasn't been
+/// permanently banked yet. Every *past* day comes only from [achievedDays],
+/// never recomputed, which is the whole point: a routine edited or deleted
+/// today can't reach back and undo a day that was already earned.
+Set<String> streakDateKeys({
+  required List<AchievedDay> achievedDays,
+  required List<Routine> routines,
+  required List<RoutineSkip> skips,
+  required List<Completion> completions,
+  required List<MicroStepProgress> progress,
+  DateTime? now,
+}) {
+  final todayKey = DateFormat('yyyy-MM-dd').format(now ?? DateTime.now());
+  final keys = {
+    // Past days only: today is governed by the live check below, not by a
+    // record that may have been banked earlier today and since fallen back.
+    for (final d in achievedDays)
+      if (d.dateKey != todayKey) d.dateKey,
+  };
+  final todayAchieved = dailyAchievementFor(
+    dateKey: todayKey,
+    routines: routines,
+    skips: skips,
+    completions: completions,
+    progress: progress,
+  ).isAchieved;
+  if (todayAchieved) keys.add(todayKey);
+  return keys;
 }

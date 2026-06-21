@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:adhd_planner/data/models/achieved_day.dart';
 import 'package:adhd_planner/data/models/app_settings.dart';
 import 'package:adhd_planner/data/models/completion.dart';
 import 'package:adhd_planner/data/models/memo.dart';
@@ -10,9 +11,9 @@ import 'package:adhd_planner/data/models/routine_skip.dart';
 import 'package:adhd_planner/data/models/segment.dart';
 import 'package:adhd_planner/data/repositories/planner_repository.dart';
 
-/// In-memory [PlannerRepository] for widget tests — avoids real Hive disk
-/// I/O so feature tests (STEP 4+) start fast and don't need setUp/tearDown
-/// around a temp directory.
+/// In-memory [PlannerRepository] for widget tests — avoids any real disk or
+/// network I/O so feature tests start fast and don't need setUp/tearDown
+/// around a temp directory or a Firestore emulator.
 class FakePlannerRepository implements PlannerRepository {
   final Map<String, Segment> _segments = {};
   final Map<String, Routine> _routines = {};
@@ -21,6 +22,7 @@ class FakePlannerRepository implements PlannerRepository {
   final Map<String, MicroStepProgress> _microStepProgress = {};
   final Map<String, RoutinePostponement> _routinePostponements = {};
   final Map<String, RoutineSkip> _routineSkips = {};
+  final Map<String, AchievedDay> _achievedDays = {};
   AppSettings _settings = const AppSettings.defaults();
 
   final _segmentsStream = _ReplayStream<List<Segment>>();
@@ -30,6 +32,7 @@ class FakePlannerRepository implements PlannerRepository {
   final _microStepProgressStream = _ReplayStream<List<MicroStepProgress>>();
   final _routinePostponementsStream = _ReplayStream<List<RoutinePostponement>>();
   final _routineSkipsStream = _ReplayStream<List<RoutineSkip>>();
+  final _achievedDaysStream = _ReplayStream<List<AchievedDay>>();
   final _settingsStream = _ReplayStream<AppSettings>();
 
   FakePlannerRepository() {
@@ -40,6 +43,7 @@ class FakePlannerRepository implements PlannerRepository {
     _microStepProgressStream.add(const []);
     _routinePostponementsStream.add(const []);
     _routineSkipsStream.add(const []);
+    _achievedDaysStream.add(const []);
     _settingsStream.add(_settings);
   }
 
@@ -138,6 +142,15 @@ class FakePlannerRepository implements PlannerRepository {
   }
 
   @override
+  Stream<List<AchievedDay>> watchAchievedDays() => _achievedDaysStream.stream;
+
+  @override
+  Future<void> saveAchievedDay(AchievedDay d) async {
+    _achievedDays[d.id] = d;
+    _achievedDaysStream.add(_achievedDays.values.toList());
+  }
+
+  @override
   Stream<AppSettings> watchSettings() => _settingsStream.stream;
 
   @override
@@ -148,8 +161,9 @@ class FakePlannerRepository implements PlannerRepository {
 }
 
 /// Broadcast stream that replays the latest value to new listeners,
-/// mirroring the "yield current state immediately" behaviour of
-/// [HivePlannerRepository]'s watch* streams.
+/// mirroring the "yield current state immediately" behaviour of a real
+/// repository's watch* streams (Firestore snapshots emit the current
+/// state right away on subscribe).
 class _ReplayStream<T> {
   final _controller = StreamController<T>.broadcast();
   T? _latest;

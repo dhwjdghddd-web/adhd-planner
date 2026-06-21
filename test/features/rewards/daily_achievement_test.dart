@@ -1,5 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:intl/intl.dart';
 
+import 'package:adhd_planner/data/models/achieved_day.dart';
 import 'package:adhd_planner/data/models/completion.dart';
 import 'package:adhd_planner/data/models/micro_step_progress.dart';
 import 'package:adhd_planner/data/models/routine.dart';
@@ -119,6 +121,62 @@ void main() {
       );
 
       expect(result, {'2026-06-17'});
+    });
+  });
+
+  group('streakDateKeys', () {
+    // A past day is identified relative to "now"; use a fixed now so the
+    // banked day below is unambiguously in the past.
+    final now = DateTime(2026, 6, 18, 10);
+    final todayKey = DateFormat('yyyy-MM-dd').format(now);
+
+    test('a banked past day counts even when current routines no longer would', () {
+      // No routines/progress/completions at all today -- the only reason this
+      // day counts is that it was already recorded as achieved. This is the
+      // whole point: deleting the routine behind it must not erase the day.
+      final result = streakDateKeys(
+        achievedDays: const [AchievedDay(dateKey: '2026-06-15')],
+        routines: const [],
+        skips: const [],
+        completions: const [],
+        progress: const [],
+        now: now,
+      );
+
+      expect(result, contains('2026-06-15'));
+    });
+
+    test('today is included when it meets the bar live, without a stored record', () {
+      final result = streakDateKeys(
+        achievedDays: const [],
+        routines: [routine('r1', const ['a', 'b'])],
+        skips: const [],
+        completions: const [],
+        progress: [
+          MicroStepProgress(dateKey: todayKey, routineId: 'r1', checkedIndices: const [0, 1]),
+        ],
+        now: now,
+      );
+
+      expect(result, contains(todayKey));
+    });
+
+    test('today is excluded when it no longer meets the bar, even if banked earlier', () {
+      // A record exists for today (banked when it briefly crossed 50%), but the
+      // user has since un-checked back below the bar. Today is governed by the
+      // live check, not the stale same-day record, so it must drop out again.
+      final result = streakDateKeys(
+        achievedDays: [AchievedDay(dateKey: todayKey)],
+        routines: [routine('r1', const ['a', 'b', 'c', 'd'])],
+        skips: const [],
+        completions: const [],
+        progress: [
+          MicroStepProgress(dateKey: todayKey, routineId: 'r1', checkedIndices: const [0]),
+        ],
+        now: now,
+      );
+
+      expect(result, isNot(contains(todayKey)));
     });
   });
 }

@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 
 import 'core/theme.dart';
 import 'core/time_geometry.dart';
+import 'data/models/achieved_day.dart';
 import 'data/models/app_settings.dart';
 import 'data/providers.dart';
 import 'data/routine_status.dart';
@@ -13,6 +14,7 @@ import 'features/focus/alarm_alert_dialog.dart';
 import 'features/memos/quick_add_button.dart';
 import 'features/onboarding/onboarding_page.dart';
 import 'features/planner/planner_page.dart';
+import 'features/rewards/daily_achievement.dart';
 import 'services/notification_service.dart';
 
 /// Root widget. Theme mode and font scale follow [AppSettings] live (see
@@ -45,6 +47,7 @@ class App extends ConsumerWidget {
               const _AlarmAlertLauncher(),
               const _ForegroundAlarmWatcher(),
               const _AccountAlarmSync(),
+              const _AchievementRecorder(),
             ],
           ),
         );
@@ -303,6 +306,84 @@ class _AccountAlarmSync extends ConsumerWidget {
         // 플랫폼 채널 부재(테스트 등) — 무시.
       }
     });
+    return const SizedBox.shrink();
+  }
+}
+
+/// No visual presence — banks each day the user reaches the achievement bar
+/// as a permanent [AchievedDay], so the streak (see [StreakBadge]) reads those
+/// stored days for everything but today instead of recomputing history from
+/// the current routine list. Without this, adding a micro-step or deleting a
+/// routine would silently rewrite past days' achievement and shift a streak
+/// that was already earned — exactly the kind of "the app moved my goalposts"
+/// moment this app works hard to avoid.
+///
+/// Writes only the *difference* (computed-achieved days not yet stored), which
+/// on first run after this feature lands also backfills whatever history the
+/// old live computation would have counted — freezing it once, from then on
+/// authoritative. Records are write-once and never removed: an earned day
+/// stays earned even if you later edit the routines behind it.
+class _AchievementRecorder extends ConsumerStatefulWidget {
+  const _AchievementRecorder();
+
+  @override
+  ConsumerState<_AchievementRecorder> createState() => _AchievementRecorderState();
+}
+
+class _AchievementRecorderState extends ConsumerState<_AchievementRecorder> {
+  // Day-keys this session has already asked the repo to persist, so a rebuild
+  // before the write round-trips through achievedDaysProvider doesn't queue the
+  // same write again. (The write itself is idempotent — doc id is the day-key —
+  // so this is just to avoid redundant calls, not for correctness.)
+  final Set<String> _persistRequested = {};
+
+  @override
+  Widget build(BuildContext context) {
+    final routines = ref.watch(routinesProvider).value;
+    final skips = ref.watch(routineSkipsProvider).value;
+    final completions = ref.watch(completionsProvider).value;
+    final progress = ref.watch(microStepProgressProvider).value;
+    final stored = ref.watch(achievedDaysProvider).value;
+
+    // Wait until everything we'd compute from has actually loaded — acting on
+    // a half-loaded picture could bank a day that isn't really achieved yet,
+    // or (worse) skip backfilling one that is.
+    if (routines == null ||
+        skips == null ||
+        completions == null ||
+        progress == null ||
+        stored == null) {
+      return const SizedBox.shrink();
+    }
+
+    final storedKeys = {for (final d in stored) d.dateKey};
+    final computed = achievedDateKeys(
+      routines: routines,
+      skips: skips,
+      completions: completions,
+      progress: progress,
+    );
+    final toPersist = computed.difference(storedKeys).difference(_persistRequested);
+
+    if (toPersist.isNotEmpty) {
+      _persistRequested.addAll(toPersist);
+      // Persist after this frame: writing to the repo (and so emitting on
+      // achievedDaysProvider) mid-build would re-enter the provider graph.
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        final repo = ref.read(plannerRepositoryProvider);
+        if (repo == null) return;
+        for (final dateKey in toPersist) {
+          try {
+            await repo.saveAchievedDay(AchievedDay(dateKey: dateKey));
+          } catch (_) {
+            // 저장 실패(플랫폼/네트워크) — 다음 빌드에서 다시 시도되도록
+            // _persistRequested에서 되돌린다.
+            _persistRequested.remove(dateKey);
+          }
+        }
+      });
+    }
+
     return const SizedBox.shrink();
   }
 }

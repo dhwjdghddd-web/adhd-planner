@@ -1,3 +1,4 @@
+import '../models/achieved_day.dart';
 import '../models/app_settings.dart';
 import '../models/completion.dart';
 import '../models/memo.dart';
@@ -8,9 +9,10 @@ import '../models/routine_skip.dart';
 import '../models/segment.dart';
 
 /// Storage abstraction for the whole app. Screens and controllers depend
-/// only on this interface, never on the concrete storage backend — STEP 3
-/// ships [HivePlannerRepository] (local-only, no account needed) and STEP 9
-/// swaps in a Firestore-backed implementation behind the same contract.
+/// only on this interface, never on the concrete storage backend — the app
+/// runs on [FirestorePlannerRepository] (per-account cloud sync, with
+/// Firestore's own on-device cache for offline use). Tests swap in an
+/// in-memory fake behind the same contract.
 abstract class PlannerRepository {
   // Segments
   Stream<List<Segment>> watchSegments();
@@ -44,6 +46,10 @@ abstract class PlannerRepository {
   // Routine skips ("넘기기" -- per routine, per day)
   Stream<List<RoutineSkip>> watchRoutineSkips();
   Future<void> saveRoutineSkip(RoutineSkip s);
+
+  // Achieved days (streak source -- per day, write-once; see [AchievedDay])
+  Stream<List<AchievedDay>> watchAchievedDays();
+  Future<void> saveAchievedDay(AchievedDay d);
 
   // Settings
   Stream<AppSettings> watchSettings();

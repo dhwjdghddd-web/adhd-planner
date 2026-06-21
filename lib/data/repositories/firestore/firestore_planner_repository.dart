@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../../models/achieved_day.dart';
 import '../../models/app_settings.dart';
 import '../../models/completion.dart';
 import '../../models/memo.dart';
@@ -10,9 +11,9 @@ import '../../models/routine_skip.dart';
 import '../../models/segment.dart';
 import '../planner_repository.dart';
 
-/// Firestore-backed [PlannerRepository] for the signed-in user. Every model
-/// already has a plain `toMap`/`fromMap` (added in STEP 3 for exactly this
-/// swap), so this is a straight read/write mapping — no new serialization
+/// Firestore-backed [PlannerRepository] for the signed-in user — the only
+/// concrete backend the app runs on. Every model has a plain `toMap`/
+/// `fromMap`, so this is a straight read/write mapping — no new serialization
 /// logic needed. Data lives at `users/{uid}/{segments|routines|memos|
 /// completions}`; the `users/{uid}` document itself holds [AppSettings]
 /// since there's only ever one per user.
@@ -98,6 +99,15 @@ class FirestorePlannerRepository implements PlannerRepository {
   @override
   Future<void> saveRoutineSkip(RoutineSkip s) =>
       _collection('routineSkips').doc(s.id).set(s.toMap());
+
+  // Achieved days
+  @override
+  Stream<List<AchievedDay>> watchAchievedDays() =>
+      _watchAll('achievedDays', AchievedDay.fromMap);
+
+  @override
+  Future<void> saveAchievedDay(AchievedDay d) =>
+      _collection('achievedDays').doc(d.id).set(d.toMap());
 
   // Settings
   @override

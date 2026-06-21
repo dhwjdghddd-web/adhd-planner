@@ -1,6 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'models/achieved_day.dart';
 import 'models/app_settings.dart';
 import 'models/completion.dart';
 import 'models/memo.dart';
@@ -81,6 +82,10 @@ final routinePostponementsProvider = StreamProvider<List<RoutinePostponement>>(
 
 final routineSkipsProvider = StreamProvider<List<RoutineSkip>>(
   (ref) => _guardedStream(ref.watch(plannerRepositoryProvider), (r) => r.watchRoutineSkips()),
+);
+
+final achievedDaysProvider = StreamProvider<List<AchievedDay>>(
+  (ref) => _guardedStream(ref.watch(plannerRepositoryProvider), (r) => r.watchAchievedDays()),
 );
 
 /// Settings는 null uid 구간에 기본값을 유지한다(앱이 깜빡이지 않게).

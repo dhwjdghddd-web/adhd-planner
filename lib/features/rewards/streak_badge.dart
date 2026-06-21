@@ -9,8 +9,9 @@ import 'streak.dart';
 /// the focus screen. Emphasizes the best-ever streak; shows the current one
 /// softly alongside it, and never shows a bare "0" — missing a day gets an
 /// encouraging line instead of a number that could read as a scolding. A day
-/// counts toward the streak via [achievedDateKeys] (micro-step ratio, not
-/// just "any routine completed") -- see [DailyAchievement].
+/// counts toward the streak via [streakDateKeys]: past days come from the
+/// permanent [AchievedDay] store (so editing a routine never restyles
+/// history) and today is the live micro-step ratio -- see [DailyAchievement].
 class StreakBadge extends ConsumerWidget {
   const StreakBadge({super.key});
 
@@ -18,13 +19,15 @@ class StreakBadge extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final routines = ref.watch(routinesProvider).value ?? const [];
     final skips = ref.watch(routineSkipsProvider).value ?? const [];
+    final achievedDays = ref.watch(achievedDaysProvider).value ?? const [];
     final completionsAsync = ref.watch(completionsProvider);
     final progress = ref.watch(microStepProgressProvider).value ?? const [];
     final theme = Theme.of(context);
 
     return completionsAsync.when(
       data: (completions) {
-        final dateKeys = achievedDateKeys(
+        final dateKeys = streakDateKeys(
+          achievedDays: achievedDays,
           routines: routines,
           skips: skips,
           completions: completions,
