@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/constants.dart';
 import '../../core/time_geometry.dart';
 import '../../data/models/segment.dart';
 import '../../data/providers.dart';
@@ -159,10 +160,13 @@ class _SegmentTile extends StatelessWidget {
         margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
         child: ListTile(
           onTap: onTap,
-          leading: CircleAvatar(
-            backgroundColor: segment.themeColor(context),
-            child: Icon(iconForKey(segment.iconKey), color: Colors.white),
-          ),
+          leading: Builder(builder: (context) {
+            final avatarColor = segment.themeColor(context);
+            return CircleAvatar(
+              backgroundColor: avatarColor,
+              child: Icon(iconForKey(segment.iconKey), color: onSegmentColor(avatarColor)),
+            );
+          }),
           title: Text(segment.name),
           subtitle: Text(range),
           trailing: Row(

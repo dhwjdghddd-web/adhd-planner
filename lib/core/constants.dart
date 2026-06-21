@@ -74,6 +74,14 @@ Color getEffectiveSegmentColor(Color savedColor, Brightness brightness) {
   return savedColor;
 }
 
+/// Black or white, whichever stays legible *on* [background] — for an icon or
+/// text drawn directly over a segment's colour. Segment colours are user-
+/// picked and become light pastels in dark mode (see [getEffectiveSegmentColor]),
+/// so a hardcoded white glyph washes out on them; this picks by luminance
+/// instead. Mirrors `ThemeData.estimateBrightnessForColor`'s 0.5 threshold.
+Color onSegmentColor(Color background) =>
+    background.computeLuminance() > 0.5 ? Colors.black87 : Colors.white;
+
 const double kMinTapTarget = 48.0;
 
 /// Repeat-day encoding shared by routines: 1=Mon .. 7=Sun (ISO-8601 weekday).

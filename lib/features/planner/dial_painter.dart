@@ -223,7 +223,7 @@ class DialPainter extends CustomPainter {
     final point = TimeGeometry.pointOnCircle(center, radius, midMinute);
     
     final themeColor = getEffectiveSegmentColor(segment.color, brightness);
-    final textColor = themeColor.computeLuminance() > 0.5 ? Colors.black87 : Colors.white;
+    final textColor = onSegmentColor(themeColor);
     final tp = TextPainter(
       text: TextSpan(
         text: segment.name,
@@ -267,7 +267,8 @@ class DialPainter extends CustomPainter {
             fontSize: DialGeometry.routineMarkerRadius * 1.1, // Scale appropriately
             fontFamily: icon.fontFamily,
             package: icon.fontPackage,
-            color: Colors.white,
+            // Pastel segment fills in dark mode would swallow a white glyph.
+            color: onSegmentColor(color),
           ),
         ),
         textDirection: TextDirection.ltr,

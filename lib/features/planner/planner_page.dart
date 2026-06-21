@@ -204,10 +204,11 @@ class _Dial extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final weekday = DateTime.now().weekday;
     final status = findRoutineStatus(
       statusRoutines,
       currentMinute,
-      DateTime.now().weekday,
+      weekday,
       completedRoutineIds: completedRoutineIds,
     );
 
@@ -220,7 +221,12 @@ class _Dial extends StatelessWidget {
         final side = math.min(constraints.maxWidth, constraints.maxHeight) - 56;
         return Center(
           child: Semantics(
-            label: '오늘 원형 계획표, 현재 시각 ${TimeGeometry.formatMinute(currentMinute)}',
+            // The markers themselves are painted, not focusable, so a screen
+            // reader has no other way to learn what's on the dial. Read out
+            // today's routines (time + title, in order) as part of the dial's
+            // own label so the schedule is available without sight -- the
+            // 오늘의 체크리스트 screen is the actionable counterpart.
+            label: _dialSemanticsLabel(weekday),
             child: SizedBox(
               width: side,
               height: side,
@@ -252,6 +258,38 @@ class _Dial extends StatelessWidget {
         );
       },
     );
+  }
+
+  /// Spoken description of the dial: the current time, then today's routines
+  /// in start-time order ("07:00 약 먹기, 12:30 점심" …), each tagged 완료 or
+  /// 건너뜀 where that applies. Built from [displayRoutines] so the times match
+  /// what's drawn (today's 미루기 included); 넘기기'd routines are still listed
+  /// (marked 건너뜀) since they remain on the dial.
+  String _dialSemanticsLabel(int weekday) {
+    final todays = [
+      for (final r in displayRoutines)
+        if (r.occursOn(weekday)) r,
+    ]..sort((a, b) => a.startMinute.compareTo(b.startMinute));
+
+    final now = '현재 시각 ${TimeGeometry.formatMinute(currentMinute)}';
+    if (todays.isEmpty) {
+      return '오늘 원형 계획표, $now, 오늘 일정이 없어요';
+    }
+
+    final skippedIds = {
+      for (final r in displayRoutines)
+        if (!statusRoutines.any((s) => s.id == r.id)) r.id,
+    };
+    final items = todays.map((r) {
+      final time = TimeGeometry.formatMinute(r.startMinute);
+      final tag = completedRoutineIds.contains(r.id)
+          ? ' 완료'
+          : skippedIds.contains(r.id)
+              ? ' 건너뜀'
+              : '';
+      return '$time ${r.title}$tag';
+    }).join(', ');
+    return '오늘 원형 계획표, $now. 오늘 일정: $items';
   }
 
   void _handleTap(BuildContext context, Offset local, double side) {

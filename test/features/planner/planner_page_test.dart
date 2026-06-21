@@ -167,6 +167,28 @@ void main() {
     expect(find.text('모두 완료'), findsOneWidget);
   });
 
+  testWidgets("the dial's semantics label reads out today's routines for screen readers",
+      (tester) async {
+    final repo = FakePlannerRepository();
+    await repo.upsertSegment(const Segment(
+      id: 's1', name: '하루', colorValue: 0xFF2E7D8C, iconKey: 'wb_sunny',
+      startMinute: 0, endMinute: 24 * 60, order: 0,
+    ));
+    await repo.upsertRoutine(const Routine(
+      id: 'r1', segmentId: 's1', title: '약 먹기', startMinute: 7 * 60,
+    ));
+
+    await tester.pumpWidget(wrap(repo));
+    await tester.pumpAndSettle();
+
+    // The painted markers aren't individually focusable, so the routine has
+    // to surface in the dial's own spoken label (time + title).
+    expect(
+      find.bySemanticsLabel(RegExp('07:00 약 먹기')),
+      findsOneWidget,
+    );
+  });
+
   testWidgets("'지금' button opens FocusPage when there is a current routine",
       (tester) async {
     final repo = FakePlannerRepository();

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
+import '../../core/constants.dart';
 import '../../core/time_geometry.dart';
 import '../../data/models/completion.dart';
 import '../../data/models/micro_step_progress.dart';
@@ -217,10 +218,13 @@ class _ChecklistTile extends StatelessWidget {
             value: isCompleted,
             onChanged: (checked) => onChanged(checked ?? false),
             controlAffinity: ListTileControlAffinity.leading,
-            secondary: CircleAvatar(
-              backgroundColor: segment?.themeColor(context) ?? Colors.grey,
-              child: Icon(iconForKey(segment?.iconKey ?? ''), color: Colors.white),
-            ),
+            secondary: Builder(builder: (context) {
+              final avatarColor = segment?.themeColor(context) ?? Colors.grey;
+              return CircleAvatar(
+                backgroundColor: avatarColor,
+                child: Icon(iconForKey(segment?.iconKey ?? ''), color: onSegmentColor(avatarColor)),
+              );
+            }),
             title: Text(
               routine.title,
               style: isCompleted ? const TextStyle(decoration: TextDecoration.lineThrough) : null,

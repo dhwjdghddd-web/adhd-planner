@@ -204,13 +204,16 @@ class _RoutineTile extends StatelessWidget {
         margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
         child: ListTile(
           onTap: onTap,
-          leading: CircleAvatar(
-            backgroundColor: segment?.themeColor(context) ?? Colors.grey,
-            child: Icon(
-              iconForKey(segment?.iconKey ?? ''),
-              color: Colors.white,
-            ),
-          ),
+          leading: Builder(builder: (context) {
+            final avatarColor = segment?.themeColor(context) ?? Colors.grey;
+            return CircleAvatar(
+              backgroundColor: avatarColor,
+              child: Icon(
+                iconForKey(segment?.iconKey ?? ''),
+                color: onSegmentColor(avatarColor),
+              ),
+            );
+          }),
           title: Text(routine.title),
           subtitle: Text('$segmentName · $startTime · $repeatLabel'),
           trailing: Row(
