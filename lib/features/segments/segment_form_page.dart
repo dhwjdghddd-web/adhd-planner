@@ -172,7 +172,8 @@ class _SegmentFormPageState extends ConsumerState<SegmentFormPage> {
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('구간 삭제'),
-        content: Text('"${existing.name}" 구간을 삭제할까요?'),
+        content: Text('"${existing.name}" 구간을 삭제할까요? 소속된 루틴은 사라지지 않고, '
+            '시간대가 겹치는 다른 구간으로 옮겨지거나 구간 없이 남습니다.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
