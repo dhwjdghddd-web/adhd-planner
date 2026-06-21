@@ -16,7 +16,7 @@ class DialGeometry {
   static const double ringThickness = 24;
   static const double laneGap = 6;
   static const double tickLength = 10;
-  static const double routineMarkerRadius = 17; // Diameter 34
+  static const double routineMarkerRadius = 14; // Diameter 28
 
   /// Outer radius of the first (outermost) segment ring for a dial that
   /// fills a square of [side] pixels.
@@ -125,27 +125,41 @@ class DialPainter extends CustomPainter {
 
   void _paintTicks(Canvas canvas, Offset center, double outerR) {
     final tickRadius = outerR + DialGeometry.ringThickness / 2 + 4;
+    final majorHours = [0, 6, 12, 18];
 
-    // 1. Dashed ring effect using fine dots/dashes
+    // 1. Dashed ring effect using fine dots/dashes every 15 minutes
     final dashPaint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.0
       ..color = tickColor.withValues(alpha: 0.2);
 
-    // Draw small dashes every 15 minutes
     for (var min = 0; min < TimeGeometry.minutesPerDay; min += 15) {
       final inner = TimeGeometry.pointOnCircle(center, tickRadius - 1.5, min);
       final outer = TimeGeometry.pointOnCircle(center, tickRadius + 1.5, min);
       canvas.drawLine(inner, outer, dashPaint);
     }
 
-    // 2. 4 major ticks: 0, 6, 12, 18
+    // 2. On-the-hour ticks: longer and brighter than the 15-min dashes so
+    // every hour boundary (not just 0/6/12/18) reads as a distinct mark.
+    final hourPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5
+      ..color = tickColor.withValues(alpha: 0.4);
+
+    for (var hour = 0; hour < 24; hour++) {
+      if (majorHours.contains(hour)) continue;
+      final minute = hour * 60;
+      final inner = TimeGeometry.pointOnCircle(center, tickRadius - 5, minute);
+      final outer = TimeGeometry.pointOnCircle(center, tickRadius + 1.5, minute);
+      canvas.drawLine(inner, outer, hourPaint);
+    }
+
+    // 3. 4 major ticks: 0, 6, 12, 18
     final majorPaint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2.5
       ..color = tickColor.withValues(alpha: 0.5);
 
-    final majorHours = [0, 6, 12, 18];
     for (final hour in majorHours) {
       final minute = hour * 60;
       final inner = TimeGeometry.pointOnCircle(
@@ -153,13 +167,25 @@ class DialPainter extends CustomPainter {
       final outer = TimeGeometry.pointOnCircle(center, tickRadius, minute);
       canvas.drawLine(inner, outer, majorPaint);
 
-      // Major labels (0시, 6시, 12시, 18시)
-      final labelPoint =
-          TimeGeometry.pointOnCircle(center, tickRadius + 16, minute);
+      // Major labels (0시, 6시, 12시, 18시). A single fixed radial offset
+      // can't clear the tick band for every label: at 0시/12시 the text's
+      // width runs tangentially, so only its (small) height eats into the
+      // radial gap, but at 6시/18시 the text's width runs radially, so the
+      // full glyph width does -- a "1" pulled in close enough to clear the
+      // screen edge then lands on top of the tick marks instead. Measure
+      // each label and push it out by its own radius-aligned half-extent
+      // (half-height at top/bottom, half-width at left/right) so every
+      // label clears the outermost tick (tickRadius + 1.5) by the same
+      // visual gap, regardless of glyph count.
       final tp = TextPainter(
         text: TextSpan(text: '$hour시', style: labelStyle),
         textDirection: TextDirection.ltr,
       )..layout();
+      final isHorizontal = hour == 6 || hour == 18;
+      final halfExtent = isHorizontal ? tp.width / 2 : tp.height / 2;
+      const clearanceGap = 3.0;
+      final labelRadius = tickRadius + 1.5 + clearanceGap + halfExtent;
+      final labelPoint = TimeGeometry.pointOnCircle(center, labelRadius, minute);
       tp.paint(canvas, labelPoint - Offset(tp.width / 2, tp.height / 2));
     }
   }

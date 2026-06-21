@@ -438,6 +438,106 @@ void main() {
     expect(checkbox.value, true);
   });
 
+  group('FocusPage.forRoutine (dial marker review mode)', () {
+    Widget wrapForRoutine(FakePlannerRepository repo, Routine routine) {
+      return ProviderScope(
+        overrides: [plannerRepositoryProvider.overrideWithValue(repo)],
+        child: MaterialApp(home: FocusPage.forRoutine(routine)),
+      );
+    }
+
+    testWidgets('shows the pinned routine and its checklist even though it is '
+        "not actually today's current or next routine", (tester) async {
+      final repo = FakePlannerRepository();
+      // Far enough in the past that it is neither "current" (nothing starts
+      // this late and stays current forever without a later routine
+      // existing too) nor "next" -- a stand-in for "already passed today".
+      final past = ((_currentMinuteOfNow() - 120) % (24 * 60) + 24 * 60) % (24 * 60);
+      final routine = Routine(
+        id: 'r1',
+        segmentId: 's1',
+        title: '아침 약',
+        startMinute: past,
+        microSteps: const ['물 마시기', '식후 30분 확인'],
+      );
+      await repo.upsertRoutine(routine);
+
+      await tester.pumpWidget(wrapForRoutine(repo, routine));
+      await tester.pumpAndSettle();
+
+      expect(find.text('아침 약'), findsOneWidget);
+      expect(find.widgetWithText(CheckboxListTile, '물 마시기'), findsOneWidget);
+      expect(find.text('모두 완료'), findsOneWidget);
+    });
+
+    testWidgets('checking a micro-step in review mode persists it', (tester) async {
+      final repo = FakePlannerRepository();
+      final routine = Routine(
+        id: 'r1',
+        segmentId: 's1',
+        title: '아침 약',
+        startMinute: 0,
+        microSteps: const ['물 마시기', '식후 30분 확인'],
+      );
+      await repo.upsertRoutine(routine);
+      final snapshots = <List<MicroStepProgress>>[];
+      repo.watchMicroStepProgress().listen(snapshots.add);
+
+      await tester.pumpWidget(wrapForRoutine(repo, routine));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('물 마시기'));
+      await tester.pumpAndSettle();
+
+      final saved = snapshots.last.firstWhere((p) => p.routineId == 'r1');
+      expect(saved.checkedIndices, [0]);
+    });
+
+    testWidgets('모두 완료 in review mode records a completion and closes the screen',
+        (tester) async {
+      final repo = FakePlannerRepository();
+      final routine = Routine(
+        id: 'r1',
+        segmentId: 's1',
+        title: '아침 약',
+        startMinute: 0,
+      );
+      await repo.upsertRoutine(routine);
+      final snapshots = <List<Completion>>[];
+      repo.watchCompletions().listen(snapshots.add);
+
+      await tester.pumpWidget(wrapForRoutine(repo, routine));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('모두 완료'));
+      await tester.pumpAndSettle();
+
+      expect(snapshots.last.any((c) => c.routineId == 'r1'), true);
+      expect(find.byType(FocusPage), findsNothing);
+    });
+
+    testWidgets('넘기기 in review mode skips today and does not record a completion',
+        (tester) async {
+      final repo = FakePlannerRepository();
+      final routine = Routine(
+        id: 'r1',
+        segmentId: 's1',
+        title: '아침 약',
+        startMinute: 0,
+      );
+      await repo.upsertRoutine(routine);
+
+      await tester.pumpWidget(wrapForRoutine(repo, routine));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('넘기기'));
+      await tester.pump();
+
+      final skips = await repo.watchRoutineSkips().first;
+      expect(skips.single.routineId, 'r1');
+    });
+  });
+
   testWidgets("yesterday's checked micro-steps don't carry over to today",
       (tester) async {
     final repo = FakePlannerRepository();

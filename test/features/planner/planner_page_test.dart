@@ -11,7 +11,6 @@ import 'package:adhd_planner/features/focus/focus_page.dart';
 import 'package:adhd_planner/features/planner/dial_painter.dart';
 import 'package:adhd_planner/features/planner/planner_page.dart';
 import 'package:adhd_planner/features/routines/routine_editor_page.dart';
-import 'package:adhd_planner/features/routines/routine_form_page.dart';
 import 'package:adhd_planner/features/segments/segment_editor_page.dart';
 import 'package:adhd_planner/features/segments/segment_form_page.dart';
 
@@ -123,7 +122,9 @@ void main() {
     expect(find.byType(RoutineEditorPage), findsOneWidget);
   });
 
-  testWidgets('tapping a routine marker on the dial opens its editor',
+  testWidgets(
+      'tapping a routine marker on the dial opens it in Focus for review, '
+      'regardless of whether it is actually current right now',
       (tester) async {
     final repo = FakePlannerRepository();
     await repo.upsertSegment(const Segment(
@@ -135,11 +136,15 @@ void main() {
       endMinute: 24 * 60,
       order: 0,
     ));
+    // startMinute: 0 (midnight) -- almost certainly not the real current
+    // time the test runs at, so this also proves the tap doesn't depend on
+    // the clock to decide whether to show it.
     await repo.upsertRoutine(const Routine(
       id: 'r1',
       segmentId: 's1',
       title: '약 먹기',
       startMinute: 0,
+      microSteps: ['물 마시기'],
     ));
 
     await tester.pumpWidget(wrap(repo));
@@ -156,7 +161,10 @@ void main() {
     await tester.tapAt(dialCenter + markerOffset);
     await tester.pumpAndSettle();
 
-    expect(find.byType(RoutineFormPage), findsOneWidget);
+    expect(find.byType(FocusPage), findsOneWidget);
+    expect(find.text('약 먹기'), findsOneWidget);
+    expect(find.widgetWithText(CheckboxListTile, '물 마시기'), findsOneWidget);
+    expect(find.text('모두 완료'), findsOneWidget);
   });
 
   testWidgets("'지금' button opens FocusPage when there is a current routine",

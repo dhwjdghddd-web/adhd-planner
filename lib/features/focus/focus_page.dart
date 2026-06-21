@@ -26,8 +26,17 @@ import 'waiting_illustration.dart';
 /// however long it actually takes (no length to set, no expiry), since
 /// running out of time isn't a state this app wants to put anyone in.
 /// Everything else is hidden so there's only one thing to look at.
+///
+/// [FocusPage.forRoutine] opens the same screen pinned to one specific
+/// routine instead of whatever the clock says is current/next — the dial's
+/// marker tap uses this so a routine whose moment already passed can still
+/// be reviewed and have its micro-steps checked off, without faking a live
+/// countdown that wouldn't mean anything for it.
 class FocusPage extends ConsumerStatefulWidget {
-  const FocusPage({super.key});
+  const FocusPage({super.key}) : pinnedRoutine = null;
+  const FocusPage.forRoutine(Routine routine, {super.key}) : pinnedRoutine = routine;
+
+  final Routine? pinnedRoutine;
 
   @override
   ConsumerState<FocusPage> createState() => _FocusPageState();
@@ -92,26 +101,33 @@ class _FocusPageState extends ConsumerState<FocusPage> {
     final reduceMotion =
         ref.watch(settingsProvider).value?.reduceMotion ?? false;
 
+    final routines = routinesAsync.value;
+    final pinned = widget.pinnedRoutine;
+    final status = pinned != null
+        ? RoutineStatus(routine: pinned, isCurrent: true)
+        : routines == null
+            ? null
+            : findRoutineStatus(
+                excludeTodaysSkips(
+                  applyTodaysPostponements(routines, postponements),
+                  skips,
+                ),
+                _currentMinute,
+                _isoWeekday,
+                completedRoutineIds: completedRoutineIds,
+              );
+
     return Scaffold(
       body: SafeArea(
         child: Stack(
           children: [
-            routinesAsync.when(
-              data: (routines) => _buildContent(
-                context,
-                findRoutineStatus(
-                  excludeTodaysSkips(
-                    applyTodaysPostponements(routines, postponements),
-                    skips,
+            pinned != null
+                ? _buildContent(context, status!)
+                : routinesAsync.when(
+                    data: (_) => _buildContent(context, status!),
+                    loading: () => const Center(child: CircularProgressIndicator()),
+                    error: (e, st) => Center(child: Text('오류: $e')),
                   ),
-                  _currentMinute,
-                  _isoWeekday,
-                  completedRoutineIds: completedRoutineIds,
-                ),
-              ),
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, st) => Center(child: Text('오류: $e')),
-            ),
             Positioned(
               top: 4,
               left: 4,
@@ -163,18 +179,86 @@ class _FocusPageState extends ConsumerState<FocusPage> {
           ],
         ),
       ),
-      floatingActionButton: MultiFabRow(
-        left: Semantics(
-          label: '빠른 메모 추가',
-          child: FloatingActionButton(
-            heroTag: 'focus-quick-add',
-            onPressed: () => showQuickAddSheet(context),
-            child: const Icon(Icons.edit_note),
-          ),
-        ),
-      ),
+      floatingActionButton: _buildFabRow(status),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
     );
+  }
+
+  /// Combines the quick-add memo button with whatever action buttons
+  /// [status] calls for into a single floating row (same Scaffold slot,
+  /// same Row), so a snackbar raises them — and they line up — as one
+  /// unit instead of the memo button moving independently of buttons that
+  /// used to live in the body.
+  Widget _buildFabRow(RoutineStatus? status) {
+    final actionButtons = _actionButtonsFor(status);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Row(
+        children: [
+          Semantics(
+            label: '빠른 메모 추가',
+            child: FloatingActionButton(
+              heroTag: 'focus-quick-add',
+              onPressed: () => showQuickAddSheet(context),
+              child: const Icon(Icons.edit_note),
+            ),
+          ),
+          if (actionButtons.isNotEmpty) ...[
+            const SizedBox(width: 12),
+            Expanded(
+              child: Row(
+                children: [
+                  for (var i = 0; i < actionButtons.length; i++) ...[
+                    if (i > 0) const SizedBox(width: 12),
+                    Expanded(child: actionButtons[i]),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _actionButtonsFor(RoutineStatus? status) {
+    final routine = status?.routine;
+    if (routine == null) return const [];
+
+    if (!status!.isCurrent) {
+      final upcoming = routine.leadWarningMin > 0 &&
+          status.remainingMinutes <= routine.leadWarningMin;
+      if (!upcoming) {
+        return [
+          OutlinedButton(
+            onPressed: () => _skip(routine),
+            child: const Text('넘기기'),
+          ),
+        ];
+      }
+      return [
+        OutlinedButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('닫기'),
+        ),
+        OutlinedButton(
+          onPressed: () => _skip(routine),
+          child: const Text('넘기기'),
+        ),
+      ];
+    }
+
+    return [
+      FilledButton(
+        onPressed: () => _complete(routine.id, microSteps: routine.microSteps),
+        child: const Text('모두 완료'),
+      ),
+      OutlinedButton(
+        onPressed: () => _skip(routine),
+        child: const Text('넘기기'),
+      ),
+    ];
   }
 
   /// Loads today's persisted checks into [_checked] the first time this
@@ -235,12 +319,6 @@ class _FocusPageState extends ConsumerState<FocusPage> {
                 message: '다음: ${routine.title}\n$startTime',
               ),
             ),
-            _bottomActions([
-              OutlinedButton(
-                onPressed: () => _skip(routine),
-                child: const Text('넘기기'),
-              ),
-            ]),
           ],
         );
       }
@@ -271,16 +349,6 @@ class _FocusPageState extends ConsumerState<FocusPage> {
               ),
             ),
           ),
-          _bottomActions([
-            OutlinedButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('닫기'),
-            ),
-            OutlinedButton(
-              onPressed: () => _skip(routine),
-              child: const Text('넘기기'),
-            ),
-          ]),
         ],
       );
     }
@@ -320,39 +388,7 @@ class _FocusPageState extends ConsumerState<FocusPage> {
             ),
           ),
         ),
-        _bottomActions([
-          FilledButton(
-            onPressed: () => _complete(routine.id, microSteps: routine.microSteps),
-            // "모두" since this button does what checking off the last
-            // remaining micro-step itself already does (see
-            // _toggleMicroStep's autoCompleteWhenAllChecked) -- pressing it
-            // marks every micro-step checked too, not just the routine.
-            child: const Text('모두 완료'),
-          ),
-          OutlinedButton(
-            onPressed: () => _skip(routine),
-            child: const Text('넘기기'),
-          ),
-        ]),
       ],
-    );
-  }
-
-  /// Action buttons pinned to the bottom of the screen — never pushed off
-  /// by a long micro-steps list — side by side rather than stacked, with
-  /// room reserved on the left so they never sit under the quick-add FAB
-  /// in the same corner.
-  Widget _bottomActions(List<Widget> buttons) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(88, 0, 24, 24),
-      child: Row(
-        children: [
-          for (var i = 0; i < buttons.length; i++) ...[
-            if (i > 0) const SizedBox(width: 12),
-            Expanded(child: buttons[i]),
-          ],
-        ],
-      ),
     );
   }
 

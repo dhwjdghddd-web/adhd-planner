@@ -213,7 +213,11 @@ class _Dial extends StatelessWidget {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final side = math.min(constraints.maxWidth, constraints.maxHeight) - 32;
+        // Extra breathing room so the east/west hour labels ("18시" etc.),
+        // which now sit further out to clear the tick marks (see
+        // DialPainter._paintTicks), still don't bleed past the screen edge
+        // under larger accessibility text scales.
+        final side = math.min(constraints.maxWidth, constraints.maxHeight) - 56;
         return Center(
           child: Semantics(
             label: '오늘 원형 계획표, 현재 시각 ${TimeGeometry.formatMinute(currentMinute)}',
@@ -259,7 +263,7 @@ class _Dial extends StatelessWidget {
     final tappedRoutine = _nearestRoutine(center, local, outerR, lanes);
     if (tappedRoutine != null) {
       Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => RoutineFormPage(existing: tappedRoutine)),
+        MaterialPageRoute(builder: (_) => FocusPage.forRoutine(tappedRoutine)),
       );
       return;
     }

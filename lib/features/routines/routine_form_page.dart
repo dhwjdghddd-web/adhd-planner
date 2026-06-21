@@ -40,6 +40,12 @@ class _RoutineFormPageState extends ConsumerState<RoutineFormPage> {
   late int _snoozeMin;
   late Set<int> _repeatDays;
   late List<String> _microSteps;
+  // Parallel to _microSteps, one stable id per step so ReorderableListView
+  // can track each item's identity across reorders -- the steps themselves
+  // are plain strings (and can repeat), so the text/index alone can't serve
+  // as a stable key the way these ids do.
+  late List<int> _microStepKeyIds;
+  int _nextMicroStepKeyId = 0;
 
   @override
   void initState() {
@@ -56,6 +62,7 @@ class _RoutineFormPageState extends ConsumerState<RoutineFormPage> {
     _snoozeMin = existing?.snoozeMin ?? 5;
     _repeatDays = {...(existing?.repeatDays ?? const <int>[])};
     _microSteps = [...(existing?.microSteps ?? const <String>[])];
+    _microStepKeyIds = List.generate(_microSteps.length, (_) => _nextMicroStepKeyId++);
   }
 
   @override
@@ -133,6 +140,7 @@ class _RoutineFormPageState extends ConsumerState<RoutineFormPage> {
     if (text.isEmpty) return;
     setState(() {
       _microSteps.add(text);
+      _microStepKeyIds.add(_nextMicroStepKeyId++);
       _microStepController.clear();
     });
     // Without this, tapping the + button (which isn't the text field
@@ -349,18 +357,34 @@ class _RoutineFormPageState extends ConsumerState<RoutineFormPage> {
             const SizedBox(height: 4),
             Text('작업을 작게 쪼개면 시작하기 쉬워져요.', style: theme.textTheme.bodySmall),
             const SizedBox(height: 8),
-            for (var i = 0; i < _microSteps.length; i++)
-              ListTile(
-                key: ValueKey('microStep$i-${_microSteps[i]}'),
+            // 꾹 눌러서 드래그하면 순서를 바꿀 수 있음 (모바일 기본 동작 -- 별도
+            // 드래그 핸들 아이콘 없이 항목 전체가 long-press로 드래그됨).
+            ReorderableListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: _microSteps.length,
+              onReorderItem: (oldIndex, newIndex) => setState(() {
+                _microSteps.insert(newIndex, _microSteps.removeAt(oldIndex));
+                _microStepKeyIds.insert(
+                  newIndex,
+                  _microStepKeyIds.removeAt(oldIndex),
+                );
+              }),
+              itemBuilder: (context, i) => ListTile(
+                key: ValueKey(_microStepKeyIds[i]),
                 contentPadding: EdgeInsets.zero,
                 leading: const Icon(Icons.check_circle_outline),
                 title: Text(_microSteps[i]),
                 trailing: IconButton(
                   icon: const Icon(Icons.delete_outline),
                   tooltip: '단계 삭제',
-                  onPressed: () => setState(() => _microSteps.removeAt(i)),
+                  onPressed: () => setState(() {
+                    _microSteps.removeAt(i);
+                    _microStepKeyIds.removeAt(i);
+                  }),
                 ),
               ),
+            ),
             Row(
               // Without this, adding a step shifts this Row one slot later
               // in the surrounding ListView's unkeyed children (the new

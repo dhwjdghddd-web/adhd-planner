@@ -2,23 +2,34 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/providers.dart';
+import 'daily_achievement.dart';
 import 'streak.dart';
 
 /// Small, encouragement-first streak indicator shared by the home dial and
 /// the focus screen. Emphasizes the best-ever streak; shows the current one
 /// softly alongside it, and never shows a bare "0" — missing a day gets an
-/// encouraging line instead of a number that could read as a scolding.
+/// encouraging line instead of a number that could read as a scolding. A day
+/// counts toward the streak via [achievedDateKeys] (micro-step ratio, not
+/// just "any routine completed") -- see [DailyAchievement].
 class StreakBadge extends ConsumerWidget {
   const StreakBadge({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final routines = ref.watch(routinesProvider).value ?? const [];
+    final skips = ref.watch(routineSkipsProvider).value ?? const [];
     final completionsAsync = ref.watch(completionsProvider);
+    final progress = ref.watch(microStepProgressProvider).value ?? const [];
     final theme = Theme.of(context);
 
     return completionsAsync.when(
       data: (completions) {
-        final dateKeys = completions.map((c) => c.dateKey).toSet();
+        final dateKeys = achievedDateKeys(
+          routines: routines,
+          skips: skips,
+          completions: completions,
+          progress: progress,
+        );
         final current = currentStreak(dateKeys);
         final best = longestStreak(dateKeys);
 

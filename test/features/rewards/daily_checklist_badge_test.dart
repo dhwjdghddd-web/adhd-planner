@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:adhd_planner/data/models/micro_step_progress.dart';
 import 'package:adhd_planner/data/models/routine.dart';
+import 'package:adhd_planner/data/models/routine_skip.dart';
 import 'package:adhd_planner/data/providers.dart';
 import 'package:adhd_planner/features/rewards/daily_checklist_badge.dart';
 
@@ -28,7 +29,7 @@ void main() {
     );
   }
 
-  testWidgets('shows nothing when no today-applicable routine has micro-steps',
+  testWidgets('shows a plain label when a today-applicable routine has no micro-steps',
       (tester) async {
     final repo = FakePlannerRepository();
     await repo.upsertRoutine(routine('r1', const []));
@@ -36,7 +37,20 @@ void main() {
     await tester.pumpWidget(wrap(repo));
     await tester.pumpAndSettle();
 
-    expect(find.byType(DailyChecklistBadge), findsOneWidget);
+    // No counts to show, but the badge still has to stay tappable as the
+    // entry point into the full today-checklist screen.
+    expect(find.text('오늘 체크리스트'), findsOneWidget);
+  });
+
+  testWidgets('shows nothing when no routine at all is scheduled for today', (tester) async {
+    final repo = FakePlannerRepository();
+    final today = DateTime.now().weekday;
+    final notToday = [1, 2, 3, 4, 5, 6, 7].where((d) => d != today).toList();
+    await repo.upsertRoutine(routine('r1', const ['a'], repeatDays: notToday));
+
+    await tester.pumpWidget(wrap(repo));
+    await tester.pumpAndSettle();
+
     expect(find.textContaining('체크리스트'), findsNothing);
   });
 
@@ -75,5 +89,34 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('오늘 체크리스트 0/2'), findsOneWidget);
+  });
+
+  testWidgets("excludes a routine skipped today from the count, even fully checked",
+      (tester) async {
+    final repo = FakePlannerRepository();
+    await repo.upsertRoutine(routine('skipped', const ['a', 'b']));
+    await repo.upsertRoutine(routine('kept', const ['c', 'd']));
+    await repo.saveRoutineSkip(RoutineSkip.today('skipped'));
+    await repo.saveMicroStepProgress(MicroStepProgress.today('skipped', const [0, 1]));
+
+    await tester.pumpWidget(wrap(repo));
+    await tester.pumpAndSettle();
+
+    expect(find.text('오늘 체크리스트 0/2'), findsOneWidget);
+  });
+
+  testWidgets('switches to the streak flame icon once half of today is checked',
+      (tester) async {
+    final repo = FakePlannerRepository();
+    await repo.upsertRoutine(routine('r1', const ['a', 'b']));
+
+    await tester.pumpWidget(wrap(repo));
+    await tester.pumpAndSettle();
+    expect(tester.widget<Icon>(find.byType(Icon)).icon, Icons.checklist_rtl);
+
+    await repo.saveMicroStepProgress(MicroStepProgress.today('r1', const [0]));
+    await tester.pumpAndSettle();
+
+    expect(tester.widget<Icon>(find.byType(Icon)).icon, Icons.local_fire_department);
   });
 }

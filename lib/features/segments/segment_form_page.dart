@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
@@ -55,21 +56,65 @@ class _SegmentFormPageState extends ConsumerState<SegmentFormPage> {
   bool get _canSave =>
       _nameController.text.trim().isNotEmpty && _lengthMinutes > 0;
 
-  Future<void> _pickTime(bool isStart) async {
-    final initial = isStart ? _startMinute : _endMinute;
-    final picked = await showTimePicker(
+  // A scrollable 24h wheel (no AM/PM, no separate keyboard-entry mode)
+  // instead of the standard dial/keyboard showTimePicker -- matches
+  // RoutineFormPage's time input so the two screens feel like one app.
+  Future<int?> _pickWheelMinute(int initialMinute) async {
+    var pickedMinute = initialMinute;
+    final confirmed = await showModalBottomSheet<bool>(
       context: context,
-      initialTime: TimeOfDay(hour: initial ~/ 60, minute: initial % 60),
+      builder: (sheetContext) => SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              height: 216,
+              child: CupertinoDatePicker(
+                mode: CupertinoDatePickerMode.time,
+                use24hFormat: true,
+                initialDateTime: DateTime(
+                  2000,
+                  1,
+                  1,
+                  initialMinute ~/ 60,
+                  initialMinute % 60,
+                ),
+                onDateTimeChanged: (dt) =>
+                    pickedMinute = dt.hour * 60 + dt.minute,
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: () => Navigator.pop(sheetContext, true),
+                  child: const Text('확인'),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
+    return confirmed == true ? pickedMinute : null;
+  }
+
+  // Confirming the start time chains straight into the end-time picker --
+  // entering a segment's range is one continuous action, not two separate
+  // trips back into this screen's list.
+  Future<void> _pickStartTime() async {
+    final picked = await _pickWheelMinute(_startMinute);
     if (picked == null) return;
-    setState(() {
-      final minute = picked.hour * 60 + picked.minute;
-      if (isStart) {
-        _startMinute = minute;
-      } else {
-        _endMinute = minute;
-      }
-    });
+    setState(() => _startMinute = picked);
+    await _pickEndTime();
+  }
+
+  Future<void> _pickEndTime() async {
+    final picked = await _pickWheelMinute(_endMinute);
+    if (picked == null) return;
+    setState(() => _endMinute = picked);
   }
 
   Future<void> _save() async {
@@ -260,14 +305,14 @@ class _SegmentFormPageState extends ConsumerState<SegmentFormPage> {
               title: const Text('시작 시각'),
               subtitle: Text(TimeGeometry.formatMinute(_startMinute)),
               trailing: const Icon(Icons.access_time),
-              onTap: () => _pickTime(true),
+              onTap: _pickStartTime,
             ),
             ListTile(
               contentPadding: EdgeInsets.zero,
               title: const Text('끝나는 시각'),
               subtitle: Text(TimeGeometry.formatMinute(_endMinute)),
               trailing: const Icon(Icons.access_time),
-              onTap: () => _pickTime(false),
+              onTap: _pickEndTime,
             ),
             const SizedBox(height: 8),
             Text(
