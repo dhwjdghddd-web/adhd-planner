@@ -121,28 +121,6 @@ class _FocusPageState extends ConsumerState<FocusPage> {
                 onPressed: () => Navigator.of(context).pop(),
               ),
             ),
-            // The global quick-add FAB is suppressed on this screen (see
-            // SuppressGlobalFab above) and replaced with this one, in the
-            // exact same bottom-left spot and shape as everywhere else —
-            // reached directly through this page's own context rather
-            // than the navigatorKey workaround the global one needs,
-            // since this page is already inside the real Navigator.
-            // _buildContent reserves room for it in the action buttons
-            // below so the two never overlap.
-            Align(
-              alignment: Alignment.bottomLeft,
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Semantics(
-                  label: '빠른 메모 추가',
-                  child: FloatingActionButton(
-                    heroTag: 'focus-quick-add',
-                    onPressed: () => showQuickAddSheet(context),
-                    child: const Icon(Icons.edit_note),
-                  ),
-                ),
-              ),
-            ),
             if (_celebrating)
               Positioned.fill(
                 child: IgnorePointer(
@@ -185,6 +163,17 @@ class _FocusPageState extends ConsumerState<FocusPage> {
           ],
         ),
       ),
+      floatingActionButton: MultiFabRow(
+        left: Semantics(
+          label: '빠른 메모 추가',
+          child: FloatingActionButton(
+            heroTag: 'focus-quick-add',
+            onPressed: () => showQuickAddSheet(context),
+            child: const Icon(Icons.edit_note),
+          ),
+        ),
+      ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
     );
   }
 
