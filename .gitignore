@@ -51,3 +51,6 @@ logcat_capture.txt
 *.log
 window_dump.xml
 screen*.png
+
+# Ad-hoc debug screenshots pulled from device
+_*.png

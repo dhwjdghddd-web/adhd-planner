@@ -70,6 +70,10 @@ class MainActivity : FlutterActivity() {
                     "cancelVibrationAlarm" -> {
                         cancelVibrationAlarm(call, result)
                     }
+                    "cancelAllVibrationAlarms" -> {
+                        VibrationAlarmReceiver.cancelAll(applicationContext)
+                        result.success(null)
+                    }
                     else -> result.notImplemented()
                 }
             }

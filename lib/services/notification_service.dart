@@ -294,24 +294,13 @@ class NotificationService {
     if (repo == null) return; // auth 전환 중 — 알람 재스케줄 건너뜀
     await _ensureChannels(settings);
 
-    // 현재 등록된 모든 알림 ID를 읽어 flutter_local_notifications와 함께
-    // 네이티브 AlarmManager 진동 알람도 취소한다.
-    // _plugin.cancelAll()만으로는 Dart 레벨 알림만 취소되고, VibrationAlarmReceiver가
-    // 매주 스스로 재등록하는 AlarmManager 알람은 취소되지 않는다.
-    // 특히 Firestore 데이터가 초기화(로그아웃 등)된 경우 routines 목록이 비어 있어
-    // cancelRoutineAlarms를 호출할 수 없으므로, 여기서 반드시 처리해야 한다.
-    final pending = await _plugin.pendingNotificationRequests();
-    for (final n in pending) {
-      await _cancelVibrationAlarm(n.id);
-    }
-    // Firestore에 저장된 notificationIds로도 진동 알람 취소.
-    // pendingNotificationRequests는 아직 발동 전인 알림만 반환하므로,
-    // 이미 울린 후 AlarmManager가 재등록한 진동 알람은 여기서 취소한다.
-    for (final routine in routines) {
-      for (final id in routine.notificationIds) {
-        await _cancelVibrationAlarm(id);
-      }
-    }
+    // 기존 알람을 전부 비우고 아래에서 현재 routines만 다시 건다.
+    // 네이티브 진동 알람은 id별로만 취소되는데, 로그아웃 등으로 routines가
+    // 비면 이전 계정이 남긴 알람의 id를 알 수 없다. 그래서 네이티브가 자체
+    // 보관하는 requestCode 집합으로 "전부 취소"한다(VibrationAlarmReceiver
+    // .cancelAll) -- id를 몰라도 고아 알람까지 싹 정리된다. cancelAll()은
+    // flutter_local_notifications가 추적 중인 알림을 비운다(계정 무관).
+    await _cancelAllVibrationAlarms();
     await _plugin.cancelAll();
 
     // Routines skipped ("넘기기") for today: without this, the very next
@@ -579,25 +568,34 @@ class NotificationService {
   }
 
   /// Wipes every alarm this device has scheduled -- both the
-  /// flutter_local_notifications side (`cancelAll`) and the separate native
-  /// Vibrator alarms riding alongside them -- without needing the current
-  /// account's routine list. Unlike [rescheduleAll], this deliberately does
-  /// NOT depend on `_repository`: logout switches to a fresh empty account,
-  /// so by the time anything reads the routine list it's already empty and
-  /// the previous account's still-armed alarms would be unreachable. The
-  /// native Vibrator alarms are keyed by notification id, so this cancels
-  /// them for (a) every id flutter_local_notifications still has pending and
-  /// (b) any [knownIds] the caller managed to read *before* the account was
-  /// torn down (the logging-out account's `routine.notificationIds`), since
-  /// a recurring alarm that has already fired once may no longer appear in
-  /// `pendingNotificationRequests`.
+  /// flutter_local_notifications side (`cancelAll`, which is account-global)
+  /// and the separate native Vibrator alarms riding alongside them -- without
+  /// needing the current account's routine list. Unlike [rescheduleAll], this
+  /// deliberately does NOT depend on `_repository`: logout switches to a fresh
+  /// empty account, so by the time anything reads the routine list it's already
+  /// empty and the previous account's still-armed alarms would be unreachable.
+  ///
+  /// The native Vibrator alarms are keyed by notification id, which the new
+  /// account can't re-derive -- so the native side keeps its own record of
+  /// every armed requestCode and [_cancelAllVibrationAlarms] wipes them all
+  /// from that (see VibrationAlarmReceiver.cancelAll). [knownIds] (the
+  /// logging-out account's `routine.notificationIds`, read before teardown) is
+  /// an extra belt-and-suspenders pass for any id that record might have missed.
   Future<void> cancelEverything({Iterable<int> knownIds = const []}) async {
-    final pending = await _plugin.pendingNotificationRequests();
-    final ids = <int>{...pending.map((n) => n.id), ...knownIds};
-    for (final id in ids) {
+    for (final id in knownIds) {
       await _cancelVibrationAlarm(id);
     }
+    await _cancelAllVibrationAlarms();
     await _plugin.cancelAll();
+  }
+
+  Future<void> _cancelAllVibrationAlarms() async {
+    try {
+      await _alarmChannelChannel.invokeMethod('cancelAllVibrationAlarms');
+    } catch (e) {
+      // No platform channel available (e.g. under flutter test).
+      logSwallowed('cancelAllVibrationAlarms', e);
+    }
   }
 
   Future<void> _scheduleVibrationAlarm({

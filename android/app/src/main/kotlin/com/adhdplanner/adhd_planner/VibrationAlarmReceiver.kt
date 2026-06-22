@@ -51,6 +51,30 @@ class VibrationAlarmReceiver : BroadcastReceiver() {
         private const val EXTRA_REPEAT_INTERVAL_MS = "repeatIntervalMs"
         private const val EXTRA_REQUEST_CODE = "requestCode"
 
+        // Every requestCode this app currently has a Vibrator alarm armed for,
+        // persisted so [cancelAll] can wipe them without the caller having to
+        // already know each id. Needed because AlarmManager can't enumerate its
+        // own alarms: after a logout/account switch the previous account's
+        // routine list (the only place those ids could be re-derived from) is
+        // gone, so an orphaned native alarm would otherwise keep firing with no
+        // way left to cancel it. (flutter_local_notifications' own side is
+        // separately wiped by cancelAll() there, which is account-global.)
+        private const val PREFS = "vibration_alarms"
+        private const val KEY_ACTIVE = "active_request_codes"
+
+        private fun activeCodes(context: Context): MutableSet<String> {
+            val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            // Copy: the Set returned by getStringSet must not be mutated in place.
+            return HashSet(prefs.getStringSet(KEY_ACTIVE, emptySet()) ?: emptySet())
+        }
+
+        private fun setActiveCodes(context: Context, codes: Set<String>) {
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .edit()
+                .putStringSet(KEY_ACTIVE, codes)
+                .apply()
+        }
+
         fun schedule(
             context: Context,
             requestCode: Int,
@@ -64,6 +88,7 @@ class VibrationAlarmReceiver : BroadcastReceiver() {
                 pendingIntentFor(context, requestCode, pattern, durationMs, repeatIntervalMs)
             val info = AlarmManager.AlarmClockInfo(triggerAtMillis, pendingIntent)
             alarmManager.setAlarmClock(info, pendingIntent)
+            setActiveCodes(context, activeCodes(context).apply { add(requestCode.toString()) })
         }
 
         fun cancel(context: Context, requestCode: Int) {
@@ -73,6 +98,22 @@ class VibrationAlarmReceiver : BroadcastReceiver() {
             // dummy values here still resolve to the same pending alarm.
             val pendingIntent = pendingIntentFor(context, requestCode, longArrayOf(0), 0L, 0L)
             alarmManager.cancel(pendingIntent)
+            stopVibration(context)
+            setActiveCodes(context, activeCodes(context).apply { remove(requestCode.toString()) })
+        }
+
+        /// Cancels every Vibrator alarm this app has armed, by requestCode, from
+        /// the persisted [activeCodes] set -- account-independent, so it clears
+        /// alarms left behind by a previous (e.g. logged-out) account whose ids
+        /// can no longer be re-derived. See [Dart] NotificationService.cancelEverything.
+        fun cancelAll(context: Context) {
+            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            for (code in activeCodes(context)) {
+                val requestCode = code.toIntOrNull() ?: continue
+                val pendingIntent = pendingIntentFor(context, requestCode, longArrayOf(0), 0L, 0L)
+                alarmManager.cancel(pendingIntent)
+            }
+            setActiveCodes(context, emptySet())
             stopVibration(context)
         }
 
