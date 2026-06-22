@@ -85,7 +85,12 @@ class AppTheme {
         foregroundColor: scheme.onSurface,
         elevation: 0,
         centerTitle: false,
-        titleTextStyle: textTheme.headlineLarge,
+        // Must set the color explicitly: when titleTextStyle comes from the
+        // theme, AppBar does NOT fold foregroundColor into it (it only does so
+        // for its own default style), so a colorless headlineLarge left the
+        // title an inherited near-white — fine on the dark scaffold, invisible
+        // on the light one. onSurface tracks the brightness either way.
+        titleTextStyle: textTheme.headlineLarge?.copyWith(color: scheme.onSurface),
       ),
       cardTheme: CardThemeData(
         color: isDark ? const Color(0xFF171C23) : const Color(0xFFFFFFFF),
