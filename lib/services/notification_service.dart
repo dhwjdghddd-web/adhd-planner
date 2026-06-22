@@ -295,12 +295,15 @@ class NotificationService {
     await _ensureChannels(settings);
 
     // 기존 알람을 전부 비우고 아래에서 현재 routines만 다시 건다.
-    // 네이티브 진동 알람은 id별로만 취소되는데, 로그아웃 등으로 routines가
-    // 비면 이전 계정이 남긴 알람의 id를 알 수 없다. 그래서 네이티브가 자체
-    // 보관하는 requestCode 집합으로 "전부 취소"한다(VibrationAlarmReceiver
-    // .cancelAll) -- id를 몰라도 고아 알람까지 싹 정리된다. cancelAll()은
-    // flutter_local_notifications가 추적 중인 알림을 비운다(계정 무관).
-    await _cancelAllVibrationAlarms();
+    // 네이티브가 자체 보관하는 requestCode 집합으로 진동 알람을 전부 취소하고
+    // 그 id들을 받아, 같은 id의 flutter_local_notifications 알림도 id별로
+    // 취소한다(_plugin.cancel은 추적 목록과 무관하게 id로 PendingIntent를
+    // 재구성해 취소하므로, 재부팅 boot-replay로 플러그인 추적이 어긋나
+    // cancelAll이 놓치는 고아 알림까지 잡는다). 마지막에 cancelAll로 한 번 더 정리.
+    final staleIds = await _cancelAllVibrationAlarms();
+    for (final id in staleIds) {
+      await _plugin.cancel(id);
+    }
     await _plugin.cancelAll();
 
     // Routines skipped ("넘기기") for today: without this, the very next
@@ -582,19 +585,29 @@ class NotificationService {
   /// logging-out account's `routine.notificationIds`, read before teardown) is
   /// an extra belt-and-suspenders pass for any id that record might have missed.
   Future<void> cancelEverything({Iterable<int> knownIds = const []}) async {
-    for (final id in knownIds) {
-      await _cancelVibrationAlarm(id);
+    // Native side cancels every Vibrator alarm it has on record and hands back
+    // their ids; those ids (plus any caller-supplied [knownIds]) are exactly
+    // the flutter_local_notifications notification ids too, so cancel each one
+    // by id as well -- _plugin.cancel(id) rebuilds the alarm's PendingIntent
+    // straight from the id, so it reaches even an alarm the plugin's own
+    // cancelAll tracking has lost (e.g. desynced by a reboot's boot-replay).
+    final ids = {...await _cancelAllVibrationAlarms(), ...knownIds};
+    for (final id in ids) {
+      await _plugin.cancel(id);
     }
-    await _cancelAllVibrationAlarms();
     await _plugin.cancelAll();
   }
 
-  Future<void> _cancelAllVibrationAlarms() async {
+  /// Cancels all native Vibrator alarms and returns their request codes
+  /// (== notification ids). Empty when there's no platform channel (tests).
+  Future<List<int>> _cancelAllVibrationAlarms() async {
     try {
-      await _alarmChannelChannel.invokeMethod('cancelAllVibrationAlarms');
+      final result = await _alarmChannelChannel.invokeMethod('cancelAllVibrationAlarms');
+      return (result as List?)?.map((e) => (e as num).toInt()).toList() ?? const [];
     } catch (e) {
       // No platform channel available (e.g. under flutter test).
       logSwallowed('cancelAllVibrationAlarms', e);
+      return const [];
     }
   }
 

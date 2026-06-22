@@ -71,8 +71,11 @@ class MainActivity : FlutterActivity() {
                         cancelVibrationAlarm(call, result)
                     }
                     "cancelAllVibrationAlarms" -> {
-                        VibrationAlarmReceiver.cancelAll(applicationContext)
-                        result.success(null)
+                        // Return the cancelled request codes so Dart can also
+                        // cancel each matching flutter_local_notifications alarm
+                        // by id (reaches orphans its own cancelAll tracking lost).
+                        val cancelled = VibrationAlarmReceiver.cancelAll(applicationContext)
+                        result.success(cancelled)
                     }
                     else -> result.notImplemented()
                 }

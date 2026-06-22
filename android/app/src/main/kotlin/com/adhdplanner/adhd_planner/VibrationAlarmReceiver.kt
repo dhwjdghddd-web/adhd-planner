@@ -105,16 +105,23 @@ class VibrationAlarmReceiver : BroadcastReceiver() {
         /// Cancels every Vibrator alarm this app has armed, by requestCode, from
         /// the persisted [activeCodes] set -- account-independent, so it clears
         /// alarms left behind by a previous (e.g. logged-out) account whose ids
-        /// can no longer be re-derived. See [Dart] NotificationService.cancelEverything.
-        fun cancelAll(context: Context) {
+        /// can no longer be re-derived. Returns those request codes so the Dart
+        /// side can also cancel the matching flutter_local_notifications alarm
+        /// for each id (its own cancelAll only reaches ids still in *its*
+        /// tracking, which a reboot's boot-replay can desync). See
+        /// NotificationService.cancelEverything.
+        fun cancelAll(context: Context): List<Int> {
             val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            val cancelled = ArrayList<Int>()
             for (code in activeCodes(context)) {
                 val requestCode = code.toIntOrNull() ?: continue
                 val pendingIntent = pendingIntentFor(context, requestCode, longArrayOf(0), 0L, 0L)
                 alarmManager.cancel(pendingIntent)
+                cancelled.add(requestCode)
             }
             setActiveCodes(context, emptySet())
             stopVibration(context)
+            return cancelled
         }
 
         fun stopVibration(context: Context) {
