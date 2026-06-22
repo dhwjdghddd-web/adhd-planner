@@ -578,6 +578,28 @@ class NotificationService {
     }
   }
 
+  /// Wipes every alarm this device has scheduled -- both the
+  /// flutter_local_notifications side (`cancelAll`) and the separate native
+  /// Vibrator alarms riding alongside them -- without needing the current
+  /// account's routine list. Unlike [rescheduleAll], this deliberately does
+  /// NOT depend on `_repository`: logout switches to a fresh empty account,
+  /// so by the time anything reads the routine list it's already empty and
+  /// the previous account's still-armed alarms would be unreachable. The
+  /// native Vibrator alarms are keyed by notification id, so this cancels
+  /// them for (a) every id flutter_local_notifications still has pending and
+  /// (b) any [knownIds] the caller managed to read *before* the account was
+  /// torn down (the logging-out account's `routine.notificationIds`), since
+  /// a recurring alarm that has already fired once may no longer appear in
+  /// `pendingNotificationRequests`.
+  Future<void> cancelEverything({Iterable<int> knownIds = const []}) async {
+    final pending = await _plugin.pendingNotificationRequests();
+    final ids = <int>{...pending.map((n) => n.id), ...knownIds};
+    for (final id in ids) {
+      await _cancelVibrationAlarm(id);
+    }
+    await _plugin.cancelAll();
+  }
+
   Future<void> _scheduleVibrationAlarm({
     required int requestCode,
     required tz.TZDateTime triggerAt,

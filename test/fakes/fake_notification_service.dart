@@ -15,8 +15,17 @@ class FakeNotificationService extends NotificationService {
 
   final List<List<Routine>> rescheduleCalls = [];
 
+  /// Each call's [knownIds], so a test can assert logout wiped the device's
+  /// alarms (and with which ids) without touching any plugin.
+  final List<List<int>> cancelEverythingCalls = [];
+
   @override
   Future<void> rescheduleAll(List<Routine> routines, AppSettings settings) async {
     rescheduleCalls.add(routines);
+  }
+
+  @override
+  Future<void> cancelEverything({Iterable<int> knownIds = const []}) async {
+    cancelEverythingCalls.add(knownIds.toList());
   }
 }

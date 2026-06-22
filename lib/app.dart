@@ -305,8 +305,21 @@ class _AccountAlarmSync extends ConsumerWidget {
     //    (fireImmediately를 켜면 테스트에서 rescheduleAll→cancelAll의
     //    MissingPluginException으로 깨진다. 절대 켜지 말 것.)
     ref.listen(plannerRepositoryProvider, (prev, next) async {
-      // uid가 null인 순간(signOut ↔ signInAnonymously 사이)에는 skip.
-      if (next == null) return;
+      // 계정이 사라지는 순간(로그아웃 등으로 uid=null) — 이 기기에 예약된
+      // 모든 알람을 취소한다. _signOut()이 로그아웃 직전에 이미 한 번
+      // 취소하지만(가장 확실한 경로), 여기서도 한 번 더 거는 안전망:
+      // cancelEverything은 idempotent하고 현재 routine 목록에 의존하지
+      // 않으므로, 어떤 경로로 계정이 비워지든 이전 계정 알람이 남지 않는다.
+      if (next == null) {
+        if (prev != null) {
+          try {
+            await ref.read(notificationServiceProvider).cancelEverything();
+          } catch (e) {
+            logSwallowed('로그아웃 후 알람 전체 취소', e);
+          }
+        }
+        return;
+      }
       if (identical(prev, next)) return;
       final routines = await next.watchRoutines().first;
       final settings = await next.watchSettings().first;

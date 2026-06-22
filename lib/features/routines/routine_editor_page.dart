@@ -75,7 +75,11 @@ class _Body extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    if (segments.isEmpty) {
+    // Only the truly-empty case (no segments AND no routines) gets the
+    // "make a segment first" nudge. Routines that outlived their segment
+    // (e.g. every segment was deleted -- segmentId becomes null/구간 없음)
+    // must still be listed, otherwise there's no way left to delete them.
+    if (segments.isEmpty && routines.isEmpty) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),

@@ -106,4 +106,35 @@ void main() {
     expect(find.text('운동'), findsNothing);
     expect(find.textContaining('아직 루틴이 없어요'), findsOneWidget);
   });
+
+  testWidgets('a routine whose segments were all deleted is still listed and deletable '
+      '(regression: list was hidden when no segments existed)', (tester) async {
+    final repo = FakePlannerRepository();
+    // No segments at all, but a routine survives (segmentId points at a
+    // now-deleted segment -> shows as 구간 없음). Previously this screen showed
+    // only the "make a segment first" prompt, leaving no way to delete it.
+    await repo.upsertRoutine(const Routine(
+      id: 'r1',
+      segmentId: 's-deleted',
+      title: '운동',
+      startMinute: 7 * 60,
+    ));
+
+    await tester.pumpWidget(wrap(repo));
+    await tester.pumpAndSettle();
+
+    // The routine is listed (not the empty-state prompt).
+    expect(find.text('운동'), findsOneWidget);
+    expect(find.textContaining('먼저 구간을 만들어주세요'), findsNothing);
+
+    // And it can be deleted.
+    await tester.tap(find.widgetWithIcon(IconButton, Icons.delete_outline));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, '삭제'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('운동'), findsNothing);
+    // Now genuinely empty (no segments, no routines) -> the create-segment prompt.
+    expect(find.textContaining('먼저 구간을 만들어주세요'), findsOneWidget);
+  });
 }

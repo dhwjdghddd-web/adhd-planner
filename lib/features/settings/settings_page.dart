@@ -217,6 +217,25 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       ),
     );
     if (confirmed != true || !mounted) return;
+
+    // Cancel this device's alarms *before* signing out, while the logging-out
+    // account's routines are still readable. Relying only on _AccountAlarmSync
+    // (app.dart) to notice the uid change isn't enough: the new anonymous
+    // account starts empty, so by the time it reschedules there's no routine
+    // list left to cancel the previous account's still-armed native Vibrator
+    // alarms from -- which is how a logged-out device could still ring a
+    // routine the old account had set (e.g. a 5-min lead warning).
+    final knownIds =
+        (ref.read(routinesProvider).value ?? const []).expand((r) => r.notificationIds).toList();
+    try {
+      await ref.read(notificationServiceProvider).cancelEverything(knownIds: knownIds);
+    } catch (_) {
+      // No platform channel (e.g. flutter test) — nothing scheduled to clear.
+    }
+    // Drop any alarm alert that was queued for the account we're leaving, so it
+    // can't pop a stale "routine not found" dialog against the new empty one.
+    pendingAlarmAlert.value = null;
+
     await ref.read(authServiceProvider).signOutToAnonymous();
     if (!mounted) return;
     showAppSnackBar(context, const Text('로그아웃했어요.'));
