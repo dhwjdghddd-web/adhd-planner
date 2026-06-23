@@ -19,6 +19,7 @@ Segment _block({
   String name = '하루',
   int startMinute = 0,
   int endMinute = 24 * 60,
+  List<String> microSteps = const [],
 }) {
   return Segment(
     id: id,
@@ -28,6 +29,7 @@ Segment _block({
     startMinute: startMinute,
     endMinute: endMinute,
     order: 0,
+    microSteps: microSteps,
   );
 }
 
@@ -47,9 +49,10 @@ void main() {
     expect(find.text('오늘 일정이 없어요'), findsOneWidget);
   });
 
-  testWidgets('tapping the dial on a block opens its editor', (tester) async {
+  testWidgets('tapping the dial on a block opens it in Focus (review), not the editor',
+      (tester) async {
     final repo = FakePlannerRepository();
-    await repo.upsertSegment(_block());
+    await repo.upsertSegment(_block(name: '하루', microSteps: const ['물 마시기']));
 
     await tester.pumpWidget(wrap(repo));
     await tester.pumpAndSettle();
@@ -66,7 +69,9 @@ void main() {
     await tester.tapAt(dialCenter + ringOffset);
     await tester.pumpAndSettle();
 
-    expect(find.byType(SegmentFormPage), findsOneWidget);
+    expect(find.byType(FocusPage), findsOneWidget);
+    expect(find.byType(SegmentFormPage), findsNothing);
+    expect(find.widgetWithText(CheckboxListTile, '물 마시기'), findsOneWidget);
   });
 
   testWidgets("a block completed today is passed to DialPainter's badge set, "

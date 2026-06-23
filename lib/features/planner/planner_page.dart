@@ -21,8 +21,10 @@ import '../settings/settings_page.dart';
 import 'dial_painter.dart';
 
 /// Home screen: the 24h circular dial with block arcs and a current-time hand
-/// that advances roughly every minute. Tapping a block's arc opens it for
-/// editing; the centre summary shows whichever block is current (or next).
+/// that advances roughly every minute. Tapping a block's arc opens it in Focus
+/// (review mode) so its checklist can be caught up on; the centre summary shows
+/// whichever block is current (or next). Editing a block is done from the
+/// 구간 관리 list, not here.
 class PlannerPage extends ConsumerStatefulWidget {
   const PlannerPage({super.key});
 
@@ -217,10 +219,14 @@ class _Dial extends StatelessWidget {
     final outerR = DialGeometry.outerRadius(side);
     final lanes = DialGeometry.assignLanes(segments);
 
+    // Tapping a block's arc opens it in Focus (review mode) -- not its editor --
+    // so a block whose time has already passed can still have its "루틴" items
+    // ticked off late. Editing a block (time/alarm/items) is done from the
+    // 구간 관리 list instead. Mirrors the old dial-marker → Focus review flow.
     final tappedSegment = _segmentAtPoint(center, local, outerR, lanes);
     if (tappedSegment != null) {
       Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => SegmentFormPage(existing: tappedSegment)),
+        MaterialPageRoute(builder: (_) => FocusPage.forBlock(tappedSegment)),
       );
     }
   }
