@@ -43,7 +43,9 @@ class MicroStepProgress {
 
   factory MicroStepProgress.fromMap(Map<String, dynamic> map) => MicroStepProgress(
         dateKey: map['dateKey'] as String,
-        segmentId: map['segmentId'] as String,
+        // Falls back to the legacy 'routineId' field so a pre-merge doc still
+        // deserializes instead of crashing -- see Completion.fromMap.
+        segmentId: (map['segmentId'] ?? map['routineId'] ?? '') as String,
         checkedIndices:
             (map['checkedIndices'] as List<dynamic>).map((e) => e as int).toList(),
       );

@@ -17,5 +17,14 @@ void main() {
       final c = Completion.now('s1', at: DateTime(2026, 6, 17));
       expect(c.id, '2026-06-17_s1');
     });
+
+    test('fromMap falls back to a legacy routineId field (pre-merge docs)', () {
+      final c = Completion.fromMap({
+        'dateKey': '2026-06-17',
+        'routineId': 'old-r1', // legacy field, no segmentId
+        'completedAtIso': '',
+      });
+      expect(c.segmentId, 'old-r1');
+    });
   });
 }

@@ -41,7 +41,10 @@ class Completion {
 
   factory Completion.fromMap(Map<String, dynamic> map) => Completion(
         dateKey: map['dateKey'] as String,
-        segmentId: map['segmentId'] as String,
+        // Falls back to the legacy 'routineId' field so a pre-merge doc (when
+        // completions were keyed per routine) still deserializes instead of
+        // crashing -- it just won't match any current block.
+        segmentId: (map['segmentId'] ?? map['routineId'] ?? '') as String,
         completedAtIso: map['completedAtIso'] as String,
       );
 }
