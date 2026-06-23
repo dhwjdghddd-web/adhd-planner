@@ -5,11 +5,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/debug_log.dart';
 import 'core/theme.dart';
-import 'core/time_geometry.dart';
 import 'data/models/achieved_day.dart';
 import 'data/models/app_settings.dart';
 import 'data/providers.dart';
-import 'data/routine_status.dart';
 import 'data/today.dart';
 import 'features/focus/alarm_alert_dialog.dart';
 import 'features/memos/quick_add_button.dart';
@@ -66,9 +64,8 @@ class App extends ConsumerWidget {
 final ValueNotifier<bool> alarmDialogOpen = ValueNotifier(false);
 
 void _showAlarmDialog({
-  required String routineId,
+  required String segmentId,
   required int notificationId,
-  required bool isTransition,
 }) {
   if (alarmDialogOpen.value) return;
   final context = appNavigatorKey.currentContext;
@@ -78,9 +75,8 @@ void _showAlarmDialog({
     context: context,
     barrierDismissible: false,
     builder: (_) => AlarmAlertDialog(
-      routineId: routineId,
+      segmentId: segmentId,
       notificationId: notificationId,
-      isTransition: isTransition,
     ),
   ).whenComplete(() => alarmDialogOpen.value = false);
 }
@@ -169,9 +165,8 @@ class _AlarmAlertLauncherState extends State<_AlarmAlertLauncher> {
     if (appNavigatorKey.currentContext == null) return;
     pendingAlarmAlert.value = null;
     _showAlarmDialog(
-      routineId: pending.routineId,
+      segmentId: pending.segmentId,
       notificationId: pending.notificationId,
-      isTransition: pending.isTransition,
     );
   }
 
@@ -186,14 +181,13 @@ class _AlarmAlertLauncherState extends State<_AlarmAlertLauncher> {
 }
 
 /// Pops [AlarmAlertDialog] on its own, without waiting for a notification
-/// tap, whenever a routine's main alarm time arrives while this app is
-/// already the one on screen — checked once a second (cheap: just a
-/// minute-of-day comparison) but only acted on once per actual minute
-/// change, so a routine's start time only ever opens the dialog once. The
-/// underlying notification still fires too (so the alarm still works when
-/// the app isn't in the foreground); this just means whoever's already
-/// looking at the app doesn't have to notice and tap a heads-up banner
-/// first.
+/// tap, whenever a block's start alarm time arrives while this app is already
+/// the one on screen — checked once a second (cheap: just a minute-of-day
+/// comparison) but only acted on once per actual minute change, so a block's
+/// start time only ever opens the dialog once. The underlying notification
+/// still fires too (so the alarm still works when the app isn't in the
+/// foreground); this just means whoever's already looking at the app doesn't
+/// have to notice and tap a heads-up banner first.
 class _ForegroundAlarmWatcher extends ConsumerStatefulWidget {
   const _ForegroundAlarmWatcher();
 
@@ -217,62 +211,17 @@ class _ForegroundAlarmWatcherState extends ConsumerState<_ForegroundAlarmWatcher
     if (minuteOfDay == _lastCheckedMinuteOfDay) return;
     _lastCheckedMinuteOfDay = minuteOfDay;
 
-    final routines = ref.read(routinesProvider).value;
-    if (routines == null) return;
-    final postponements = ref.read(routinePostponementsProvider).value ?? const [];
-    final skips = ref.read(routineSkipsProvider).value ?? const [];
-    // excludeTodaysSkips so a routine the user already 넘기기'd today doesn't
-    // still auto-pop the dialog at its original time -- skipToday cancels
-    // its OS notification, but this foreground watcher is a separate path
-    // and would otherwise fire on the bare startMinute match regardless.
-    final effective = excludeTodaysSkips(
-      applyTodaysPostponements(routines, postponements, now: now),
-      skips,
-      now: now,
-    );
-    final dateKey = dayKeyFor(now);
+    final segments = ref.read(segmentsProvider).value;
+    if (segments == null) return;
 
-    for (final routine in effective) {
-      if (!routine.alarmEnabled) continue;
-      // A 미루기'd routine's alarms were re-scheduled as one-off slot
-      // 2/3 notifications (see notification_service.dart's postpone()) --
-      // cancelling the wrong (still-recurring slot 0/1) id here would
-      // leave the real, still-showing notification (and its sound/
-      // vibration) untouched even after 확인/미루기 closes this dialog.
-      final postponedToday = postponements.any(
-        (p) => p.routineId == routine.id && p.dateKey == dateKey && p.offsetMinutes > 0,
-      );
-      // The main alarm belongs to today's occurrence.
-      if (routine.occursOn(now.weekday) && routine.startMinute == minuteOfDay) {
+    for (final segment in segments) {
+      if (!segment.alarmEnabled) continue;
+      if (segment.startMinute == minuteOfDay) {
         _showAlarmDialog(
-          routineId: routine.id,
-          notificationId: postponedToday
-              ? notificationIdFor(routine.id, 0, 2)
-              : notificationIdFor(routine.id, now.weekday, 0),
-          isTransition: false,
+          segmentId: segment.id,
+          notificationId: notificationIdFor(segment.id, now.weekday, 0),
         );
         break; // one dialog at a time is enough even if two start the same minute
-      }
-      if (routine.leadWarningMin > 0) {
-        final raw = routine.startMinute - routine.leadWarningMin;
-        final warnMinute = raw % TimeGeometry.minutesPerDay;
-        // A warning that lands before midnight relative to the start fires
-        // *today* but precedes *tomorrow's* occurrence (e.g. 23:40 for a 00:10
-        // routine), so it's gated on tomorrow's weekday -- otherwise it would
-        // wrongly fire on a day the routine doesn't run, or skip the correct
-        // night-before alert. Mirrors buildSchedule's transitionDay. The id
-        // still uses now.weekday (the firing day = the scheduled transitionDay).
-        final occurrenceWeekday = raw < 0 ? (now.weekday % 7) + 1 : now.weekday;
-        if (routine.occursOn(occurrenceWeekday) && warnMinute == minuteOfDay) {
-          _showAlarmDialog(
-            routineId: routine.id,
-            notificationId: postponedToday
-                ? notificationIdFor(routine.id, 0, 3)
-                : notificationIdFor(routine.id, now.weekday, 1),
-            isTransition: true,
-          );
-          break;
-        }
       }
     }
   }
@@ -321,10 +270,10 @@ class _AccountAlarmSync extends ConsumerWidget {
         return;
       }
       if (identical(prev, next)) return;
-      final routines = await next.watchRoutines().first;
+      final segments = await next.watchSegments().first;
       final settings = await next.watchSettings().first;
       try {
-        await ref.read(notificationServiceProvider).rescheduleAll(routines, settings);
+        await ref.read(notificationServiceProvider).rescheduleAll(segments, settings);
       } catch (e) {
         // 플랫폼 채널 부재(테스트 등) — 무시.
         logSwallowed('계정 전환 후 알람 재스케줄', e);
@@ -363,8 +312,7 @@ class _AchievementRecorderState extends ConsumerState<_AchievementRecorder> {
 
   @override
   Widget build(BuildContext context) {
-    final routines = ref.watch(routinesProvider).value;
-    final skips = ref.watch(routineSkipsProvider).value;
+    final segments = ref.watch(segmentsProvider).value;
     final completions = ref.watch(completionsProvider).value;
     final progress = ref.watch(microStepProgressProvider).value;
     final stored = ref.watch(achievedDaysProvider).value;
@@ -372,8 +320,7 @@ class _AchievementRecorderState extends ConsumerState<_AchievementRecorder> {
     // Wait until everything we'd compute from has actually loaded — acting on
     // a half-loaded picture could bank a day that isn't really achieved yet,
     // or (worse) skip backfilling one that is.
-    if (routines == null ||
-        skips == null ||
+    if (segments == null ||
         completions == null ||
         progress == null ||
         stored == null) {
@@ -382,13 +329,12 @@ class _AchievementRecorderState extends ConsumerState<_AchievementRecorder> {
 
     final storedKeys = {for (final d in stored) d.dateKey};
     final computed = achievedDateKeys(
-      routines: routines,
-      skips: skips,
+      segments: segments,
       completions: completions,
       progress: progress,
     );
     // Never bank *today*: today is still live and can fall back below the bar
-    // before midnight (un-checking a micro-step). streakDateKeys deliberately
+    // before midnight (un-checking an item). streakDateKeys deliberately
     // ignores any stored record for today and recomputes it live for exactly
     // this reason -- so banking today here (the moment it first crosses 50%)
     // would leave a permanent, never-removed record that wrongly counts

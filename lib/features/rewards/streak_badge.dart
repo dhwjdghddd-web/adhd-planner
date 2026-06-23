@@ -17,8 +17,7 @@ class StreakBadge extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final routines = ref.watch(routinesProvider).value ?? const [];
-    final skips = ref.watch(routineSkipsProvider).value ?? const [];
+    final segments = ref.watch(segmentsProvider).value ?? const [];
     final achievedDays = ref.watch(achievedDaysProvider).value ?? const [];
     final completionsAsync = ref.watch(completionsProvider);
     final progress = ref.watch(microStepProgressProvider).value ?? const [];
@@ -28,8 +27,7 @@ class StreakBadge extends ConsumerWidget {
       data: (completions) {
         final dateKeys = streakDateKeys(
           achievedDays: achievedDays,
-          routines: routines,
-          skips: skips,
+          segments: segments,
           completions: completions,
           progress: progress,
         );

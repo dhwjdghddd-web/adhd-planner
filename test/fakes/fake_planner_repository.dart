@@ -5,9 +5,6 @@ import 'package:adhd_planner/data/models/app_settings.dart';
 import 'package:adhd_planner/data/models/completion.dart';
 import 'package:adhd_planner/data/models/memo.dart';
 import 'package:adhd_planner/data/models/micro_step_progress.dart';
-import 'package:adhd_planner/data/models/routine.dart';
-import 'package:adhd_planner/data/models/routine_postponement.dart';
-import 'package:adhd_planner/data/models/routine_skip.dart';
 import 'package:adhd_planner/data/models/segment.dart';
 import 'package:adhd_planner/data/repositories/planner_repository.dart';
 
@@ -16,33 +13,24 @@ import 'package:adhd_planner/data/repositories/planner_repository.dart';
 /// around a temp directory or a Firestore emulator.
 class FakePlannerRepository implements PlannerRepository {
   final Map<String, Segment> _segments = {};
-  final Map<String, Routine> _routines = {};
   final Map<String, Memo> _memos = {};
   final Map<String, Completion> _completions = {};
   final Map<String, MicroStepProgress> _microStepProgress = {};
-  final Map<String, RoutinePostponement> _routinePostponements = {};
-  final Map<String, RoutineSkip> _routineSkips = {};
   final Map<String, AchievedDay> _achievedDays = {};
   AppSettings _settings = const AppSettings.defaults();
 
   final _segmentsStream = _ReplayStream<List<Segment>>();
-  final _routinesStream = _ReplayStream<List<Routine>>();
   final _memosStream = _ReplayStream<List<Memo>>();
   final _completionsStream = _ReplayStream<List<Completion>>();
   final _microStepProgressStream = _ReplayStream<List<MicroStepProgress>>();
-  final _routinePostponementsStream = _ReplayStream<List<RoutinePostponement>>();
-  final _routineSkipsStream = _ReplayStream<List<RoutineSkip>>();
   final _achievedDaysStream = _ReplayStream<List<AchievedDay>>();
   final _settingsStream = _ReplayStream<AppSettings>();
 
   FakePlannerRepository() {
     _segmentsStream.add(const []);
-    _routinesStream.add(const []);
     _memosStream.add(const []);
     _completionsStream.add(const []);
     _microStepProgressStream.add(const []);
-    _routinePostponementsStream.add(const []);
-    _routineSkipsStream.add(const []);
     _achievedDaysStream.add(const []);
     _settingsStream.add(_settings);
   }
@@ -60,21 +48,6 @@ class FakePlannerRepository implements PlannerRepository {
   Future<void> deleteSegment(String id) async {
     _segments.remove(id);
     _segmentsStream.add(_segments.values.toList());
-  }
-
-  @override
-  Stream<List<Routine>> watchRoutines() => _routinesStream.stream;
-
-  @override
-  Future<void> upsertRoutine(Routine r) async {
-    _routines[r.id] = r;
-    _routinesStream.add(_routines.values.toList());
-  }
-
-  @override
-  Future<void> deleteRoutine(String id) async {
-    _routines.remove(id);
-    _routinesStream.add(_routines.values.toList());
   }
 
   @override
@@ -108,8 +81,8 @@ class FakePlannerRepository implements PlannerRepository {
   }
 
   @override
-  Future<void> removeCompletion(String dateKey, String routineId) async {
-    _completions.remove(Completion.keyFor(dateKey, routineId));
+  Future<void> removeCompletion(String dateKey, String segmentId) async {
+    _completions.remove(Completion.keyFor(dateKey, segmentId));
     _completionsStream.add(_completions.values.toList());
   }
 
@@ -120,25 +93,6 @@ class FakePlannerRepository implements PlannerRepository {
   Future<void> saveMicroStepProgress(MicroStepProgress p) async {
     _microStepProgress[p.id] = p;
     _microStepProgressStream.add(_microStepProgress.values.toList());
-  }
-
-  @override
-  Stream<List<RoutinePostponement>> watchRoutinePostponements() =>
-      _routinePostponementsStream.stream;
-
-  @override
-  Future<void> saveRoutinePostponement(RoutinePostponement p) async {
-    _routinePostponements[p.id] = p;
-    _routinePostponementsStream.add(_routinePostponements.values.toList());
-  }
-
-  @override
-  Stream<List<RoutineSkip>> watchRoutineSkips() => _routineSkipsStream.stream;
-
-  @override
-  Future<void> saveRoutineSkip(RoutineSkip s) async {
-    _routineSkips[s.id] = s;
-    _routineSkipsStream.add(_routineSkips.values.toList());
   }
 
   @override

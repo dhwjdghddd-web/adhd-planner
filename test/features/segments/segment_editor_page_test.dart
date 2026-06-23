@@ -4,13 +4,20 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:adhd_planner/data/providers.dart';
 import 'package:adhd_planner/features/segments/segment_editor_page.dart';
+import 'package:adhd_planner/services/notification_service.dart';
 
+import '../../fakes/fake_notification_service.dart';
 import '../../fakes/fake_planner_repository.dart';
 
 void main() {
   Widget wrap(FakePlannerRepository repo) {
     return ProviderScope(
-      overrides: [plannerRepositoryProvider.overrideWithValue(repo)],
+      overrides: [
+        plannerRepositoryProvider.overrideWithValue(repo),
+        // Creating/deleting a segment reschedules alarms (SegmentsController) --
+        // swap in the no-op service so that doesn't reach a platform channel.
+        notificationServiceProvider.overrideWithValue(FakeNotificationService()),
+      ],
       child: const MaterialApp(home: SegmentEditorPage()),
     );
   }
@@ -47,7 +54,8 @@ void main() {
     await tester.tap(find.widgetWithText(FilledButton, '구간 추가'));
     await tester.pumpAndSettle();
 
-    await tester.enterText(find.byType(TextField), '오전');
+    // The form now has several TextFields (이름/메모/루틴 입력); 이름 is first.
+    await tester.enterText(find.byType(TextField).first, '오전');
     await tester.pumpAndSettle();
 
     final saveButton = find.widgetWithText(FilledButton, '저장');
@@ -68,7 +76,7 @@ void main() {
 
     await tester.tap(find.widgetWithText(FloatingActionButton, '구간 추가'));
     await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextField), '오후');
+    await tester.enterText(find.byType(TextField).first, '오후');
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, '저장'));
     await tester.pumpAndSettle();

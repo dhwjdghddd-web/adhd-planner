@@ -26,13 +26,13 @@ const _slides = [
   ),
   _Slide(
     icon: Icons.checklist,
-    title: '루틴으로 할 일 배치',
-    body: '구간 안에 시간을 정해 루틴을 추가하면 원형 시계판에 바로 표시돼요.',
+    title: '구간 안에 루틴 더하기',
+    body: '구간을 누르면 그 안에 할 일(루틴)을 적어둘 수 있어요. 체크하면서 하루를 채워가요.',
   ),
   _Slide(
     icon: Icons.notifications_active_outlined,
     title: '알림으로 안 놓치기',
-    body: '알림 권한을 허용하면 루틴 시작 시각과 전환 예고를 알려드려요.',
+    body: '알림을 켠 구간은 시작 시각에 알려드려요. 수면 같은 구간은 알림을 꺼두면 돼요.',
   ),
   _Slide(
     icon: Icons.edit_note,

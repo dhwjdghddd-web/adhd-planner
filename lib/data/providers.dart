@@ -6,9 +6,6 @@ import 'models/app_settings.dart';
 import 'models/completion.dart';
 import 'models/memo.dart';
 import 'models/micro_step_progress.dart';
-import 'models/routine.dart';
-import 'models/routine_postponement.dart';
-import 'models/routine_skip.dart';
 import 'models/segment.dart';
 import 'repositories/firestore/firestore_planner_repository.dart';
 import 'repositories/planner_repository.dart';
@@ -58,10 +55,6 @@ final segmentsProvider = StreamProvider<List<Segment>>(
   (ref) => _guardedStream(ref.watch(plannerRepositoryProvider), (r) => r.watchSegments()),
 );
 
-final routinesProvider = StreamProvider<List<Routine>>(
-  (ref) => _guardedStream(ref.watch(plannerRepositoryProvider), (r) => r.watchRoutines()),
-);
-
 final memosProvider = StreamProvider<List<Memo>>(
   (ref) => _guardedStream(ref.watch(plannerRepositoryProvider), (r) => r.watchMemos()),
 );
@@ -73,15 +66,6 @@ final completionsProvider = StreamProvider<List<Completion>>(
 final microStepProgressProvider = StreamProvider<List<MicroStepProgress>>(
   (ref) => _guardedStream(
       ref.watch(plannerRepositoryProvider), (r) => r.watchMicroStepProgress()),
-);
-
-final routinePostponementsProvider = StreamProvider<List<RoutinePostponement>>(
-  (ref) => _guardedStream(
-      ref.watch(plannerRepositoryProvider), (r) => r.watchRoutinePostponements()),
-);
-
-final routineSkipsProvider = StreamProvider<List<RoutineSkip>>(
-  (ref) => _guardedStream(ref.watch(plannerRepositoryProvider), (r) => r.watchRoutineSkips()),
 );
 
 final achievedDaysProvider = StreamProvider<List<AchievedDay>>(

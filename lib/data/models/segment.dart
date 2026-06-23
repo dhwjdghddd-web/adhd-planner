@@ -3,10 +3,16 @@ import 'package:flutter/material.dart';
 import '../../core/constants.dart';
 import '../../core/time_geometry.dart';
 
-/// A user-defined slice of the day (e.g. "오전", "퇴근 후") rendered as a
-/// coloured arc on the circular dial. [startMinute]/[endMinute] are
+/// A block of the day: a time range (rendered as a coloured arc on the dial)
+/// that also carries its own checklist of tasks ("루틴" in the UI) and an
+/// optional start-of-block alarm. This is the app's single scheduled entity --
+/// there is no separate per-task entity. [startMinute]/[endMinute] are
 /// minute-of-day (0~1440); a range that wraps past midnight is valid
 /// (e.g. start=1320 end=120 means 22:00~02:00).
+///
+/// The alarm, when [alarmEnabled], fires once at [startMinute]. Blocks recur
+/// every day (no weekday selection). [microSteps] are the checklist items the
+/// Focus/checklist screens tick off; they drive completion and the streak.
 @immutable
 class Segment {
   final String id;
@@ -16,6 +22,16 @@ class Segment {
   final int startMinute;
   final int endMinute;
   final int order;
+  final String note;
+  // Checklist items shown to the user as "루틴". Ticking them off drives
+  // completion and the daily-achievement streak (see daily_achievement.dart).
+  final List<String> microSteps;
+  // Whether this block rings at [startMinute]. Off for blocks like 수면.
+  final bool alarmEnabled;
+  // Notification ids this block currently has scheduled, kept so a routine
+  // delete/reschedule can cancel exactly what it created (see
+  // NotificationService). Same role it had on the old Routine entity.
+  final List<int> notificationIds;
 
   const Segment({
     required this.id,
@@ -25,6 +41,10 @@ class Segment {
     required this.startMinute,
     required this.endMinute,
     required this.order,
+    this.note = '',
+    this.microSteps = const [],
+    this.alarmEnabled = true,
+    this.notificationIds = const [],
   });
 
   Color get color => Color(colorValue);
@@ -78,6 +98,10 @@ class Segment {
     int? startMinute,
     int? endMinute,
     int? order,
+    String? note,
+    List<String>? microSteps,
+    bool? alarmEnabled,
+    List<int>? notificationIds,
   }) {
     return Segment(
       id: id,
@@ -87,6 +111,10 @@ class Segment {
       startMinute: startMinute ?? this.startMinute,
       endMinute: endMinute ?? this.endMinute,
       order: order ?? this.order,
+      note: note ?? this.note,
+      microSteps: microSteps ?? this.microSteps,
+      alarmEnabled: alarmEnabled ?? this.alarmEnabled,
+      notificationIds: notificationIds ?? this.notificationIds,
     );
   }
 
@@ -98,6 +126,10 @@ class Segment {
         'startMinute': startMinute,
         'endMinute': endMinute,
         'order': order,
+        'note': note,
+        'microSteps': microSteps,
+        'alarmEnabled': alarmEnabled,
+        'notificationIds': notificationIds,
       };
 
   factory Segment.fromMap(Map<String, dynamic> map) => Segment(
@@ -108,6 +140,10 @@ class Segment {
         startMinute: map['startMinute'] as int,
         endMinute: map['endMinute'] as int,
         order: map['order'] as int,
+        note: (map['note'] as String?) ?? '',
+        microSteps: List<String>.from(map['microSteps'] as List? ?? const []),
+        alarmEnabled: (map['alarmEnabled'] as bool?) ?? true,
+        notificationIds: List<int>.from(map['notificationIds'] as List? ?? const []),
       );
 }
 

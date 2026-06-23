@@ -21,7 +21,6 @@ DialPainter _painter({
 }) {
   return DialPainter(
     segments: segments,
-    routines: const [],
     currentMinute: currentMinute,
     tickColor: Colors.black,
     labelStyle: const TextStyle(fontSize: 11),

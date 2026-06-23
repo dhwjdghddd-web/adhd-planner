@@ -100,10 +100,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   // here would silently do nothing until the next full app restart.
   Future<void> _rescheduleAlarms(AppSettings settings) async {
     try {
-      final routines = ref.read(routinesProvider).value ?? const [];
+      final segments = ref.read(segmentsProvider).value ?? const [];
       await ref
           .read(notificationServiceProvider)
-          .rescheduleAll(routines, settings);
+          .rescheduleAll(segments, settings);
     } catch (_) {
       // No platform channel available (e.g. under flutter test) — the
       // setting itself is already saved and will still apply next launch.
@@ -219,21 +219,21 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     if (confirmed != true || !mounted) return;
 
     // Cancel this device's alarms *before* signing out, while the logging-out
-    // account's routines are still readable. Relying only on _AccountAlarmSync
+    // account's blocks are still readable. Relying only on _AccountAlarmSync
     // (app.dart) to notice the uid change isn't enough: the new anonymous
-    // account starts empty, so by the time it reschedules there's no routine
-    // list left to cancel the previous account's still-armed native Vibrator
-    // alarms from -- which is how a logged-out device could still ring a
-    // routine the old account had set (e.g. a 5-min lead warning).
+    // account starts empty, so by the time it reschedules there's no block list
+    // left to cancel the previous account's still-armed native Vibrator alarms
+    // from -- which is how a logged-out device could still ring a block the old
+    // account had set.
     final knownIds =
-        (ref.read(routinesProvider).value ?? const []).expand((r) => r.notificationIds).toList();
+        (ref.read(segmentsProvider).value ?? const []).expand((s) => s.notificationIds).toList();
     try {
       await ref.read(notificationServiceProvider).cancelEverything(knownIds: knownIds);
     } catch (_) {
       // No platform channel (e.g. flutter test) — nothing scheduled to clear.
     }
     // Drop any alarm alert that was queued for the account we're leaving, so it
-    // can't pop a stale "routine not found" dialog against the new empty one.
+    // can't pop a stale "구간 not found" dialog against the new empty one.
     pendingAlarmAlert.value = null;
 
     await ref.read(authServiceProvider).signOutToAnonymous();

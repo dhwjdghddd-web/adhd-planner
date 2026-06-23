@@ -6,13 +6,20 @@ import 'package:adhd_planner/data/models/app_settings.dart';
 import 'package:adhd_planner/data/models/segment.dart';
 import 'package:adhd_planner/data/providers.dart';
 import 'package:adhd_planner/features/onboarding/onboarding_page.dart';
+import 'package:adhd_planner/services/notification_service.dart';
 
+import '../../fakes/fake_notification_service.dart';
 import '../../fakes/fake_planner_repository.dart';
 
 void main() {
   Widget wrap(FakePlannerRepository repo) {
     return ProviderScope(
-      overrides: [plannerRepositoryProvider.overrideWithValue(repo)],
+      overrides: [
+        plannerRepositoryProvider.overrideWithValue(repo),
+        // Creating the default segments reschedules alarms (SegmentsController)
+        // -- swap in the no-op service so that doesn't reach a platform channel.
+        notificationServiceProvider.overrideWithValue(FakeNotificationService()),
+      ],
       child: const MaterialApp(home: OnboardingPage()),
     );
   }

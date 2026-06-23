@@ -3,9 +3,6 @@ import '../models/app_settings.dart';
 import '../models/completion.dart';
 import '../models/memo.dart';
 import '../models/micro_step_progress.dart';
-import '../models/routine.dart';
-import '../models/routine_postponement.dart';
-import '../models/routine_skip.dart';
 import '../models/segment.dart';
 
 /// Storage abstraction for the whole app. Screens and controllers depend
@@ -14,15 +11,10 @@ import '../models/segment.dart';
 /// Firestore's own on-device cache for offline use). Tests swap in an
 /// in-memory fake behind the same contract.
 abstract class PlannerRepository {
-  // Segments
+  // Segments (the app's single "block" entity: time range + checklist + alarm)
   Stream<List<Segment>> watchSegments();
   Future<void> upsertSegment(Segment s);
   Future<void> deleteSegment(String id);
-
-  // Routines
-  Stream<List<Routine>> watchRoutines();
-  Future<void> upsertRoutine(Routine r);
-  Future<void> deleteRoutine(String id);
 
   // Memos
   Stream<List<Memo>> watchMemos();
@@ -30,22 +22,14 @@ abstract class PlannerRepository {
   Future<void> updateMemo(Memo m);
   Future<void> deleteMemo(String id);
 
-  // Completions
+  // Completions (per block, per day)
   Stream<List<Completion>> watchCompletions();
   Future<void> setCompletion(Completion c);
-  Future<void> removeCompletion(String dateKey, String routineId);
+  Future<void> removeCompletion(String dateKey, String segmentId);
 
-  // Micro-step progress (per routine, per day)
+  // Micro-step progress (per block, per day)
   Stream<List<MicroStepProgress>> watchMicroStepProgress();
   Future<void> saveMicroStepProgress(MicroStepProgress p);
-
-  // Routine postponements ("미루기" -- per routine, per day)
-  Stream<List<RoutinePostponement>> watchRoutinePostponements();
-  Future<void> saveRoutinePostponement(RoutinePostponement p);
-
-  // Routine skips ("넘기기" -- per routine, per day)
-  Stream<List<RoutineSkip>> watchRoutineSkips();
-  Future<void> saveRoutineSkip(RoutineSkip s);
 
   // Achieved days (streak source -- per day, write-once; see [AchievedDay])
   Stream<List<AchievedDay>> watchAchievedDays();

@@ -7,16 +7,16 @@ final microStepProgressControllerProvider = Provider<MicroStepProgressController
   (ref) => MicroStepProgressController(ref),
 );
 
-/// Thin write-side wrapper around [PlannerRepository] for persisting which
-/// micro-steps were checked off today, mirroring `CompletionsController`.
+/// Thin write-side wrapper around [PlannerRepository] for persisting which of a
+/// block's items were checked off today, mirroring `CompletionsController`.
 class MicroStepProgressController {
   MicroStepProgressController(this._ref);
 
   final Ref _ref;
 
-  Future<void> save(String routineId, Iterable<int> checkedIndices, {DateTime? now}) {
+  Future<void> save(String segmentId, Iterable<int> checkedIndices, {DateTime? now}) {
     return _ref
         .read(plannerRepositoryProvider)!
-        .saveMicroStepProgress(MicroStepProgress.today(routineId, checkedIndices, at: now));
+        .saveMicroStepProgress(MicroStepProgress.today(segmentId, checkedIndices, at: now));
   }
 }

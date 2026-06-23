@@ -19,6 +19,53 @@ Segment _segment({
 }
 
 void main() {
+  group('Segment block fields', () {
+    test('defaults: no note/items, alarm on, no notification ids', () {
+      final s = _segment(startMinute: 0, endMinute: 60);
+      expect(s.note, '');
+      expect(s.microSteps, isEmpty);
+      expect(s.alarmEnabled, true);
+      expect(s.notificationIds, isEmpty);
+    });
+
+    test('toMap/fromMap round-trips the block fields', () {
+      final s = _segment(startMinute: 0, endMinute: 60).copyWith(
+        note: 'memo',
+        microSteps: ['a', 'b'],
+        alarmEnabled: false,
+        notificationIds: [1, 2, 3],
+      );
+      final restored = Segment.fromMap(s.toMap());
+      expect(restored.note, 'memo');
+      expect(restored.microSteps, ['a', 'b']);
+      expect(restored.alarmEnabled, false);
+      expect(restored.notificationIds, [1, 2, 3]);
+    });
+
+    test('fromMap tolerates a legacy doc missing the new fields', () {
+      final restored = Segment.fromMap({
+        'id': 's1',
+        'name': 'test',
+        'colorValue': 0xFF000000,
+        'iconKey': 'wb_sunny',
+        'startMinute': 0,
+        'endMinute': 60,
+        'order': 0,
+      });
+      expect(restored.note, '');
+      expect(restored.microSteps, isEmpty);
+      expect(restored.alarmEnabled, true);
+      expect(restored.notificationIds, isEmpty);
+    });
+
+    test('copyWith leaves untouched fields as they were', () {
+      final s = _segment(startMinute: 0, endMinute: 60)
+          .copyWith(microSteps: ['x'], alarmEnabled: false);
+      expect(s.copyWith(note: 'n').microSteps, ['x']);
+      expect(s.copyWith(note: 'n').alarmEnabled, false);
+    });
+  });
+
   group('Segment.containsMinute', () {
     test('same-day range contains minutes inside it', () {
       final s = _segment(startMinute: 6 * 60, endMinute: 12 * 60);

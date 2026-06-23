@@ -6,9 +6,6 @@ import '../../models/app_settings.dart';
 import '../../models/completion.dart';
 import '../../models/memo.dart';
 import '../../models/micro_step_progress.dart';
-import '../../models/routine.dart';
-import '../../models/routine_postponement.dart';
-import '../../models/routine_skip.dart';
 import '../../models/segment.dart';
 import '../planner_repository.dart';
 
@@ -39,16 +36,6 @@ class FirestorePlannerRepository implements PlannerRepository {
 
   @override
   Future<void> deleteSegment(String id) => _collection('segments').doc(id).delete();
-
-  // Routines
-  @override
-  Stream<List<Routine>> watchRoutines() => _watchAll('routines', Routine.fromMap);
-
-  @override
-  Future<void> upsertRoutine(Routine r) => _collection('routines').doc(r.id).set(r.toMap());
-
-  @override
-  Future<void> deleteRoutine(String id) => _collection('routines').doc(id).delete();
 
   // Memos
   @override
@@ -81,8 +68,8 @@ class FirestorePlannerRepository implements PlannerRepository {
   Future<void> setCompletion(Completion c) => _collection('completions').doc(c.id).set(c.toMap());
 
   @override
-  Future<void> removeCompletion(String dateKey, String routineId) =>
-      _collection('completions').doc(Completion.keyFor(dateKey, routineId)).delete();
+  Future<void> removeCompletion(String dateKey, String segmentId) =>
+      _collection('completions').doc(Completion.keyFor(dateKey, segmentId)).delete();
 
   // Micro-step progress -- same unbounded-growth/recent-window reasoning as
   // completions above.
@@ -93,28 +80,6 @@ class FirestorePlannerRepository implements PlannerRepository {
   @override
   Future<void> saveMicroStepProgress(MicroStepProgress p) =>
       _collection('microStepProgress').doc(p.id).set(p.toMap());
-
-  // Routine postponements -- only today's are ever read (they shift today's
-  // effective alarm time and nothing else), so an even tighter window than the
-  // history collections. A couple of days of slack absorbs the timezone/
-  // midnight boundary without ever loading months of stale offsets.
-  @override
-  Stream<List<RoutinePostponement>> watchRoutinePostponements() =>
-      _watchSince('routinePostponements', RoutinePostponement.fromMap, _todayWindowDays);
-
-  @override
-  Future<void> saveRoutinePostponement(RoutinePostponement p) =>
-      _collection('routinePostponements').doc(p.id).set(p.toMap());
-
-  // Routine skips -- like postponements, only today's matter, so the same
-  // tight window.
-  @override
-  Stream<List<RoutineSkip>> watchRoutineSkips() =>
-      _watchSince('routineSkips', RoutineSkip.fromMap, _todayWindowDays);
-
-  @override
-  Future<void> saveRoutineSkip(RoutineSkip s) =>
-      _collection('routineSkips').doc(s.id).set(s.toMap());
 
   // Achieved days
   @override
@@ -165,4 +130,3 @@ class FirestorePlannerRepository implements PlannerRepository {
 // Firestore (never deleted) but not streamed into the app — see the per-method
 // comments above for why each reader is safe with only this much history.
 const _historyWindowDays = 90; // completions, micro-step progress
-const _todayWindowDays = 2; // postponements, skips (only today is ever used)

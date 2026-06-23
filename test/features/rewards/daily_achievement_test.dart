@@ -4,33 +4,31 @@ import 'package:intl/intl.dart';
 import 'package:adhd_planner/data/models/achieved_day.dart';
 import 'package:adhd_planner/data/models/completion.dart';
 import 'package:adhd_planner/data/models/micro_step_progress.dart';
-import 'package:adhd_planner/data/models/routine.dart';
-import 'package:adhd_planner/data/models/routine_skip.dart';
+import 'package:adhd_planner/data/models/segment.dart';
 import 'package:adhd_planner/features/rewards/daily_achievement.dart';
 
 void main() {
   const dateKey = '2026-06-18';
-  final isoWeekday = DateTime.parse(dateKey).weekday;
-  final notToday = [1, 2, 3, 4, 5, 6, 7].where((d) => d != isoWeekday).toList();
 
-  Routine routine(String id, List<String> microSteps, {List<int> repeatDays = const []}) {
-    return Routine(
+  Segment block(String id, List<String> microSteps) {
+    return Segment(
       id: id,
-      segmentId: null,
-      title: id,
+      name: id,
+      colorValue: 0xFF000000,
+      iconKey: 'wb_sunny',
       startMinute: 0,
+      endMinute: 60,
+      order: 0,
       microSteps: microSteps,
-      repeatDays: repeatDays,
     );
   }
 
-  test('achieved once at least half of today\'s micro-steps are checked', () {
+  test('achieved once at least half of today\'s items are checked', () {
     final achievement = dailyAchievementFor(
       dateKey: dateKey,
-      routines: [routine('r1', const ['a', 'b', 'c', 'd'])],
-      skips: const [],
+      segments: [block('s1', const ['a', 'b', 'c', 'd'])],
       completions: const [],
-      progress: [MicroStepProgress(dateKey: dateKey, routineId: 'r1', checkedIndices: const [0, 1])],
+      progress: [MicroStepProgress(dateKey: dateKey, segmentId: 's1', checkedIndices: const [0, 1])],
     );
 
     expect(achievement.checked, 2);
@@ -41,41 +39,37 @@ void main() {
   test('not achieved when under half are checked', () {
     final achievement = dailyAchievementFor(
       dateKey: dateKey,
-      routines: [routine('r1', const ['a', 'b', 'c', 'd'])],
-      skips: const [],
+      segments: [block('s1', const ['a', 'b', 'c', 'd'])],
       completions: const [],
-      progress: [MicroStepProgress(dateKey: dateKey, routineId: 'r1', checkedIndices: const [0])],
+      progress: [MicroStepProgress(dateKey: dateKey, segmentId: 's1', checkedIndices: const [0])],
     );
 
     expect(achievement.isAchieved, isFalse);
   });
 
-  test("a skipped routine's micro-steps don't count toward the total or the checked count", () {
+  test('counts items across all blocks', () {
     final achievement = dailyAchievementFor(
       dateKey: dateKey,
-      routines: [
-        routine('skipped', const ['a', 'b']),
-        routine('kept', const ['c', 'd']),
+      segments: [
+        block('s1', const ['a', 'b']),
+        block('s2', const ['c', 'd']),
       ],
-      skips: const [RoutineSkip(dateKey: dateKey, routineId: 'skipped')],
       completions: const [],
       progress: [
-        // Fully checked, but skipped -- should not rescue the day.
-        MicroStepProgress(dateKey: dateKey, routineId: 'skipped', checkedIndices: const [0, 1]),
+        MicroStepProgress(dateKey: dateKey, segmentId: 's1', checkedIndices: const [0, 1]),
       ],
     );
 
-    expect(achievement.total, 2);
-    expect(achievement.checked, 0);
-    expect(achievement.isAchieved, isFalse);
+    expect(achievement.total, 4);
+    expect(achievement.checked, 2);
+    expect(achievement.isAchieved, isTrue);
   });
 
-  test('falls back to whole-day completion when there are no micro-steps to count', () {
+  test('falls back to whole-day completion when there are no items to count', () {
     final achievement = dailyAchievementFor(
       dateKey: dateKey,
-      routines: [routine('r1', const [])],
-      skips: const [],
-      completions: const [Completion(dateKey: dateKey, routineId: 'r1', completedAtIso: '')],
+      segments: [block('s1', const [])],
+      completions: const [Completion(dateKey: dateKey, segmentId: 's1', completedAtIso: '')],
       progress: const [],
     );
 
@@ -83,11 +77,10 @@ void main() {
     expect(achievement.isAchieved, isTrue);
   });
 
-  test('no micro-steps and no completion is not achieved', () {
+  test('no items and no completion is not achieved', () {
     final achievement = dailyAchievementFor(
       dateKey: dateKey,
-      routines: [routine('r1', const [])],
-      skips: const [],
+      segments: [block('s1', const [])],
       completions: const [],
       progress: const [],
     );
@@ -95,28 +88,15 @@ void main() {
     expect(achievement.isAchieved, isFalse);
   });
 
-  test("a routine that doesn't occur on that weekday is excluded from the total", () {
-    final achievement = dailyAchievementFor(
-      dateKey: dateKey,
-      routines: [routine('other-day', const ['a', 'b'], repeatDays: notToday)],
-      skips: const [],
-      completions: const [],
-      progress: const [],
-    );
-
-    expect(achievement.total, 0);
-  });
-
   group('achievedDateKeys', () {
     test('only includes days that meet the achievement bar', () {
-      final routines = [routine('r1', const ['a', 'b'])];
+      final segments = [block('s1', const ['a', 'b'])];
       final result = achievedDateKeys(
-        routines: routines,
-        skips: const [],
+        segments: segments,
         completions: const [],
         progress: [
-          MicroStepProgress(dateKey: '2026-06-17', routineId: 'r1', checkedIndices: const [0, 1]),
-          MicroStepProgress(dateKey: '2026-06-18', routineId: 'r1', checkedIndices: const []),
+          MicroStepProgress(dateKey: '2026-06-17', segmentId: 's1', checkedIndices: const [0, 1]),
+          MicroStepProgress(dateKey: '2026-06-18', segmentId: 's1', checkedIndices: const []),
         ],
       );
 
@@ -125,19 +105,18 @@ void main() {
   });
 
   group('streakDateKeys', () {
-    // A past day is identified relative to "now"; use a fixed now so the
-    // banked day below is unambiguously in the past.
+    // A past day is identified relative to "now"; use a fixed now so the banked
+    // day below is unambiguously in the past.
     final now = DateTime(2026, 6, 18, 10);
     final todayKey = DateFormat('yyyy-MM-dd').format(now);
 
-    test('a banked past day counts even when current routines no longer would', () {
-      // No routines/progress/completions at all today -- the only reason this
-      // day counts is that it was already recorded as achieved. This is the
-      // whole point: deleting the routine behind it must not erase the day.
+    test('a banked past day counts even when current blocks no longer would', () {
+      // No blocks/progress/completions at all today -- the only reason this day
+      // counts is that it was already recorded as achieved. Deleting the block
+      // behind it must not erase the day.
       final result = streakDateKeys(
         achievedDays: const [AchievedDay(dateKey: '2026-06-15')],
-        routines: const [],
-        skips: const [],
+        segments: const [],
         completions: const [],
         progress: const [],
         now: now,
@@ -149,11 +128,10 @@ void main() {
     test('today is included when it meets the bar live, without a stored record', () {
       final result = streakDateKeys(
         achievedDays: const [],
-        routines: [routine('r1', const ['a', 'b'])],
-        skips: const [],
+        segments: [block('s1', const ['a', 'b'])],
         completions: const [],
         progress: [
-          MicroStepProgress(dateKey: todayKey, routineId: 'r1', checkedIndices: const [0, 1]),
+          MicroStepProgress(dateKey: todayKey, segmentId: 's1', checkedIndices: const [0, 1]),
         ],
         now: now,
       );
@@ -162,16 +140,12 @@ void main() {
     });
 
     test('today is excluded when it no longer meets the bar, even if banked earlier', () {
-      // A record exists for today (banked when it briefly crossed 50%), but the
-      // user has since un-checked back below the bar. Today is governed by the
-      // live check, not the stale same-day record, so it must drop out again.
       final result = streakDateKeys(
         achievedDays: [AchievedDay(dateKey: todayKey)],
-        routines: [routine('r1', const ['a', 'b', 'c', 'd'])],
-        skips: const [],
+        segments: [block('s1', const ['a', 'b', 'c', 'd'])],
         completions: const [],
         progress: [
-          MicroStepProgress(dateKey: todayKey, routineId: 'r1', checkedIndices: const [0]),
+          MicroStepProgress(dateKey: todayKey, segmentId: 's1', checkedIndices: const [0]),
         ],
         now: now,
       );

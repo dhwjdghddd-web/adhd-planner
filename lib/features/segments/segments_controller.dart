@@ -2,52 +2,49 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/models/segment.dart';
 import '../../data/providers.dart';
+import '../../services/notification_service.dart';
 
 final segmentsControllerProvider = Provider<SegmentsController>(
   (ref) => SegmentsController(ref),
 );
 
-/// Thin write-side wrapper around [PlannerRepository] for the segments
-/// feature: keeps overlap detection and reordering logic out of the
-/// widgets so it can be unit-tested on its own.
+/// Thin write-side wrapper around [PlannerRepository] for blocks (segments):
+/// keeps overlap detection and reordering logic out of the widgets so it can
+/// be unit-tested on its own. Every write re-runs
+/// [NotificationService.rescheduleAll] against the fresh block list, so the
+/// start-of-block alarms always match whatever the user just saved or deleted.
 class SegmentsController {
   SegmentsController(this._ref);
 
   final Ref _ref;
 
-  Future<void> upsert(Segment segment) =>
-      _ref.read(plannerRepositoryProvider)!.upsertSegment(segment);
-
-  /// Deletes a segment and re-homes every routine that belonged to it, so no
-  /// routine is left pointing at a segment id that no longer exists. Each
-  /// affected routine's segment is re-derived from its `startMinute` against
-  /// the *remaining* segments -- the same "segment is just whichever range
-  /// covers the start time" rule routines are created under -- which lands it
-  /// on an overlapping segment if one still covers that minute, or on null
-  /// (구간 없음) if none does. Without this the stale id would silently mis-place
-  /// the routine's dial marker (it falls back to lane 0) until the routine
-  /// happened to be edited and re-saved.
-  Future<void> delete(String id) async {
-    final repo = _ref.read(plannerRepositoryProvider)!;
-    final routines = await repo.watchRoutines().first;
-    final remaining =
-        (await repo.watchSegments().first).where((s) => s.id != id).toList();
-    for (final routine in routines) {
-      if (routine.segmentId != id) continue;
-      final rehomed = _segmentCovering(remaining, routine.startMinute)?.id;
-      await repo.upsertRoutine(routine.copyWith(segmentId: rehomed));
-    }
-    await repo.deleteSegment(id);
+  Future<void> upsert(Segment segment) async {
+    await _ref.read(plannerRepositoryProvider)!.upsertSegment(segment);
+    await _rescheduleAll();
   }
 
-  /// The first remaining segment whose range covers [startMinute], or null --
-  /// mirrors RoutineFormPage's auto-derivation so a re-homed routine matches a
-  /// freshly created one at the same time.
-  static Segment? _segmentCovering(List<Segment> segments, int startMinute) {
+  /// Deletes a block, cancelling its still-armed alarms first -- rescheduleAll
+  /// only rebuilds from blocks still in the list, so a deleted block's alarms
+  /// (and the Vibrator alarms riding alongside them) would otherwise never get
+  /// cancelled. See [NotificationService.cancelBlockAlarms].
+  Future<void> delete(String id) async {
+    final repo = _ref.read(plannerRepositoryProvider)!;
+    final segments = await repo.watchSegments().first;
     for (final segment in segments) {
-      if (segment.containsMinute(startMinute)) return segment;
+      if (segment.id == id) {
+        await _ref.read(notificationServiceProvider).cancelBlockAlarms(segment);
+        break;
+      }
     }
-    return null;
+    await repo.deleteSegment(id);
+    await _rescheduleAll();
+  }
+
+  Future<void> _rescheduleAll() async {
+    final repo = _ref.read(plannerRepositoryProvider)!;
+    final segments = await repo.watchSegments().first;
+    final settings = await repo.watchSettings().first;
+    await _ref.read(notificationServiceProvider).rescheduleAll(segments, settings);
   }
 
   /// Persists a new ordering by rewriting the `order` field of every

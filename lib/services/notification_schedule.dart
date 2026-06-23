@@ -2,13 +2,12 @@ import 'dart:typed_data';
 
 import 'package:timezone/timezone.dart' as tz;
 
-import '../core/time_geometry.dart';
 import '../data/models/app_settings.dart';
-import '../data/models/routine.dart';
+import '../data/models/segment.dart';
 
 /// Pure, plugin-free scheduling logic for [NotificationService]: turning
-/// routines into the exact alarms that should exist, deterministic ids,
-/// vibration patterns, and next-occurrence time math. Kept apart from the
+/// blocks (segments) into the exact alarms that should exist, deterministic
+/// ids, vibration patterns, and next-occurrence time math. Kept apart from the
 /// `flutter_local_notifications`/platform-channel side so all of this stays
 /// unit-testable without a real Android runtime (see notification_service_test).
 
@@ -34,15 +33,14 @@ int vibrationCycleMs(AlarmVibrationPattern preset) =>
     vibrationPatternFor(preset).fold(0, (sum, ms) => sum + ms);
 
 /// One concrete alarm that should exist on the device: a single weekday
-/// occurrence of either a routine's main alarm or its transition warning.
-/// Kept as a plain value (rather than calling the plugin while iterating
-/// routines) so [buildSchedule] — the "which alarms should exist" logic —
-/// is unit-testable without a real Android runtime.
+/// occurrence of a block's start-of-block alarm. Kept as a plain value (rather
+/// than calling the plugin while iterating blocks) so [buildSchedule] — the
+/// "which alarms should exist" logic — is unit-testable without a real Android
+/// runtime.
 class ScheduledSpec {
   const ScheduledSpec({
     required this.id,
-    required this.routineId,
-    required this.isTransition,
+    required this.segmentId,
     required this.isoWeekday,
     required this.minuteOfDay,
     required this.title,
@@ -50,67 +48,41 @@ class ScheduledSpec {
   });
 
   final int id;
-  final String routineId;
-  final bool isTransition;
+  final String segmentId;
   final int isoWeekday;
   final int minuteOfDay;
   final String title;
   final String body;
 
-  String get payload => '${isTransition ? 'transition' : 'main'}:$routineId';
+  String get payload => 'block:$segmentId';
 }
 
-/// Deterministic notification id for a (routine, weekday, slot) triple, so a
-/// later `cancelAll` + reschedule always replaces exactly what it created
-/// before. slot 0 = main alarm, 1 = transition warning, 2 = one-off 미루기
-/// reschedule of the main alarm, 3 = one-off 미루기 reschedule of the
-/// transition warning.
-int notificationIdFor(String routineId, int isoWeekday, int slot) {
-  final base = routineId.hashCode.abs() % 100000;
+/// Deterministic notification id for a (block, weekday) pair, so a later
+/// `cancelAll` + reschedule always replaces exactly what it created before.
+/// [slot] is kept (always 0 for the single start alarm) so the id shape stays
+/// compatible with the device-side request-code tracking.
+int notificationIdFor(String segmentId, int isoWeekday, int slot) {
+  final base = segmentId.hashCode.abs() % 100000;
   return base * 100 + isoWeekday * 10 + slot;
 }
 
-/// Pure: turns the current routine list into the exact set of alarms that
-/// should exist on the device. No plugin calls here — [NotificationService
-/// .rescheduleAll] is the thin layer that applies this via
-/// `flutter_local_notifications`.
-List<ScheduledSpec> buildSchedule(List<Routine> routines) {
+/// Pure: turns the current block list into the exact set of alarms that should
+/// exist on the device — one start-of-block alarm per alarm-enabled block, on
+/// every weekday (blocks recur daily). No plugin calls here —
+/// [NotificationService.rescheduleAll] is the thin layer that applies this.
+List<ScheduledSpec> buildSchedule(List<Segment> segments) {
   final specs = <ScheduledSpec>[];
-  for (final routine in routines) {
-    if (!routine.alarmEnabled) continue;
-    final days = routine.repeatDays.isEmpty
-        ? const [1, 2, 3, 4, 5, 6, 7]
-        : routine.repeatDays;
-    for (final day in days) {
+  for (final segment in segments) {
+    if (!segment.alarmEnabled) continue;
+    for (var day = 1; day <= 7; day++) {
       specs.add(ScheduledSpec(
-        id: notificationIdFor(routine.id, day, 0),
-        routineId: routine.id,
-        isTransition: false,
+        id: notificationIdFor(segment.id, day, 0),
+        segmentId: segment.id,
         isoWeekday: day,
-        minuteOfDay: routine.startMinute,
-        title: routine.title,
+        minuteOfDay: segment.startMinute,
+        title: segment.name,
         body: '지금 시작할 시간이에요',
       ));
-      if (routine.leadWarningMin > 0) {
-        // When the lead warning lands before midnight relative to the start
-        // (startMinute - leadWarningMin < 0), it belongs to the *previous*
-        // calendar day, not the same weekday as the start -- e.g. a 00:10
-        // routine with a 30-min warning must warn at 23:40 the night before,
-        // which is the day before its occurrence. Scheduling it on `day`
-        // (alongside the start) would fire it ~23h after the start instead.
-        final raw = routine.startMinute - routine.leadWarningMin;
-        final transitionMinute = raw % TimeGeometry.minutesPerDay;
-        final transitionDay = raw < 0 ? (day == 1 ? 7 : day - 1) : day;
-        specs.add(ScheduledSpec(
-          id: notificationIdFor(routine.id, transitionDay, 1),
-          routineId: routine.id,
-          isTransition: true,
-          isoWeekday: transitionDay,
-          minuteOfDay: transitionMinute,
-          title: '곧 전환: ${routine.title}',
-          body: '${routine.leadWarningMin}분 후 시작해요',
-        ));
-      }
     }
   }
   return specs;

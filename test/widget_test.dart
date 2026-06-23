@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:adhd_planner/app.dart';
 import 'package:adhd_planner/data/models/app_settings.dart';
 import 'package:adhd_planner/data/models/micro_step_progress.dart';
-import 'package:adhd_planner/data/models/routine.dart';
+import 'package:adhd_planner/data/models/segment.dart';
 import 'package:adhd_planner/data/providers.dart';
 import 'package:adhd_planner/data/today.dart';
 import 'package:adhd_planner/features/focus/alarm_alert_dialog.dart';
@@ -12,18 +12,33 @@ import 'package:adhd_planner/services/notification_service.dart';
 
 import 'fakes/fake_planner_repository.dart';
 
+Segment _block({
+  String id = 's1',
+  String name = '약 먹기',
+  int startMinute = 0,
+  List<String> microSteps = const [],
+}) {
+  return Segment(
+    id: id,
+    name: name,
+    colorValue: 0xFF000000,
+    iconKey: 'wb_sunny',
+    startMinute: startMinute,
+    endMinute: startMinute + 60,
+    order: 0,
+    microSteps: microSteps,
+  );
+}
+
 void main() {
-  // pendingAlarmAlert/alarmDialogOpen are module-level singletons -- reset
-  // them so one test's leftover dialog state can't leak into the next.
+  // pendingAlarmAlert/alarmDialogOpen are module-level singletons -- reset them
+  // so one test's leftover dialog state can't leak into the next.
   setUp(() {
     pendingAlarmAlert.value = null;
     alarmDialogOpen.value = false;
   });
 
   testWidgets('App boots and shows the circular planner home', (tester) async {
-    // Onboarding is gated on AppSettings.onboardingComplete (STEP 12) — mark
-    // it done here so this smoke test still exercises the home screen
-    // itself; onboarding's own gating is covered separately.
     final repo = FakePlannerRepository();
     await repo.saveSettings(const AppSettings.defaults().copyWith(onboardingComplete: true));
 
@@ -62,13 +77,9 @@ void main() {
       '(cold start)', (tester) async {
     final repo = FakePlannerRepository();
     await repo.saveSettings(const AppSettings.defaults().copyWith(onboardingComplete: true));
-    await repo.upsertRoutine(Routine(id: 'r1', segmentId: 's1', title: '약 먹기', startMinute: 0));
+    await repo.upsertSegment(_block(id: 's1', name: '약 먹기'));
 
-    pendingAlarmAlert.value = const PendingAlarmAlert(
-      notificationId: 1,
-      routineId: 'r1',
-      isTransition: false,
-    );
+    pendingAlarmAlert.value = const PendingAlarmAlert(notificationId: 1, segmentId: 's1');
     addTearDown(() => pendingAlarmAlert.value = null);
 
     await tester.pumpWidget(ProviderScope(
@@ -87,7 +98,7 @@ void main() {
       (tester) async {
     final repo = FakePlannerRepository();
     await repo.saveSettings(const AppSettings.defaults().copyWith(onboardingComplete: true));
-    await repo.upsertRoutine(Routine(id: 'r1', segmentId: 's1', title: '약 먹기', startMinute: 0));
+    await repo.upsertSegment(_block(id: 's1', name: '약 먹기'));
 
     await tester.pumpWidget(ProviderScope(
       overrides: [plannerRepositoryProvider.overrideWithValue(repo)],
@@ -96,11 +107,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('오늘'), findsOneWidget);
 
-    pendingAlarmAlert.value = const PendingAlarmAlert(
-      notificationId: 1,
-      routineId: 'r1',
-      isTransition: false,
-    );
+    pendingAlarmAlert.value = const PendingAlarmAlert(notificationId: 1, segmentId: 's1');
     addTearDown(() => pendingAlarmAlert.value = null);
     await tester.pumpAndSettle();
 
@@ -110,15 +117,13 @@ void main() {
   testWidgets('_AchievementRecorder banks settled past days but never today', (tester) async {
     final repo = FakePlannerRepository();
     await repo.saveSettings(const AppSettings.defaults().copyWith(onboardingComplete: true));
-    // A routine with two micro-steps, scheduled every day.
-    await repo.upsertRoutine(
-      Routine(id: 'r1', segmentId: 's1', title: '약 먹기', startMinute: 0, microSteps: ['a', 'b']),
-    );
-    // Both today and yesterday cleared every step (100% >= the 50% bar).
+    // A block with two items.
+    await repo.upsertSegment(_block(id: 's1', name: '약 먹기', microSteps: const ['a', 'b']));
+    // Both today and yesterday cleared every item (100% >= the 50% bar).
     final now = DateTime.now();
     final yesterday = now.subtract(const Duration(days: 1));
-    await repo.saveMicroStepProgress(MicroStepProgress.today('r1', const [0, 1]));
-    await repo.saveMicroStepProgress(MicroStepProgress.today('r1', const [0, 1], at: yesterday));
+    await repo.saveMicroStepProgress(MicroStepProgress.today('s1', const [0, 1]));
+    await repo.saveMicroStepProgress(MicroStepProgress.today('s1', const [0, 1], at: yesterday));
 
     await tester.pumpWidget(ProviderScope(
       overrides: [plannerRepositoryProvider.overrideWithValue(repo)],

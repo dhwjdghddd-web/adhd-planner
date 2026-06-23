@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:adhd_planner/core/time_geometry.dart';
 import 'package:adhd_planner/data/models/completion.dart';
 import 'package:adhd_planner/data/models/micro_step_progress.dart';
-import 'package:adhd_planner/data/models/routine.dart';
+import 'package:adhd_planner/data/models/segment.dart';
 import 'package:adhd_planner/data/providers.dart';
 import 'package:adhd_planner/features/focus/focus_page.dart';
 
@@ -14,6 +14,43 @@ import '../../fakes/fake_planner_repository.dart';
 int _currentMinuteOfNow() {
   final now = TimeOfDay.now();
   return now.hour * 60 + now.minute;
+}
+
+/// A block whose range reliably contains "now" (so it reads as current),
+/// with a margin so a clock tick mid-test can't push now outside it.
+Segment _currentBlock({
+  String id = 's1',
+  String name = '약 먹기',
+  List<String> microSteps = const [],
+}) {
+  final now = _currentMinuteOfNow();
+  final start = now >= 30 ? now - 30 : 0;
+  final end = (now + 30) > 1440 ? 1440 : now + 30;
+  return Segment(
+    id: id,
+    name: name,
+    colorValue: 0xFF000000,
+    iconKey: 'wb_sunny',
+    startMinute: start,
+    endMinute: end,
+    order: 0,
+    microSteps: microSteps,
+  );
+}
+
+/// A block strictly in the future with no overlap of now (reads as "next").
+Segment _futureBlock({String id = 's1', String name = '나중 일'}) {
+  final now = _currentMinuteOfNow();
+  final start = (now + 60) > 1380 ? 1380 : now + 60;
+  return Segment(
+    id: id,
+    name: name,
+    colorValue: 0xFF000000,
+    iconKey: 'wb_sunny',
+    startMinute: start,
+    endMinute: start + 30,
+    order: 0,
+  );
 }
 
 void main() {
@@ -44,148 +81,50 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('shows the current routine, with no countdown -- it stays current until '
-      'whatever starts next, however long that takes', (tester) async {
+  testWidgets('shows the current block', (tester) async {
     final repo = FakePlannerRepository();
-    await repo.upsertRoutine(Routine(
-      id: 'r1',
-      segmentId: 's1',
-      title: '약 먹기',
-      startMinute: _currentMinuteOfNow(),
-    ));
+    await repo.upsertSegment(_currentBlock(name: '오전'));
 
     await openFocusPage(tester, repo);
 
-    expect(find.text('약 먹기'), findsOneWidget);
-    expect(find.textContaining('남음'), findsNothing);
+    expect(find.text('오전'), findsOneWidget);
   });
 
-  testWidgets('a current routine with no micro-steps stays horizontally centered '
+  testWidgets('a current block with no items stays horizontally centered '
       '(regression: body Column used to shrink-wrap and hug the left edge)',
       (tester) async {
     final repo = FakePlannerRepository();
-    await repo.upsertRoutine(Routine(
-      id: 'r1',
-      segmentId: 's1',
-      title: '약 먹기', // no micro-steps -> nothing forces full width
-      startMinute: _currentMinuteOfNow(),
-    ));
+    await repo.upsertSegment(_currentBlock(name: '오전'));
 
     await openFocusPage(tester, repo);
 
     final screenCenterX = tester.view.physicalSize.width / tester.view.devicePixelRatio / 2;
-    final titleCenterX = tester.getCenter(find.text('약 먹기')).dx;
+    final titleCenterX = tester.getCenter(find.text('오전')).dx;
     expect(titleCenterX, closeTo(screenCenterX, 1.0));
   });
 
-  testWidgets('shows the next routine and its absolute start time when only a future '
-      'routine exists', (tester) async {
+  testWidgets('shows the next block and its start time when only a future block exists',
+      (tester) async {
     final repo = FakePlannerRepository();
-    // clamp, not % -- wrapping past midnight would put this "earlier
-    // today" under the new (no-duration) status model, which makes it
-    // current rather than upcoming (see Routine's doc comment: a routine
-    // stays current indefinitely once started, there's no fixed end).
-    final startMinute = (_currentMinuteOfNow() + 60).clamp(0, 24 * 60 - 1);
-    await repo.upsertRoutine(Routine(
-      id: 'r1',
-      segmentId: 's1',
-      title: '나중 할 일',
-      startMinute: startMinute,
-    ));
+    final block = _futureBlock(name: '저녁');
+    await repo.upsertSegment(block);
 
     await openFocusPage(tester, repo);
 
-    expect(find.text('다음: 나중 할 일'), findsOneWidget);
-    expect(find.text(TimeGeometry.formatMinute(startMinute)), findsOneWidget);
+    // WaitingIllustration renders each line of the message as its own Text.
+    expect(find.text('다음: 저녁'), findsOneWidget);
+    expect(find.text(TimeGeometry.formatMinute(block.startMinute)), findsOneWidget);
   });
 
-  testWidgets('shows the empty state when there are no routines', (tester) async {
+  testWidgets('shows the empty state when there are no blocks', (tester) async {
     await openFocusPage(tester, FakePlannerRepository());
 
-    expect(find.text('오늘 일정이 없어요'), findsOneWidget);
-  });
-
-  testWidgets('넘기기 on the current routine skips it for today and falls through to next',
-      (tester) async {
-    final repo = FakePlannerRepository();
-    final nextStart = (_currentMinuteOfNow() + 60).clamp(0, 24 * 60 - 1);
-    await repo.upsertRoutine(Routine(
-      id: 'r1',
-      segmentId: 's1',
-      title: '약 먹기',
-      startMinute: _currentMinuteOfNow(),
-    ));
-    await repo.upsertRoutine(Routine(
-      id: 'r2',
-      segmentId: 's1',
-      title: '나중 할 일',
-      startMinute: nextStart,
-    ));
-
-    await openFocusPage(tester, repo);
-    expect(find.text('약 먹기'), findsOneWidget);
-
-    await tester.tap(find.text('넘기기'));
-    await tester.pump();
-    expect(find.text('약 먹기을(를) 내일로 넘겼어요'), findsOneWidget);
-
-    await tester.pumpAndSettle();
-    expect(find.text('약 먹기'), findsNothing);
-    expect(find.text('다음: 나중 할 일'), findsOneWidget);
-
-    final skips = await repo.watchRoutineSkips().first;
-    expect(skips.single.routineId, 'r1');
-  });
-
-  testWidgets('넘기기 on the next routine skips it for today, with nothing else to show',
-      (tester) async {
-    final repo = FakePlannerRepository();
-    final startMinute = (_currentMinuteOfNow() + 60).clamp(0, 24 * 60 - 1);
-    await repo.upsertRoutine(Routine(
-      id: 'r1',
-      segmentId: 's1',
-      title: '나중 할 일',
-      startMinute: startMinute,
-    ));
-
-    await openFocusPage(tester, repo);
-    expect(find.text('다음: 나중 할 일'), findsOneWidget);
-
-    await tester.tap(find.text('넘기기'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('다음: 나중 할 일'), findsNothing);
-    expect(find.text('오늘 일정이 없어요'), findsOneWidget);
-  });
-
-  testWidgets('a routine excluded by repeatDays does not show as current',
-      (tester) async {
-    final repo = FakePlannerRepository();
-    final today = DateTime.now().weekday;
-    final excludeToday =
-        [1, 2, 3, 4, 5, 6, 7].where((d) => d != today).toList();
-    await repo.upsertRoutine(Routine(
-      id: 'r1',
-      segmentId: 's1',
-      title: '제외됨',
-      startMinute: _currentMinuteOfNow(),
-      repeatDays: excludeToday,
-    ));
-
-    await openFocusPage(tester, repo);
-
-    expect(find.text('제외됨'), findsNothing);
-    expect(find.text('오늘 일정이 없어요'), findsOneWidget);
+    expect(find.textContaining('오늘 일정이 없어요'), findsOneWidget);
   });
 
   testWidgets('완료 records a completion and closes the screen', (tester) async {
     final repo = FakePlannerRepository();
-    await repo.upsertRoutine(Routine(
-      id: 'r1',
-      segmentId: 's1',
-      title: '약 먹기',
-      startMinute: _currentMinuteOfNow(),
-    ));
+    await repo.upsertSegment(_currentBlock(name: '오전'));
     final snapshots = <List<Completion>>[];
     repo.watchCompletions().listen(snapshots.add);
 
@@ -195,19 +134,14 @@ void main() {
     await tester.tap(find.text('모두 완료'));
     await tester.pumpAndSettle();
 
-    expect(snapshots.last.any((c) => c.routineId == 'r1'), true);
+    expect(snapshots.last.any((c) => c.segmentId == 's1'), true);
     expect(find.byType(FocusPage), findsNothing);
   });
 
   testWidgets('the 닫기 back button closes the screen without recording a completion',
       (tester) async {
     final repo = FakePlannerRepository();
-    await repo.upsertRoutine(Routine(
-      id: 'r1',
-      segmentId: 's1',
-      title: '약 먹기',
-      startMinute: _currentMinuteOfNow(),
-    ));
+    await repo.upsertSegment(_currentBlock());
     final snapshots = <List<Completion>>[];
     repo.watchCompletions().listen(snapshots.add);
 
@@ -220,112 +154,9 @@ void main() {
     expect(snapshots.last, isEmpty);
   });
 
-  testWidgets(
-      'within the lead-warning window, the upcoming routine shows its micro-steps '
-      'instead of just the countdown text',
-      (tester) async {
+  testWidgets('checking an item toggles its checkbox', (tester) async {
     final repo = FakePlannerRepository();
-    await repo.upsertRoutine(Routine(
-      id: 'r1',
-      segmentId: 's1',
-      title: '퇴근하기',
-      // clamp, not % -- see the previous test's comment on why wrapping
-      // past midnight would break this under the new status model.
-      startMinute: (_currentMinuteOfNow() + 5).clamp(0, 24 * 60 - 1),
-      leadWarningMin: 5,
-      microSteps: const ['퇴근준비하기'],
-    ));
-
-    await openFocusPage(tester, repo);
-
-    expect(find.textContaining('분 후 시작'), findsOneWidget);
-    expect(find.text('퇴근하기'), findsOneWidget);
-    expect(find.widgetWithText(CheckboxListTile, '퇴근준비하기'), findsOneWidget);
-    // Not current yet, so no completion action — just a way back, and a
-    // way to skip today's occurrence entirely.
-    expect(find.text('모두 완료'), findsNothing);
-    expect(find.text('닫기'), findsOneWidget);
-    expect(find.text('넘기기'), findsOneWidget);
-  });
-
-  testWidgets('넘기기 within the lead-warning window skips that routine for today',
-      (tester) async {
-    final repo = FakePlannerRepository();
-    await repo.upsertRoutine(Routine(
-      id: 'r1',
-      segmentId: 's1',
-      title: '퇴근하기',
-      startMinute: (_currentMinuteOfNow() + 5).clamp(0, 24 * 60 - 1),
-      leadWarningMin: 5,
-    ));
-
-    await openFocusPage(tester, repo);
-    expect(find.text('퇴근하기'), findsOneWidget);
-
-    await tester.tap(find.text('넘기기'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('퇴근하기'), findsNothing);
-    expect(find.text('오늘 일정이 없어요'), findsOneWidget);
-  });
-
-  testWidgets('outside the lead-warning window, the upcoming routine shows no micro-steps',
-      (tester) async {
-    final repo = FakePlannerRepository();
-    await repo.upsertRoutine(Routine(
-      id: 'r1',
-      segmentId: 's1',
-      title: '퇴근하기',
-      // clamp, not % -- same reason as the test above.
-      startMinute: (_currentMinuteOfNow() + 10).clamp(0, 24 * 60 - 1),
-      leadWarningMin: 5,
-      microSteps: const ['퇴근준비하기'],
-    ));
-
-    await openFocusPage(tester, repo);
-
-    expect(find.text('다음: 퇴근하기'), findsOneWidget);
-    expect(find.text('퇴근준비하기'), findsNothing);
-  });
-
-  testWidgets('a micro-step checked before start stays checked once the routine goes current',
-      (tester) async {
-    final repo = FakePlannerRepository();
-    await repo.upsertRoutine(Routine(
-      id: 'r1',
-      segmentId: 's1',
-      title: '퇴근하기',
-      startMinute: _currentMinuteOfNow(),
-      leadWarningMin: 5,
-      // Two steps: checking the first alone shouldn't trigger
-      // auto-complete-on-all-checked, which would close the screen before
-      // this test gets to assert on the checkbox state.
-      microSteps: const ['퇴근준비하기', '책상 정리하기'],
-    ));
-
-    await openFocusPage(tester, repo);
-
-    // Already "current" the moment it's opened here (startMinute == now),
-    // so this directly covers that _microStepsChecklist behaves the same
-    // way in both states rather than re-testing the upcoming window itself.
-    await tester.tap(find.text('퇴근준비하기'));
-    await tester.pumpAndSettle();
-
-    final checkbox = tester.widget<CheckboxListTile>(
-      find.widgetWithText(CheckboxListTile, '퇴근준비하기'),
-    );
-    expect(checkbox.value, true);
-  });
-
-  testWidgets('checking a micro-step toggles its checkbox', (tester) async {
-    final repo = FakePlannerRepository();
-    await repo.upsertRoutine(Routine(
-      id: 'r1',
-      segmentId: 's1',
-      title: '약 먹기',
-      startMinute: _currentMinuteOfNow(),
-      microSteps: const ['손 씻기', '물 준비'],
-    ));
+    await repo.upsertSegment(_currentBlock(microSteps: const ['손 씻기', '물 준비']));
 
     await openFocusPage(tester, repo);
 
@@ -343,16 +174,9 @@ void main() {
     expect(after.value, true);
   });
 
-  testWidgets('checking the last remaining micro-step auto-completes the routine',
-      (tester) async {
+  testWidgets('checking the last remaining item auto-completes the block', (tester) async {
     final repo = FakePlannerRepository();
-    await repo.upsertRoutine(Routine(
-      id: 'r1',
-      segmentId: 's1',
-      title: '약 먹기',
-      startMinute: _currentMinuteOfNow(),
-      microSteps: const ['손 씻기', '물 준비'],
-    ));
+    await repo.upsertSegment(_currentBlock(microSteps: const ['손 씻기', '물 준비']));
     final snapshots = <List<Completion>>[];
     repo.watchCompletions().listen(snapshots.add);
 
@@ -360,41 +184,18 @@ void main() {
 
     await tester.tap(find.text('손 씻기'));
     await tester.pumpAndSettle();
-    expect(find.byType(FocusPage), findsOneWidget, reason: 'one step left unchecked');
+    expect(find.byType(FocusPage), findsOneWidget, reason: 'one item left unchecked');
 
     await tester.tap(find.text('물 준비'));
     await tester.pumpAndSettle();
 
-    expect(snapshots.last.any((c) => c.routineId == 'r1'), true);
+    expect(snapshots.last.any((c) => c.segmentId == 's1'), true);
     expect(find.byType(FocusPage), findsNothing);
   });
 
-  testWidgets('un-checking a micro-step does not trigger auto-complete', (tester) async {
+  testWidgets('모두 완료 marks every item as checked', (tester) async {
     final repo = FakePlannerRepository();
-    await repo.upsertRoutine(Routine(
-      id: 'r1',
-      segmentId: 's1',
-      title: '약 먹기',
-      startMinute: _currentMinuteOfNow(),
-      microSteps: const ['손 씻기'],
-    ));
-
-    await openFocusPage(tester, repo);
-
-    await tester.tap(find.text('손 씻기')); // checks the only step -> auto-completes
-    await tester.pumpAndSettle();
-    expect(find.byType(FocusPage), findsNothing);
-  });
-
-  testWidgets('모두 완료 marks every micro-step as checked', (tester) async {
-    final repo = FakePlannerRepository();
-    await repo.upsertRoutine(Routine(
-      id: 'r1',
-      segmentId: 's1',
-      title: '약 먹기',
-      startMinute: _currentMinuteOfNow(),
-      microSteps: const ['손 씻기', '물 준비'],
-    ));
+    await repo.upsertSegment(_currentBlock(microSteps: const ['손 씻기', '물 준비']));
     final snapshots = <List<MicroStepProgress>>[];
     repo.watchMicroStepProgress().listen(snapshots.add);
 
@@ -403,19 +204,14 @@ void main() {
     await tester.tap(find.text('모두 완료'));
     await tester.pumpAndSettle();
 
-    final saved = snapshots.last.firstWhere((p) => p.routineId == 'r1');
+    final saved = snapshots.last.firstWhere((p) => p.segmentId == 's1');
     expect(saved.checkedIndices.toSet(), {0, 1});
   });
 
   testWidgets('the 빠른 메모 button opens the quick-add sheet from this screen',
       (tester) async {
     final repo = FakePlannerRepository();
-    await repo.upsertRoutine(Routine(
-      id: 'r1',
-      segmentId: 's1',
-      title: '약 먹기',
-      startMinute: _currentMinuteOfNow(),
-    ));
+    await repo.upsertSegment(_currentBlock());
 
     await openFocusPage(tester, repo);
 
@@ -426,25 +222,16 @@ void main() {
     expect(find.byType(TextField), findsOneWidget);
   });
 
-  testWidgets('a checked micro-step is still checked after leaving and reopening the screen',
+  testWidgets('a checked item is still checked after leaving and reopening the screen',
       (tester) async {
     final repo = FakePlannerRepository();
-    await repo.upsertRoutine(Routine(
-      id: 'r1',
-      segmentId: 's1',
-      title: '퇴근하기',
-      startMinute: _currentMinuteOfNow(),
-      // Two steps, not one: checking just the first shouldn't trigger
-      // auto-complete-on-all-checked and close the screen before the
-      // "leave and reopen" part of this test even happens.
-      microSteps: const ['퇴근준비하기', '책상 정리하기'],
-    ));
+    // Two items: checking just the first shouldn't auto-complete and close.
+    await repo.upsertSegment(_currentBlock(microSteps: const ['퇴근준비하기', '책상 정리하기']));
 
     await openFocusPage(tester, repo);
     await tester.tap(find.text('퇴근준비하기'));
     await tester.pumpAndSettle();
 
-    // Close (via the back button) without completing, then reopen.
     await tester.tap(find.byTooltip('닫기'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('open'));
@@ -456,118 +243,95 @@ void main() {
     expect(checkbox.value, true);
   });
 
-  group('FocusPage.forRoutine (dial marker review mode)', () {
-    Widget wrapForRoutine(FakePlannerRepository repo, Routine routine) {
+  group('FocusPage.forBlock (dial arc review mode)', () {
+    Widget wrapForBlock(FakePlannerRepository repo, Segment block) {
       return ProviderScope(
         overrides: [plannerRepositoryProvider.overrideWithValue(repo)],
-        child: MaterialApp(home: FocusPage.forRoutine(routine)),
+        child: MaterialApp(home: FocusPage.forBlock(block)),
       );
     }
 
-    testWidgets('shows the pinned routine and its checklist even though it is '
-        "not actually today's current or next routine", (tester) async {
+    testWidgets('shows the pinned block and its checklist even when its time has passed',
+        (tester) async {
       final repo = FakePlannerRepository();
-      // Far enough in the past that it is neither "current" (nothing starts
-      // this late and stays current forever without a later routine
-      // existing too) nor "next" -- a stand-in for "already passed today".
-      final past = ((_currentMinuteOfNow() - 120) % (24 * 60) + 24 * 60) % (24 * 60);
-      final routine = Routine(
-        id: 'r1',
-        segmentId: 's1',
-        title: '아침 약',
-        startMinute: past,
+      final block = Segment(
+        id: 's1',
+        name: '아침',
+        colorValue: 0xFF000000,
+        iconKey: 'wb_sunny',
+        startMinute: 0,
+        endMinute: 60,
+        order: 0,
         microSteps: const ['물 마시기', '식후 30분 확인'],
       );
-      await repo.upsertRoutine(routine);
+      await repo.upsertSegment(block);
 
-      await tester.pumpWidget(wrapForRoutine(repo, routine));
+      await tester.pumpWidget(wrapForBlock(repo, block));
       await tester.pumpAndSettle();
 
-      expect(find.text('아침 약'), findsOneWidget);
+      expect(find.text('아침'), findsOneWidget);
       expect(find.widgetWithText(CheckboxListTile, '물 마시기'), findsOneWidget);
       expect(find.text('모두 완료'), findsOneWidget);
     });
 
-    testWidgets('checking a micro-step in review mode persists it', (tester) async {
+    testWidgets('checking an item in review mode persists it', (tester) async {
       final repo = FakePlannerRepository();
-      final routine = Routine(
-        id: 'r1',
-        segmentId: 's1',
-        title: '아침 약',
+      final block = Segment(
+        id: 's1',
+        name: '아침',
+        colorValue: 0xFF000000,
+        iconKey: 'wb_sunny',
         startMinute: 0,
+        endMinute: 60,
+        order: 0,
         microSteps: const ['물 마시기', '식후 30분 확인'],
       );
-      await repo.upsertRoutine(routine);
+      await repo.upsertSegment(block);
       final snapshots = <List<MicroStepProgress>>[];
       repo.watchMicroStepProgress().listen(snapshots.add);
 
-      await tester.pumpWidget(wrapForRoutine(repo, routine));
+      await tester.pumpWidget(wrapForBlock(repo, block));
       await tester.pumpAndSettle();
 
       await tester.tap(find.text('물 마시기'));
       await tester.pumpAndSettle();
 
-      final saved = snapshots.last.firstWhere((p) => p.routineId == 'r1');
+      final saved = snapshots.last.firstWhere((p) => p.segmentId == 's1');
       expect(saved.checkedIndices, [0]);
     });
 
     testWidgets('모두 완료 in review mode records a completion and closes the screen',
         (tester) async {
       final repo = FakePlannerRepository();
-      final routine = Routine(
-        id: 'r1',
-        segmentId: 's1',
-        title: '아침 약',
+      final block = Segment(
+        id: 's1',
+        name: '아침',
+        colorValue: 0xFF000000,
+        iconKey: 'wb_sunny',
         startMinute: 0,
+        endMinute: 60,
+        order: 0,
       );
-      await repo.upsertRoutine(routine);
+      await repo.upsertSegment(block);
       final snapshots = <List<Completion>>[];
       repo.watchCompletions().listen(snapshots.add);
 
-      await tester.pumpWidget(wrapForRoutine(repo, routine));
+      await tester.pumpWidget(wrapForBlock(repo, block));
       await tester.pumpAndSettle();
 
       await tester.tap(find.text('모두 완료'));
       await tester.pumpAndSettle();
 
-      expect(snapshots.last.any((c) => c.routineId == 'r1'), true);
+      expect(snapshots.last.any((c) => c.segmentId == 's1'), true);
       expect(find.byType(FocusPage), findsNothing);
-    });
-
-    testWidgets('넘기기 in review mode skips today and does not record a completion',
-        (tester) async {
-      final repo = FakePlannerRepository();
-      final routine = Routine(
-        id: 'r1',
-        segmentId: 's1',
-        title: '아침 약',
-        startMinute: 0,
-      );
-      await repo.upsertRoutine(routine);
-
-      await tester.pumpWidget(wrapForRoutine(repo, routine));
-      await tester.pumpAndSettle();
-
-      await tester.tap(find.text('넘기기'));
-      await tester.pump();
-
-      final skips = await repo.watchRoutineSkips().first;
-      expect(skips.single.routineId, 'r1');
     });
   });
 
-  testWidgets("yesterday's checked micro-steps don't carry over to today",
-      (tester) async {
+  testWidgets("yesterday's checked items don't carry over to today", (tester) async {
     final repo = FakePlannerRepository();
-    await repo.upsertRoutine(Routine(
-      id: 'r1',
-      segmentId: 's1',
-      title: '퇴근하기',
-      startMinute: _currentMinuteOfNow(),
-      microSteps: const ['퇴근준비하기'],
-    ));
+    await repo.upsertSegment(_currentBlock(microSteps: const ['퇴근준비하기']));
     final yesterday = DateTime.now().subtract(const Duration(days: 1));
-    await repo.saveMicroStepProgress(MicroStepProgress.today('r1', [0], at: yesterday));
+    await repo.saveMicroStepProgress(MicroStepProgress.today('s1', [0], at: yesterday));
 
     await openFocusPage(tester, repo);
 

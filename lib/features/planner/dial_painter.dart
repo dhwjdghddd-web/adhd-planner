@@ -4,9 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/constants.dart';
 import '../../core/time_geometry.dart';
-import '../../data/models/routine.dart';
 import '../../data/models/segment.dart';
-import '../segments/segment_icons.dart';
 
 /// Geometry constants shared between [DialPainter] and the page that hosts
 /// it (so tap handling and drawing never disagree on where the ring is).
@@ -16,7 +14,6 @@ class DialGeometry {
   static const double ringThickness = 24;
   static const double laneGap = 6;
   static const double tickLength = 10;
-  static const double routineMarkerRadius = 14; // Diameter 28
 
   /// Outer radius of the first (outermost) segment ring for a dial that
   /// fills a square of [side] pixels.
@@ -54,28 +51,29 @@ class DialGeometry {
 }
 
 /// Paints the 24h circular dial: outer rim, hour ticks + labels, coloured
-/// segment arcs (overlapping segments pushed onto inner lanes), routine
-/// markers, and the primary current-time hand.
+/// block arcs (overlapping blocks pushed onto inner lanes, completed ones
+/// badged), and the primary current-time hand.
 class DialPainter extends CustomPainter {
   DialPainter({
     required this.segments,
-    required this.routines,
     required this.currentMinute,
     required this.tickColor,
     required this.labelStyle,
     required this.handColor,
     required this.brightness,
-    this.completedRoutineIds = const {},
+    this.completedSegmentIds = const {},
   }) : _lanes = DialGeometry.assignLanes(segments);
 
   final List<Segment> segments;
-  final List<Routine> routines;
   final int currentMinute;
   final Color tickColor;
   final TextStyle labelStyle;
   final Color handColor;
   final Brightness brightness;
-  final Set<String> completedRoutineIds;
+  // Blocks with a completion recorded for today -- drawn with a small checkmark
+  // badge at their arc's midpoint so "did I do this today" is visible at a
+  // glance.
+  final Set<String> completedSegmentIds;
 
   final Map<String, int> _lanes;
 
@@ -88,7 +86,6 @@ class DialPainter extends CustomPainter {
     _paintRim(canvas, center, outerR);
     _paintTicks(canvas, center, outerR);
     _paintSegmentArcs(canvas, center, outerR);
-    _paintRoutineMarkers(canvas, center, outerR);
     _paintHand(canvas, center, outerR);
   }
 
@@ -209,6 +206,11 @@ class DialPainter extends CustomPainter {
       paint.color = getEffectiveSegmentColor(segment.color, brightness);
       canvas.drawArc(rect, startAngle, sweep, false, paint);
       _paintSegmentLabel(canvas, center, radius, segment);
+
+      if (completedSegmentIds.contains(segment.id)) {
+        final midMinute = (segment.startMinute + segment.lengthMinutes / 2).round();
+        _paintCompletedBadge(canvas, TimeGeometry.pointOnCircle(center, radius, midMinute));
+      }
     }
   }
 
@@ -236,59 +238,10 @@ class DialPainter extends CustomPainter {
     tp.paint(canvas, point - Offset(tp.width / 2, tp.height / 2));
   }
 
-  void _paintRoutineMarkers(Canvas canvas, Offset center, double outerR) {
-    final segmentsById = {for (final s in segments) s.id: s};
-    for (final routine in routines) {
-      final segment = segmentsById[routine.segmentId];
-      final lane = segment != null ? (_lanes[segment.id] ?? 0) : 0;
-      final radius = DialGeometry.laneRadius(outerR, lane);
-      final point = TimeGeometry.pointOnCircle(center, radius, routine.startMinute);
-      
-      final color = segment != null 
-          ? getEffectiveSegmentColor(segment.color, brightness)
-          : Colors.grey;
-
-      final dotPaint = Paint()..color = color;
-      final borderPaint = Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.5
-        ..color = Colors.white;
-
-      // Draw outer circle indicator
-      canvas.drawCircle(point, DialGeometry.routineMarkerRadius, dotPaint);
-      canvas.drawCircle(point, DialGeometry.routineMarkerRadius, borderPaint);
-
-      // Draw segment icon inside the marker
-      final icon = iconForKey(segment?.iconKey ?? '');
-      final tp = TextPainter(
-        text: TextSpan(
-          text: String.fromCharCode(icon.codePoint),
-          style: TextStyle(
-            fontSize: DialGeometry.routineMarkerRadius * 1.1, // Scale appropriately
-            fontFamily: icon.fontFamily,
-            package: icon.fontPackage,
-            // Pastel segment fills in dark mode would swallow a white glyph.
-            color: onSegmentColor(color),
-          ),
-        ),
-        textDirection: TextDirection.ltr,
-      )..layout();
-      tp.paint(canvas, point - Offset(tp.width / 2, tp.height / 2));
-
-      if (completedRoutineIds.contains(routine.id)) {
-        _paintCompletedBadge(canvas, point);
-      }
-    }
-  }
-
-  /// Small checkmark badge over a marker's top-right edge.
+  /// Small checkmark badge centred on a completed block's arc midpoint.
   void _paintCompletedBadge(Canvas canvas, Offset markerPoint) {
-    final badgeCenter = markerPoint +
-        Offset(
-          DialGeometry.routineMarkerRadius * 0.8,
-          -DialGeometry.routineMarkerRadius * 0.8,
-        );
-    final badgeRadius = DialGeometry.routineMarkerRadius * 0.6;
+    final badgeCenter = markerPoint;
+    const badgeRadius = 9.0;
     canvas.drawCircle(badgeCenter, badgeRadius + 1.5, Paint()..color = Colors.white);
     
     // Use the theme's success color if available, or a fallback green
@@ -327,11 +280,10 @@ class DialPainter extends CustomPainter {
     return oldDelegate.currentMinute != currentMinute ||
         oldDelegate.brightness != brightness ||
         !_sameSegments(oldDelegate.segments, segments) ||
-        !_sameRoutines(oldDelegate.routines, routines) ||
         oldDelegate.tickColor != tickColor ||
         oldDelegate.handColor != handColor ||
-        !oldDelegate.completedRoutineIds.containsAll(completedRoutineIds) ||
-        !completedRoutineIds.containsAll(oldDelegate.completedRoutineIds);
+        !oldDelegate.completedSegmentIds.containsAll(completedSegmentIds) ||
+        !completedSegmentIds.containsAll(oldDelegate.completedSegmentIds);
   }
 
   static bool _sameSegments(List<Segment> a, List<Segment> b) {
@@ -344,20 +296,6 @@ class DialPainter extends CustomPainter {
           x.endMinute != y.endMinute ||
           x.colorValue != y.colorValue ||
           x.iconKey != y.iconKey) {
-        return false;
-      }
-    }
-    return true;
-  }
-
-  static bool _sameRoutines(List<Routine> a, List<Routine> b) {
-    if (a.length != b.length) return false;
-    for (var i = 0; i < a.length; i++) {
-      final x = a[i];
-      final y = b[i];
-      if (x.id != y.id ||
-          x.startMinute != y.startMinute ||
-          x.segmentId != y.segmentId) {
         return false;
       }
     }

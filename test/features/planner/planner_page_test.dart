@@ -4,17 +4,32 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:adhd_planner/core/time_geometry.dart';
 import 'package:adhd_planner/data/models/completion.dart';
-import 'package:adhd_planner/data/models/routine.dart';
 import 'package:adhd_planner/data/models/segment.dart';
 import 'package:adhd_planner/data/providers.dart';
 import 'package:adhd_planner/features/focus/focus_page.dart';
 import 'package:adhd_planner/features/planner/dial_painter.dart';
 import 'package:adhd_planner/features/planner/planner_page.dart';
-import 'package:adhd_planner/features/routines/routine_editor_page.dart';
 import 'package:adhd_planner/features/segments/segment_editor_page.dart';
 import 'package:adhd_planner/features/segments/segment_form_page.dart';
 
 import '../../fakes/fake_planner_repository.dart';
+
+Segment _block({
+  String id = 's1',
+  String name = '하루',
+  int startMinute = 0,
+  int endMinute = 24 * 60,
+}) {
+  return Segment(
+    id: id,
+    name: name,
+    colorValue: 0xFF2E7D8C,
+    iconKey: 'wb_sunny',
+    startMinute: startMinute,
+    endMinute: endMinute,
+    order: 0,
+  );
+}
 
 void main() {
   Widget wrap(FakePlannerRepository repo) {
@@ -24,8 +39,7 @@ void main() {
     );
   }
 
-  testWidgets('shows empty-schedule message when there are no routines',
-      (tester) async {
+  testWidgets('shows empty-schedule message when there are no blocks', (tester) async {
     await tester.pumpWidget(wrap(FakePlannerRepository()));
     await tester.pumpAndSettle();
 
@@ -33,17 +47,9 @@ void main() {
     expect(find.text('오늘 일정이 없어요'), findsOneWidget);
   });
 
-  testWidgets('tapping the dial on a segment opens its editor', (tester) async {
+  testWidgets('tapping the dial on a block opens its editor', (tester) async {
     final repo = FakePlannerRepository();
-    await repo.upsertSegment(const Segment(
-      id: 's1',
-      name: '오전',
-      colorValue: 0xFF2E7D8C,
-      iconKey: 'wb_sunny',
-      startMinute: 0,
-      endMinute: 24 * 60,
-      order: 0,
-    ));
+    await repo.upsertSegment(_block());
 
     await tester.pumpWidget(wrap(repo));
     await tester.pumpAndSettle();
@@ -63,32 +69,12 @@ void main() {
     expect(find.byType(SegmentFormPage), findsOneWidget);
   });
 
-  testWidgets(
-      "a routine completed today is passed to DialPainter's badge set, "
+  testWidgets("a block completed today is passed to DialPainter's badge set, "
       'an incomplete one is not', (tester) async {
     final repo = FakePlannerRepository();
-    await repo.upsertSegment(const Segment(
-      id: 's1',
-      name: '오전',
-      colorValue: 0xFF2E7D8C,
-      iconKey: 'wb_sunny',
-      startMinute: 0,
-      endMinute: 24 * 60,
-      order: 0,
-    ));
-    await repo.upsertRoutine(Routine(
-      id: 'r1',
-      segmentId: 's1',
-      title: '완료한 루틴',
-      startMinute: 60,
-    ));
-    await repo.upsertRoutine(Routine(
-      id: 'r2',
-      segmentId: 's1',
-      title: '안 한 루틴',
-      startMinute: 120,
-    ));
-    await repo.setCompletion(Completion.now('r1'));
+    await repo.upsertSegment(_block(id: 'done', name: '완료한 구간', startMinute: 60, endMinute: 120));
+    await repo.upsertSegment(_block(id: 'todo', name: '안 한 구간', startMinute: 120, endMinute: 180));
+    await repo.setCompletion(Completion.now('done'));
 
     await tester.pumpWidget(wrap(repo));
     await tester.pumpAndSettle();
@@ -99,7 +85,7 @@ void main() {
         )
         .painter as DialPainter;
 
-    expect(painter.completedRoutineIds, {'r1'});
+    expect(painter.completedSegmentIds, {'done'});
   });
 
   testWidgets('app bar action opens the segment editor', (tester) async {
@@ -112,102 +98,30 @@ void main() {
     expect(find.byType(SegmentEditorPage), findsOneWidget);
   });
 
-  testWidgets('app bar action opens the routine editor', (tester) async {
+  testWidgets('the 구간 추가 FAB opens a blank segment form', (tester) async {
     await tester.pumpWidget(wrap(FakePlannerRepository()));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byTooltip('루틴 관리'));
+    await tester.tap(find.bySemanticsLabel('구간 추가'));
     await tester.pumpAndSettle();
 
-    expect(find.byType(RoutineEditorPage), findsOneWidget);
+    expect(find.byType(SegmentFormPage), findsOneWidget);
   });
 
-  testWidgets(
-      'tapping a routine marker on the dial opens it in Focus for review, '
-      'regardless of whether it is actually current right now',
+  testWidgets("the dial's semantics label reads out today's blocks for screen readers",
       (tester) async {
     final repo = FakePlannerRepository();
-    await repo.upsertSegment(const Segment(
-      id: 's1',
-      name: '하루',
-      colorValue: 0xFF2E7D8C,
-      iconKey: 'wb_sunny',
-      startMinute: 0,
-      endMinute: 24 * 60,
-      order: 0,
-    ));
-    // startMinute: 0 (midnight) -- almost certainly not the real current
-    // time the test runs at, so this also proves the tap doesn't depend on
-    // the clock to decide whether to show it.
-    await repo.upsertRoutine(const Routine(
-      id: 'r1',
-      segmentId: 's1',
-      title: '약 먹기',
-      startMinute: 0,
-      microSteps: ['물 마시기'],
-    ));
+    await repo.upsertSegment(_block(id: 's1', name: '아침', startMinute: 7 * 60, endMinute: 9 * 60));
 
     await tester.pumpWidget(wrap(repo));
     await tester.pumpAndSettle();
 
-    final dialFinder = find.byWidgetPredicate(
-      (w) => w is CustomPaint && w.painter is DialPainter,
-    );
-    final dialCenter = tester.getCenter(dialFinder);
-    final side = tester.getSize(dialFinder).width;
-    final outerR = DialGeometry.outerRadius(side);
-    final markerOffset = TimeGeometry.pointOnCircle(Offset.zero, outerR, 0);
-
-    await tester.tapAt(dialCenter + markerOffset);
-    await tester.pumpAndSettle();
-
-    expect(find.byType(FocusPage), findsOneWidget);
-    expect(find.text('약 먹기'), findsOneWidget);
-    expect(find.widgetWithText(CheckboxListTile, '물 마시기'), findsOneWidget);
-    expect(find.text('모두 완료'), findsOneWidget);
+    expect(find.bySemanticsLabel(RegExp('07:00 아침')), findsOneWidget);
   });
 
-  testWidgets("the dial's semantics label reads out today's routines for screen readers",
-      (tester) async {
+  testWidgets("'지금' button opens FocusPage", (tester) async {
     final repo = FakePlannerRepository();
-    await repo.upsertSegment(const Segment(
-      id: 's1', name: '하루', colorValue: 0xFF2E7D8C, iconKey: 'wb_sunny',
-      startMinute: 0, endMinute: 24 * 60, order: 0,
-    ));
-    await repo.upsertRoutine(const Routine(
-      id: 'r1', segmentId: 's1', title: '약 먹기', startMinute: 7 * 60,
-    ));
-
-    await tester.pumpWidget(wrap(repo));
-    await tester.pumpAndSettle();
-
-    // The painted markers aren't individually focusable, so the routine has
-    // to surface in the dial's own spoken label (time + title).
-    expect(
-      find.bySemanticsLabel(RegExp('07:00 약 먹기')),
-      findsOneWidget,
-    );
-  });
-
-  testWidgets("'지금' button opens FocusPage when there is a current routine",
-      (tester) async {
-    final repo = FakePlannerRepository();
-    final nowMinute = _currentMinuteOfNow();
-    await repo.upsertSegment(const Segment(
-      id: 's1',
-      name: '하루',
-      colorValue: 0xFF2E7D8C,
-      iconKey: 'wb_sunny',
-      startMinute: 0,
-      endMinute: 24 * 60,
-      order: 0,
-    ));
-    await repo.upsertRoutine(Routine(
-      id: 'r1',
-      segmentId: 's1',
-      title: '약 먹기',
-      startMinute: nowMinute,
-    ));
+    await repo.upsertSegment(_block());
 
     await tester.pumpWidget(wrap(repo));
     await tester.pumpAndSettle();
@@ -218,8 +132,7 @@ void main() {
     expect(find.byType(FocusPage), findsOneWidget);
   });
 
-  testWidgets("'지금' button opens FocusPage even with no routines at all",
-      (tester) async {
+  testWidgets("'지금' button opens FocusPage even with no blocks at all", (tester) async {
     await tester.pumpWidget(wrap(FakePlannerRepository()));
     await tester.pumpAndSettle();
 
@@ -228,9 +141,4 @@ void main() {
 
     expect(find.byType(FocusPage), findsOneWidget);
   });
-}
-
-int _currentMinuteOfNow() {
-  final now = TimeOfDay.now();
-  return now.hour * 60 + now.minute;
 }

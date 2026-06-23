@@ -6,38 +6,32 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/debug_log.dart';
 import '../../core/time_geometry.dart';
+import '../../data/block_status.dart';
 import '../../data/models/micro_step_progress.dart';
-import '../../data/models/routine.dart';
+import '../../data/models/segment.dart';
 import '../../data/providers.dart';
-import '../../data/routine_status.dart';
 import '../../data/today.dart';
-import '../../services/notification_service.dart';
-import '../memos/quick_add_button.dart';
 import '../memos/quick_add_sheet.dart';
 import '../rewards/streak_badge.dart';
 import 'completions_controller.dart';
 import 'micro_step_progress_controller.dart';
 import 'waiting_illustration.dart';
 
-/// '지금' focus screen: shows exactly one routine — whichever started most
-/// recently and hasn't been superseded by a later one yet — full-screen
-/// with a micro-steps checklist and large actions. It stays "current"
-/// however long it actually takes (no length to set, no expiry), since
-/// running out of time isn't a state this app wants to put anyone in.
-/// Everything else is hidden so there's only one thing to look at.
+/// '지금' focus screen: shows exactly one block — whichever the clock is inside
+/// right now — full-screen with its checklist of "루틴" items and a large
+/// action. It stays "current" however long the block's range lasts. Everything
+/// else is hidden so there's only one thing to look at.
 ///
-/// [FocusPage.forRoutine] opens the same screen pinned to one specific
-/// routine instead of whatever the clock says is current/next — the dial's
-/// marker tap uses this so a routine whose moment already passed can still
-/// be reviewed and have its micro-steps checked off, without faking a live
-/// countdown that wouldn't mean anything for it.
+/// [FocusPage.forBlock] opens the same screen pinned to one specific block
+/// instead of whatever the clock says is current — the dial's arc tap uses this
+/// so a block whose time already passed can still be reviewed and have its
+/// items checked off.
 class FocusPage extends ConsumerStatefulWidget {
-  const FocusPage({super.key}) : pinnedRoutine = null;
-  const FocusPage.forRoutine(Routine routine, {super.key}) : pinnedRoutine = routine;
+  const FocusPage({super.key}) : pinnedBlock = null;
+  const FocusPage.forBlock(Segment block, {super.key}) : pinnedBlock = block;
 
-  final Routine? pinnedRoutine;
+  final Segment? pinnedBlock;
 
   @override
   ConsumerState<FocusPage> createState() => _FocusPageState();
@@ -45,12 +39,11 @@ class FocusPage extends ConsumerStatefulWidget {
 
 class _FocusPageState extends ConsumerState<FocusPage> {
   late int _currentMinute;
-  late int _isoWeekday;
   Timer? _ticker;
   final Set<int> _checked = {};
-  // "$routineId|$dateKey" the above _checked currently reflects, so
-  // persisted progress is only loaded into it once per routine/day rather
-  // than stomping local taps on every rebuild.
+  // "$segmentId|$dateKey" the above _checked currently reflects, so persisted
+  // progress is only loaded into it once per block/day rather than stomping
+  // local taps on every rebuild.
   String? _hydratedFor;
   late final ConfettiController _confettiController;
   bool _celebrating = false;
@@ -58,21 +51,16 @@ class _FocusPageState extends ConsumerState<FocusPage> {
   @override
   void initState() {
     super.initState();
-    _updateClock();
+    _currentMinute = _minuteOfNow();
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
       final minute = _minuteOfNow();
       if (minute != _currentMinute) {
-        setState(_updateClock);
+        setState(() => _currentMinute = minute);
       }
     });
     _confettiController = ConfettiController(
       duration: const Duration(milliseconds: 600),
     );
-  }
-
-  void _updateClock() {
-    _currentMinute = _minuteOfNow();
-    _isoWeekday = DateTime.now().weekday;
   }
 
   int _minuteOfNow() {
@@ -89,30 +77,17 @@ class _FocusPageState extends ConsumerState<FocusPage> {
 
   @override
   Widget build(BuildContext context) {
-    final routinesAsync = ref.watch(routinesProvider);
-    final postponements = ref.watch(routinePostponementsProvider).value ?? const [];
-    final skips = ref.watch(routineSkipsProvider).value ?? const [];
-    final completions = ref.watch(completionsProvider).value ?? const [];
-    final completedRoutineIds = completedRoutineIdsOn(completions);
+    final segmentsAsync = ref.watch(segmentsProvider);
     final theme = Theme.of(context);
-    final reduceMotion =
-        ref.watch(settingsProvider).value?.reduceMotion ?? false;
+    final reduceMotion = ref.watch(settingsProvider).value?.reduceMotion ?? false;
 
-    final routines = routinesAsync.value;
-    final pinned = widget.pinnedRoutine;
+    final pinned = widget.pinnedBlock;
+    final segments = segmentsAsync.value;
     final status = pinned != null
-        ? RoutineStatus(routine: pinned, isCurrent: true)
-        : routines == null
+        ? BlockStatus(segment: pinned, isCurrent: true)
+        : segments == null
             ? null
-            : findRoutineStatus(
-                excludeTodaysSkips(
-                  applyTodaysPostponements(routines, postponements),
-                  skips,
-                ),
-                _currentMinute,
-                _isoWeekday,
-                completedRoutineIds: completedRoutineIds,
-              );
+            : findBlockStatus(segments, _currentMinute);
 
     return Scaffold(
       body: SafeArea(
@@ -122,12 +97,11 @@ class _FocusPageState extends ConsumerState<FocusPage> {
             // constraints: a non-positioned Stack child is laid out loose and
             // pinned top-start, so the body Column would otherwise shrink-wrap
             // to its widest child and hug the left edge whenever nothing in it
-            // forces full width -- e.g. a "지금" routine with no micro-steps,
-            // where the (empty) checklist below no longer stretches the row.
+            // forces full width (e.g. a block with no checklist items).
             Positioned.fill(
               child: pinned != null
                   ? _buildContent(context, status!)
-                  : routinesAsync.when(
+                  : segmentsAsync.when(
                       data: (_) => _buildContent(context, status!),
                       loading: () => const Center(child: CircularProgressIndicator()),
                       error: (e, st) => Center(child: Text('오류: $e')),
@@ -172,10 +146,10 @@ class _FocusPageState extends ConsumerState<FocusPage> {
                               builder: (context, scale, child) =>
                                   Transform.scale(scale: scale, child: child),
                               child: Icon(
-                                  Icons.check_circle,
-                                  size: 96,
-                                  color: theme.colorScheme.primary,
-                                ),
+                                Icons.check_circle,
+                                size: 96,
+                                color: theme.colorScheme.primary,
+                              ),
                             ),
                     ],
                   ),
@@ -189,13 +163,12 @@ class _FocusPageState extends ConsumerState<FocusPage> {
     );
   }
 
-  /// Combines the quick-add memo button with whatever action buttons
-  /// [status] calls for into a single floating row (same Scaffold slot,
-  /// same Row), so a snackbar raises them — and they line up — as one
-  /// unit instead of the memo button moving independently of buttons that
-  /// used to live in the body.
-  Widget _buildFabRow(RoutineStatus? status) {
-    final actionButtons = _actionButtonsFor(status);
+  /// Combines the quick-add memo button with the block's 완료 action into a
+  /// single floating row, so a snackbar raises them — and they line up — as one
+  /// unit.
+  Widget _buildFabRow(BlockStatus? status) {
+    final segment = status?.segment;
+    final showComplete = segment != null && status!.isCurrent;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -209,16 +182,12 @@ class _FocusPageState extends ConsumerState<FocusPage> {
               child: const Icon(Icons.edit_note),
             ),
           ),
-          if (actionButtons.isNotEmpty) ...[
+          if (showComplete) ...[
             const SizedBox(width: 12),
             Expanded(
-              child: Row(
-                children: [
-                  for (var i = 0; i < actionButtons.length; i++) ...[
-                    if (i > 0) const SizedBox(width: 12),
-                    Expanded(child: actionButtons[i]),
-                  ],
-                ],
+              child: FilledButton(
+                onPressed: () => _complete(segment.id, microSteps: segment.microSteps),
+                child: const Text('모두 완료'),
               ),
             ),
           ],
@@ -227,58 +196,18 @@ class _FocusPageState extends ConsumerState<FocusPage> {
     );
   }
 
-  List<Widget> _actionButtonsFor(RoutineStatus? status) {
-    final routine = status?.routine;
-    if (routine == null) return const [];
-
-    if (!status!.isCurrent) {
-      final upcoming = routine.leadWarningMin > 0 &&
-          status.remainingMinutes <= routine.leadWarningMin;
-      if (!upcoming) {
-        return [
-          OutlinedButton(
-            onPressed: () => _skip(routine),
-            child: const Text('넘기기'),
-          ),
-        ];
-      }
-      return [
-        OutlinedButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('닫기'),
-        ),
-        OutlinedButton(
-          onPressed: () => _skip(routine),
-          child: const Text('넘기기'),
-        ),
-      ];
-    }
-
-    return [
-      FilledButton(
-        onPressed: () => _complete(routine.id, microSteps: routine.microSteps),
-        child: const Text('모두 완료'),
-      ),
-      OutlinedButton(
-        onPressed: () => _skip(routine),
-        child: const Text('넘기기'),
-      ),
-    ];
-  }
-
-  /// Loads today's persisted checks into [_checked] the first time this
-  /// build sees this particular routine+day — a new day (or a different
-  /// routine) has no record yet, which is exactly how the reset-next-day
-  /// behaviour falls out without any explicit "clear" step.
-  void _hydrateChecked(Routine routine, List<MicroStepProgress> allProgress) {
+  /// Loads today's persisted checks into [_checked] the first time this build
+  /// sees this particular block+day — a new day (or a different block) has no
+  /// record yet, which is exactly how the reset-next-day behaviour falls out.
+  void _hydrateChecked(Segment segment, List<MicroStepProgress> allProgress) {
     final dateKey = dayKeyFor();
-    final key = '${routine.id}|$dateKey';
+    final key = '${segment.id}|$dateKey';
     if (_hydratedFor == key) return;
     _hydratedFor = key;
 
     MicroStepProgress? existing;
     for (final p in allProgress) {
-      if (p.routineId == routine.id && p.dateKey == dateKey) {
+      if (p.segmentId == segment.id && p.dateKey == dateKey) {
         existing = p;
         break;
       }
@@ -288,11 +217,11 @@ class _FocusPageState extends ConsumerState<FocusPage> {
       ..addAll(existing?.checkedIndices ?? const []);
   }
 
-  Widget _buildContent(BuildContext context, RoutineStatus status) {
+  Widget _buildContent(BuildContext context, BlockStatus status) {
     final theme = Theme.of(context);
-    final routine = status.routine;
+    final segment = status.segment;
 
-    if (routine == null) {
+    if (segment == null) {
       final reduceMotion = ref.watch(settingsProvider).value?.reduceMotion ?? false;
       return WaitingIllustration(
         reduceMotion: reduceMotion,
@@ -301,57 +230,18 @@ class _FocusPageState extends ConsumerState<FocusPage> {
     }
 
     final allProgress = ref.watch(microStepProgressProvider).value ?? const [];
-    _hydrateChecked(routine, allProgress);
+    _hydrateChecked(segment, allProgress);
 
     if (!status.isCurrent) {
-      // Inside the routine's own lead-warning window (the same "5분 전"
-      // setting that drives the 전환 예고 notification): not current yet,
-      // but close enough that prep micro-steps (e.g. "퇴근준비하기") are
-      // worth checking off now, before the official start time. Staying on
-      // this screen as the clock crosses into "current" keeps whatever was
-      // already checked — _checked isn't reset by that transition.
-      final upcoming =
-          routine.leadWarningMin > 0 && status.remainingMinutes <= routine.leadWarningMin;
-
-      if (!upcoming) {
-        final startTime = TimeGeometry.formatMinute(routine.startMinute);
-        final reduceMotion = ref.watch(settingsProvider).value?.reduceMotion ?? false;
-        return Column(
-          children: [
-            Expanded(
-              child: WaitingIllustration(
-                reduceMotion: reduceMotion,
-                message: '다음: ${routine.title}\n$startTime',
-              ),
-            ),
-          ],
-        );
-      }
-
+      // Not inside any block right now -- show the next one and when it starts.
+      final startTime = TimeGeometry.formatMinute(segment.startMinute);
+      final reduceMotion = ref.watch(settingsProvider).value?.reduceMotion ?? false;
       return Column(
         children: [
           Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(24, 64, 24, 24),
-              child: Semantics(
-                label: '곧 시작: ${routine.title}, ${status.remainingMinutes}분 후 시작',
-                child: Column(
-                  children: [
-                    Text(
-                      '${status.remainingMinutes}분 후 시작',
-                      style: theme.textTheme.headlineMedium,
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      routine.title,
-                      style: theme.textTheme.headlineSmall,
-                      textAlign: TextAlign.center,
-                    ),
-                    ..._microStepsChecklist(routine),
-                  ],
-                ),
-              ),
+            child: WaitingIllustration(
+              reduceMotion: reduceMotion,
+              message: '다음: ${segment.name}\n$startTime',
             ),
           ),
         ],
@@ -360,22 +250,18 @@ class _FocusPageState extends ConsumerState<FocusPage> {
 
     return Column(
       children: [
-        // Title/streak stay put rather than scrolling away with a long
-        // micro-steps list — only the checklist below scrolls.
+        // Title/streak stay put rather than scrolling away with a long item
+        // list — only the checklist below scrolls.
         Padding(
           padding: const EdgeInsets.fromLTRB(24, 64, 24, 0),
           child: Semantics(
-            label: '지금 집중: ${routine.title}',
+            label: '지금 집중: ${segment.name}',
             child: Column(
               children: [
-                Icon(
-                  Icons.alarm,
-                  size: 64,
-                  color: theme.colorScheme.primary,
-                ),
+                Icon(Icons.alarm, size: 64, color: theme.colorScheme.primary),
                 const SizedBox(height: 16),
                 Text(
-                  routine.title,
+                  segment.name,
                   style: theme.textTheme.headlineMedium,
                   textAlign: TextAlign.center,
                 ),
@@ -389,7 +275,7 @@ class _FocusPageState extends ConsumerState<FocusPage> {
           child: SingleChildScrollView(
             padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
             child: Column(
-              children: _microStepsChecklist(routine, autoCompleteWhenAllChecked: true),
+              children: _microStepsChecklist(segment, autoCompleteWhenAllChecked: true),
             ),
           ),
         ),
@@ -397,32 +283,27 @@ class _FocusPageState extends ConsumerState<FocusPage> {
     );
   }
 
-  /// Shared between the "곧 시작" (lead-warning window) and "지금" (current)
-  /// states so checking a step in one carries straight into the other as
-  /// the clock crosses the routine's start time. Persisted immediately
-  /// (per routine+day) so it also survives leaving and reopening this
-  /// screen, resetting automatically the next day.
+  /// The block's "루틴" items as a checklist. Persisted immediately (per
+  /// block+day) so checks survive leaving and reopening, resetting next day.
   ///
-  /// [autoCompleteWhenAllChecked]: only meaningful for the actual "지금"
-  /// state — checking off the last remaining step finishes the routine the
-  /// same way pressing 완료 would, since at that point there's nothing left
-  /// 완료 itself would add.
-  List<Widget> _microStepsChecklist(Routine routine, {bool autoCompleteWhenAllChecked = false}) {
-    if (routine.microSteps.isEmpty) return const [];
+  /// [autoCompleteWhenAllChecked]: checking off the last remaining item finishes
+  /// the block the same way pressing 모두 완료 would.
+  List<Widget> _microStepsChecklist(Segment segment, {bool autoCompleteWhenAllChecked = false}) {
+    if (segment.microSteps.isEmpty) return const [];
     return [
       const SizedBox(height: 16),
-      ...List.generate(routine.microSteps.length, (i) {
+      ...List.generate(segment.microSteps.length, (i) {
         final checked = _checked.contains(i);
         return CheckboxListTile(
           value: checked,
-          title: Text(routine.microSteps[i]),
-          onChanged: (_) => _toggleMicroStep(routine, i, autoCompleteWhenAllChecked),
+          title: Text(segment.microSteps[i]),
+          onChanged: (_) => _toggleMicroStep(segment, i, autoCompleteWhenAllChecked),
         );
       }),
     ];
   }
 
-  void _toggleMicroStep(Routine routine, int index, bool autoCompleteWhenAllChecked) {
+  void _toggleMicroStep(Segment segment, int index, bool autoCompleteWhenAllChecked) {
     final wasChecked = _checked.contains(index);
     setState(() {
       if (wasChecked) {
@@ -431,35 +312,31 @@ class _FocusPageState extends ConsumerState<FocusPage> {
         _checked.add(index);
       }
     });
-    unawaited(ref.read(microStepProgressControllerProvider).save(routine.id, _checked));
+    unawaited(ref.read(microStepProgressControllerProvider).save(segment.id, _checked));
 
-    // Only fires when *checking* the last box, not when un-checking one
-    // that happened to leave the set "full" (it can't, but be explicit).
-    final justCompletedAll = !wasChecked && _checked.length == routine.microSteps.length;
+    final justCompletedAll = !wasChecked && _checked.length == segment.microSteps.length;
     if (autoCompleteWhenAllChecked && justCompletedAll) {
-      _complete(routine.id);
+      _complete(segment.id);
     }
   }
 
-  Future<void> _complete(String routineId, {List<String>? microSteps}) async {
-    // 완료 finishes every micro-step too — there's no real "done but some
-    // prep steps unchecked" state once the whole routine is marked done.
+  Future<void> _complete(String segmentId, {List<String>? microSteps}) async {
+    // 완료 finishes every item too — there's no real "done but some items
+    // unchecked" state once the whole block is marked done.
     if (microSteps != null && microSteps.isNotEmpty) {
       setState(() {
         _checked.addAll(List.generate(microSteps.length, (i) => i));
       });
-      unawaited(ref.read(microStepProgressControllerProvider).save(routineId, _checked));
+      unawaited(ref.read(microStepProgressControllerProvider).save(segmentId, _checked));
     }
 
     // Not awaited: Firestore's write Future only resolves once the backend
     // acknowledges it, which never happens while offline — the celebration
-    // below shouldn't wait on that, since the completion is already
-    // recorded in the local cache (and the streak badge above already
-    // reads from it) regardless of connectivity.
-    unawaited(ref.read(completionsControllerProvider).complete(routineId));
+    // shouldn't wait on that, since the completion is already in the local
+    // cache (and the streak badge reads from it) regardless of connectivity.
+    unawaited(ref.read(completionsControllerProvider).complete(segmentId));
 
-    final reduceMotion =
-        ref.read(settingsProvider).value?.reduceMotion ?? false;
+    final reduceMotion = ref.read(settingsProvider).value?.reduceMotion ?? false;
     HapticFeedback.mediumImpact();
     setState(() => _celebrating = true);
     if (reduceMotion) {
@@ -470,25 +347,5 @@ class _FocusPageState extends ConsumerState<FocusPage> {
     }
 
     if (mounted) Navigator.of(context).pop();
-  }
-
-  // "넘기기": skips today's occurrence of [routine] entirely -- it drops
-  // out of both 지금/다음 here and the dial's center summary for the rest
-  // of today (see NotificationService.skipToday), and today's still-armed
-  // alarms for it are cancelled so it doesn't ring later today either.
-  // Stays open (doesn't pop) so the screen can immediately show whatever
-  // comes next, since that's the whole point of pressing it from here.
-  void _skip(Routine routine) {
-    unawaited(_trySkipToday(routine.id));
-    showAppSnackBar(context, Text('${routine.title}을(를) 내일로 넘겼어요'));
-  }
-
-  Future<void> _trySkipToday(String routineId) async {
-    try {
-      await ref.read(notificationServiceProvider).skipToday(routineId);
-    } catch (e) {
-      // No platform channel available (e.g. under flutter test).
-      logSwallowed('Focus 넘기기', e);
-    }
   }
 }

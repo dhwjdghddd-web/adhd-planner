@@ -27,9 +27,9 @@ void main() async {
   final notificationService = NotificationService(repository);
   await notificationService.init();
   await notificationService.requestPermissions();
-  final routines = await repository.watchRoutines().first;
+  final segments = await repository.watchSegments().first;
   final settings = await repository.watchSettings().first;
-  await notificationService.rescheduleAll(routines, settings);
+  await notificationService.rescheduleAll(segments, settings);
 
   // repo/service override는 더 이상 주입하지 않는다 — provider가 auth에서
   // 스스로 빌드한다(data/providers.dart).
