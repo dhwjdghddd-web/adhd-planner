@@ -12,12 +12,12 @@ import '../../data/models/segment.dart';
 import '../../data/providers.dart';
 import '../../data/today.dart';
 import '../focus/focus_page.dart';
-import '../focus/rest_quotes.dart';
 import '../memos/memo_inbox_page.dart';
 import '../rewards/daily_checklist_badge.dart';
 import '../rewards/streak_badge.dart';
 import '../segments/segment_editor_page.dart';
 import '../segments/segment_form_page.dart';
+import '../segments/segment_icons.dart';
 import '../memos/quick_add_button.dart' show MultiFabRow, GlobalQuickAddButton;
 import '../settings/settings_page.dart';
 import 'dial_painter.dart';
@@ -63,7 +63,6 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final segmentsAsync = ref.watch(segmentsProvider);
     final completions = ref.watch(completionsProvider).value ?? const [];
     final completedSegmentIds = completedBlockIdsOn(completions);
@@ -98,13 +97,13 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
       // A faint concentric-ripple backdrop fills the vertical slack the dial
       // leaves above/below itself on tall screens, so the home screen reads as
       // intentional calm space rather than an empty void — the same PDF 10
-      // motif as the Focus rest screen. The dial and badges sit on top of it,
-      // and the day's "오늘의 한마디" sits in the room below the dial.
+      // motif as the Focus rest screen. The dial and badges sit on top of it.
       body: Stack(
         children: [
           const Positioned.fill(child: _AmbientBackdrop()),
           Column(
             children: [
+              _HomeHeader(minuteOfDay: _currentMinute),
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 8),
                 child: Center(
@@ -126,17 +125,13 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
                   error: (e, st) => Center(child: Text('오류: $e')),
                 ),
               ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(32, 0, 32, 24),
-                child: Text(
-                  restQuoteForToday(),
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.brightness == Brightness.dark
-                        ? const Color(0xFFA6B2BE)
-                        : const Color(0xFF525C68),
-                  ),
-                  textAlign: TextAlign.center,
+              segmentsAsync.maybeWhen(
+                data: (segments) => _TodayTimelineStrip(
+                  segments: segments,
+                  currentMinute: _currentMinute,
+                  completedSegmentIds: completedSegmentIds,
                 ),
+                orElse: () => const SizedBox.shrink(),
               ),
             ],
           ),
@@ -357,6 +352,172 @@ class _AmbientBackdropPainter extends CustomPainter {
     return oldDelegate.primaryColor != primaryColor ||
         oldDelegate.outlineColor != outlineColor ||
         oldDelegate.isDark != isDark;
+  }
+}
+
+/// A calm date + time-of-day greeting above the dial, so the top of the home
+/// screen reads as an intentional header rather than empty space. Rebuilds with
+/// the page's minute ticker, so the greeting shifts 아침→오후→저녁→밤 over the day.
+class _HomeHeader extends StatelessWidget {
+  const _HomeHeader({required this.minuteOfDay});
+
+  final int minuteOfDay;
+
+  // 1=Mon..7=Sun (ISO-8601) → index 0..6.
+  static const _weekdayLabels = ['월', '화', '수', '목', '금', '토', '일'];
+
+  String _greeting(int hour) {
+    if (hour >= 5 && hour < 11) return '좋은 아침이에요';
+    if (hour >= 11 && hour < 17) return '좋은 오후예요';
+    if (hour >= 17 && hour < 21) return '좋은 저녁이에요';
+    return '편안한 밤이에요';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final now = DateTime.now();
+    final dateLabel = '${now.month}월 ${now.day}일 (${_weekdayLabels[now.weekday - 1]})';
+    final mutedColor = isDark ? const Color(0xFFA6B2BE) : const Color(0xFF525C68);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(dateLabel, style: theme.textTheme.labelMedium?.copyWith(color: mutedColor)),
+          const SizedBox(height: 2),
+          Text(
+            _greeting(minuteOfDay ~/ 60),
+            style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A horizontal, time-ordered strip of today's blocks beneath the dial — a
+/// glanceable overview plus shortcuts: tap a block to open it in Focus,
+/// long-press to edit it (mirrors the dial's own tap/long-press). Fills the
+/// band below the dial that would otherwise sit empty on tall screens.
+class _TodayTimelineStrip extends StatelessWidget {
+  const _TodayTimelineStrip({
+    required this.segments,
+    required this.currentMinute,
+    required this.completedSegmentIds,
+  });
+
+  final List<Segment> segments;
+  final int currentMinute;
+  final Set<String> completedSegmentIds;
+
+  @override
+  Widget build(BuildContext context) {
+    if (segments.isEmpty) return const SizedBox.shrink();
+    final ordered = [...segments]..sort((a, b) => a.startMinute.compareTo(b.startMinute));
+
+    return SizedBox(
+      height: 64,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+        itemCount: ordered.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 8),
+        itemBuilder: (context, i) {
+          final s = ordered[i];
+          final isCurrent = currentMinute >= s.startMinute && currentMinute < s.endMinute;
+          return _TimelineChip(
+            segment: s,
+            isCurrent: isCurrent,
+            isDone: completedSegmentIds.contains(s.id),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _TimelineChip extends StatelessWidget {
+  const _TimelineChip({
+    required this.segment,
+    required this.isCurrent,
+    required this.isDone,
+  });
+
+  final Segment segment;
+  final bool isCurrent;
+  final bool isDone;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final primary = theme.colorScheme.primary;
+    final mutedColor = isDark ? const Color(0xFFA6B2BE) : const Color(0xFF525C68);
+
+    return Semantics(
+      button: true,
+      label: '${TimeGeometry.formatMinute(segment.startMinute)} ${segment.name}'
+          '${isCurrent ? ', 현재' : ''}${isDone ? ', 완료' : ''}, 눌러서 열기',
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => FocusPage.forBlock(segment)),
+        ),
+        onLongPress: () {
+          HapticFeedback.mediumImpact();
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => SegmentFormPage(existing: segment)),
+          );
+        },
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 150),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            color: isCurrent ? primary.withValues(alpha: isDark ? 0.18 : 0.10) : AppTheme.surface3(context),
+            border: Border.all(
+              color: isCurrent ? primary.withValues(alpha: 0.6) : (isDark ? Colors.transparent : const Color(0xFFE4E9EF)),
+              width: isCurrent ? 1.5 : 1,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                isDone ? Icons.check_circle : iconForKey(segment.iconKey),
+                size: 16,
+                color: isDone ? primary : (isCurrent ? primary : mutedColor),
+              ),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      TimeGeometry.formatMinute(segment.startMinute),
+                      style: theme.textTheme.labelSmall?.copyWith(color: mutedColor),
+                    ),
+                    Text(
+                      segment.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        fontWeight: isCurrent ? FontWeight.w700 : FontWeight.w500,
+                        color: isDone ? mutedColor : null,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 

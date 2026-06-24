@@ -121,7 +121,9 @@ void main() {
     await tester.pumpWidget(wrap(repo));
     await tester.pumpAndSettle();
 
-    expect(find.bySemanticsLabel(RegExp('07:00 아침')), findsOneWidget);
+    // Scoped to the dial's own label ("오늘 일정: …"); the today-timeline strip
+    // below now also reads each block out as its own tappable item.
+    expect(find.bySemanticsLabel(RegExp('오늘 일정:.*07:00 아침')), findsOneWidget);
   });
 
   testWidgets("'지금' button opens FocusPage", (tester) async {
