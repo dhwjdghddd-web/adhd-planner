@@ -14,8 +14,10 @@ import '../../data/providers.dart';
 import '../../data/today.dart';
 import '../memos/quick_add_sheet.dart';
 import '../rewards/streak_badge.dart';
+import '../segments/segment_icons.dart';
 import 'completions_controller.dart';
 import 'micro_step_progress_controller.dart';
+import 'rest_quotes.dart';
 import 'waiting_illustration.dart';
 
 /// '지금' focus screen: shows exactly one block — whichever the clock is inside
@@ -28,10 +30,18 @@ import 'waiting_illustration.dart';
 /// so a block whose time already passed can still be reviewed and have its
 /// items checked off.
 class FocusPage extends ConsumerStatefulWidget {
-  const FocusPage({super.key}) : pinnedBlock = null;
-  const FocusPage.forBlock(Segment block, {super.key}) : pinnedBlock = block;
+  const FocusPage({super.key, @visibleForTesting this.debugNowMinuteOfDay})
+      : pinnedBlock = null;
+  const FocusPage.forBlock(Segment block, {super.key})
+      : pinnedBlock = block,
+        debugNowMinuteOfDay = null;
 
   final Segment? pinnedBlock;
+
+  /// Test-only override for "now" (minute-of-day). When set, the live status
+  /// reads this fixed value instead of the wall clock, so widget tests don't
+  /// break near day boundaries (e.g. a "future block" helper run after 23:00).
+  final int? debugNowMinuteOfDay;
 
   @override
   ConsumerState<FocusPage> createState() => _FocusPageState();
@@ -64,6 +74,8 @@ class _FocusPageState extends ConsumerState<FocusPage> {
   }
 
   int _minuteOfNow() {
+    final override = widget.debugNowMinuteOfDay;
+    if (override != null) return override;
     final now = TimeOfDay.now();
     return now.hour * 60 + now.minute;
   }
@@ -252,43 +264,115 @@ class _FocusPageState extends ConsumerState<FocusPage> {
       );
     }
 
+    // A current block with nothing to check (e.g. 퇴근/수면): rather than the
+    // standard header-over-checklist with an empty list, the block's own
+    // identity moves into the centre of the concentric rings — one calm
+    // orbital composition echoing the dial's centre hub — with the streak and
+    // a soft "쉬어도 좋아요" sat beneath it as a single cluster.
+    if (segment.microSteps.isEmpty) {
+      return _buildRestComposition(context, segment, reduceMotion);
+    }
+
     return Column(
       children: [
         // Title/streak stay put rather than scrolling away with a long item
-        // list — only the checklist below scrolls.
+        // list — only the checklist below scrolls. The header echoes the
+        // checklist-less rest screen exactly — the same concentric orbital with
+        // the block's icon + name at its heart — so a block with a checklist and
+        // one without read as the same family instead of an alarm icon clashing
+        // with the calm rings.
         Padding(
-          padding: const EdgeInsets.fromLTRB(24, 64, 24, 0),
+          padding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
           child: Semantics(
             label: '지금 집중: ${segment.name}',
             child: Column(
               children: [
-                Icon(Icons.alarm, size: 64, color: theme.colorScheme.primary),
-                const SizedBox(height: 16),
-                Text(
-                  segment.name,
-                  style: theme.textTheme.headlineMedium,
-                  textAlign: TextAlign.center,
+                WaitingIllustration(
+                  reduceMotion: reduceMotion,
+                  size: 150,
+                  message: '',
+                  center: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        iconForKey(segment.iconKey),
+                        size: 30,
+                        color: theme.colorScheme.primary,
+                      ),
+                      const SizedBox(height: 6),
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 120),
+                        child: Text(
+                          segment.name,
+                          style: theme.textTheme.titleMedium,
+                          textAlign: TextAlign.center,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 12),
                 const StreakBadge(),
               ],
             ),
           ),
         ),
         Expanded(
-          child: segment.microSteps.isEmpty
-              ? WaitingIllustration(
-                  reduceMotion: reduceMotion,
-                  message: '체크할 항목이 없어요\n편히 보내도 좋아요.',
-                )
-              : SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
-                  child: Column(
-                    children: _microStepsChecklist(segment, autoCompleteWhenAllChecked: true),
-                  ),
-                ),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+            child: Column(
+              children: _microStepsChecklist(segment, autoCompleteWhenAllChecked: true),
+            ),
+          ),
         ),
       ],
+    );
+  }
+
+  /// The checklist-less block's rest screen: the block's icon + name sit at the
+  /// heart of the concentric rings, with the streak and a soft message as a
+  /// single centred cluster below.
+  Widget _buildRestComposition(BuildContext context, Segment segment, bool reduceMotion) {
+    final theme = Theme.of(context);
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Semantics(
+            label: '${segment.name}, 체크할 항목 없음',
+            child: WaitingIllustration(
+              reduceMotion: reduceMotion,
+              size: 220,
+              message: restQuoteForToday(),
+              center: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    iconForKey(segment.iconKey),
+                    size: 34,
+                    color: theme.colorScheme.primary,
+                  ),
+                  const SizedBox(height: 6),
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 130),
+                    child: Text(
+                      segment.name,
+                      style: theme.textTheme.titleMedium,
+                      textAlign: TextAlign.center,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 24),
+          const StreakBadge(),
+        ],
+      ),
     );
   }
 

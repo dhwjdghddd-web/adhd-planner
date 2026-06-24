@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme.dart';
@@ -11,6 +12,7 @@ import '../../data/models/segment.dart';
 import '../../data/providers.dart';
 import '../../data/today.dart';
 import '../focus/focus_page.dart';
+import '../focus/rest_quotes.dart';
 import '../memos/memo_inbox_page.dart';
 import '../rewards/daily_checklist_badge.dart';
 import '../rewards/streak_badge.dart';
@@ -61,6 +63,7 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final segmentsAsync = ref.watch(segmentsProvider);
     final completions = ref.watch(completionsProvider).value ?? const [];
     final completedSegmentIds = completedBlockIdsOn(completions);
@@ -92,28 +95,50 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
           ),
         ],
       ),
-      body: Column(
+      // A faint concentric-ripple backdrop fills the vertical slack the dial
+      // leaves above/below itself on tall screens, so the home screen reads as
+      // intentional calm space rather than an empty void — the same PDF 10
+      // motif as the Focus rest screen. The dial and badges sit on top of it,
+      // and the day's "오늘의 한마디" sits in the room below the dial.
+      body: Stack(
         children: [
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 8),
-            child: Center(
-              child: Wrap(
-                spacing: 12,
-                alignment: WrapAlignment.center,
-                children: [StreakBadge(), DailyChecklistBadge()],
+          const Positioned.fill(child: _AmbientBackdrop()),
+          Column(
+            children: [
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: Center(
+                  child: Wrap(
+                    spacing: 12,
+                    alignment: WrapAlignment.center,
+                    children: [StreakBadge(), DailyChecklistBadge()],
+                  ),
+                ),
               ),
-            ),
-          ),
-          Expanded(
-            child: segmentsAsync.when(
-              data: (segments) => _Dial(
-                segments: segments,
-                currentMinute: _currentMinute,
-                completedSegmentIds: completedSegmentIds,
+              Expanded(
+                child: segmentsAsync.when(
+                  data: (segments) => _Dial(
+                    segments: segments,
+                    currentMinute: _currentMinute,
+                    completedSegmentIds: completedSegmentIds,
+                  ),
+                  loading: () => const Center(child: CircularProgressIndicator()),
+                  error: (e, st) => Center(child: Text('오류: $e')),
+                ),
               ),
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, st) => Center(child: Text('오류: $e')),
-            ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(32, 0, 32, 24),
+                child: Text(
+                  restQuoteForToday(),
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.brightness == Brightness.dark
+                        ? const Color(0xFFA6B2BE)
+                        : const Color(0xFF525C68),
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -168,6 +193,8 @@ class _Dial extends StatelessWidget {
               height: side,
               child: GestureDetector(
                 onTapUp: (details) => _handleTap(context, details.localPosition, side),
+                onLongPressStart: (details) =>
+                    _handleLongPress(context, details.localPosition, side),
                 child: Stack(
                   alignment: Alignment.center,
                   children: [
@@ -231,6 +258,24 @@ class _Dial extends StatelessWidget {
     }
   }
 
+  /// Long-pressing a block's arc opens its editor directly — a shortcut to the
+  /// same form reachable from the 구간 관리 list, so a quick time/alarm/item
+  /// tweak doesn't need a trip through that list. A short haptic confirms the
+  /// press landed on a block (a plain tap, by contrast, opens Focus review).
+  void _handleLongPress(BuildContext context, Offset local, double side) {
+    final center = Offset(side / 2, side / 2);
+    final outerR = DialGeometry.outerRadius(side);
+    final lanes = DialGeometry.assignLanes(segments);
+
+    final pressedSegment = _segmentAtPoint(center, local, outerR, lanes);
+    if (pressedSegment != null) {
+      HapticFeedback.mediumImpact();
+      Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => SegmentFormPage(existing: pressedSegment)),
+      );
+    }
+  }
+
   /// The block whose arc the tap landed on: the tap's distance from centre must
   /// be within the block's lane radius (±half the ring thickness, plus a little
   /// slack) and its angle (converted to a minute) must fall inside the block's
@@ -248,6 +293,70 @@ class _Dial extends StatelessWidget {
       if (segment.containsMinute(minute)) return segment;
     }
     return null;
+  }
+}
+
+/// A very faint set of concentric circles with a soft central glow, painted
+/// behind the whole home screen so the dial doesn't float in empty space. It is
+/// purely decorative (no semantics, no interaction) and static — no animation —
+/// so it stays calm and cheap. Tuned far fainter than the Focus rest screen's
+/// rings since it sits under live content.
+class _AmbientBackdrop extends StatelessWidget {
+  const _AmbientBackdrop();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return IgnorePointer(
+      child: CustomPaint(
+        size: Size.infinite,
+        painter: _AmbientBackdropPainter(
+          primaryColor: theme.colorScheme.primary,
+          outlineColor: theme.colorScheme.outline,
+          isDark: theme.brightness == Brightness.dark,
+        ),
+      ),
+    );
+  }
+}
+
+class _AmbientBackdropPainter extends CustomPainter {
+  const _AmbientBackdropPainter({
+    required this.primaryColor,
+    required this.outlineColor,
+    required this.isDark,
+  });
+
+  final Color primaryColor;
+  final Color outlineColor;
+  final bool isDark;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height * 0.46);
+    final base = math.min(size.width, size.height);
+
+    // Soft central glow so the middle of the screen reads as gently lit.
+    final glowPaint = Paint()
+      ..color = primaryColor.withValues(alpha: isDark ? 0.07 : 0.05)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 60);
+    canvas.drawCircle(center, base * 0.32, glowPaint);
+
+    // A handful of faint rings rippling outward past the dial's edge.
+    final ringPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.0;
+    for (final factor in const [0.34, 0.46, 0.58, 0.70]) {
+      ringPaint.color = outlineColor.withValues(alpha: 0.05);
+      canvas.drawCircle(center, base * factor, ringPaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _AmbientBackdropPainter oldDelegate) {
+    return oldDelegate.primaryColor != primaryColor ||
+        oldDelegate.outlineColor != outlineColor ||
+        oldDelegate.isDark != isDark;
   }
 }
 

@@ -8,47 +8,45 @@ import 'package:adhd_planner/data/models/micro_step_progress.dart';
 import 'package:adhd_planner/data/models/segment.dart';
 import 'package:adhd_planner/data/providers.dart';
 import 'package:adhd_planner/features/focus/focus_page.dart';
+import 'package:adhd_planner/features/focus/rest_quotes.dart';
 
 import '../../fakes/fake_planner_repository.dart';
 
-int _currentMinuteOfNow() {
-  final now = TimeOfDay.now();
-  return now.hour * 60 + now.minute;
-}
+/// "Now" is pinned to noon for these tests (passed to FocusPage via
+/// [FocusPage.debugNowMinuteOfDay]) so the current/future block helpers below
+/// never sit near a day boundary — the live FocusPage used to read the wall
+/// clock, so this whole file broke when run after ~22:00 (a "future" block's
+/// start clamped back onto "now").
+const int _kNowMinute = 12 * 60;
 
-/// A block whose range reliably contains "now" (so it reads as current),
-/// with a margin so a clock tick mid-test can't push now outside it.
+/// A block whose range contains the pinned [_kNowMinute] (so it reads as
+/// current).
 Segment _currentBlock({
   String id = 's1',
   String name = '약 먹기',
   List<String> microSteps = const [],
 }) {
-  final now = _currentMinuteOfNow();
-  final start = now >= 30 ? now - 30 : 0;
-  final end = (now + 30) > 1440 ? 1440 : now + 30;
   return Segment(
     id: id,
     name: name,
     colorValue: 0xFF000000,
     iconKey: 'wb_sunny',
-    startMinute: start,
-    endMinute: end,
+    startMinute: _kNowMinute - 30,
+    endMinute: _kNowMinute + 30,
     order: 0,
     microSteps: microSteps,
   );
 }
 
-/// A block strictly in the future with no overlap of now (reads as "next").
+/// A block strictly after the pinned [_kNowMinute] (reads as "next").
 Segment _futureBlock({String id = 's1', String name = '나중 일', List<String> microSteps = const []}) {
-  final now = _currentMinuteOfNow();
-  final start = (now + 60) > 1380 ? 1380 : now + 60;
   return Segment(
     id: id,
     name: name,
     colorValue: 0xFF000000,
     iconKey: 'wb_sunny',
-    startMinute: start,
-    endMinute: start + 30,
+    startMinute: _kNowMinute + 60,
+    endMinute: _kNowMinute + 90,
     order: 0,
     microSteps: microSteps,
   );
@@ -64,7 +62,9 @@ void main() {
             body: Center(
               child: ElevatedButton(
                 onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const FocusPage()),
+                  MaterialPageRoute(
+                    builder: (_) => const FocusPage(debugNowMinuteOfDay: _kNowMinute),
+                  ),
                 ),
                 child: const Text('open'),
               ),
@@ -395,7 +395,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('퇴근'), findsOneWidget);
-      expect(find.textContaining('체크할 항목이 없어요'), findsOneWidget);
+      expect(find.text(restQuoteForToday()), findsOneWidget);
     });
   });
 
