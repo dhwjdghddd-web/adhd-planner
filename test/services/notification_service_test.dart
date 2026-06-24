@@ -35,15 +35,14 @@ void main() {
       expect(specs, isEmpty);
     });
 
-    test('an alarm-enabled block schedules one start alarm on every weekday', () {
+    test('an alarm-enabled block schedules exactly one daily start alarm', () {
       final specs = buildSchedule([_block(id: 's1')]);
-      expect(specs.length, 7);
-      expect(specs.map((s) => s.isoWeekday).toSet(), {1, 2, 3, 4, 5, 6, 7});
+      expect(specs.length, 1);
     });
 
-    test('every spec fires at the block start minute', () {
+    test('the spec fires at the block start minute', () {
       final specs = buildSchedule([_block(id: 's1', startMinute: 7 * 60 + 30)]);
-      expect(specs.every((s) => s.minuteOfDay == 7 * 60 + 30), true);
+      expect(specs.single.minuteOfDay, 7 * 60 + 30);
     });
 
     test('spec title uses the block name', () {
@@ -56,7 +55,7 @@ void main() {
       expect(specs.first.payload, 'block:s1');
     });
 
-    test('ids never collide across blocks or weekdays', () {
+    test('ids never collide across blocks', () {
       final specs = buildSchedule([_block(id: 's1'), _block(id: 's2')]);
       final ids = specs.map((s) => s.id).toList();
       expect(ids.toSet().length, ids.length);
@@ -65,27 +64,24 @@ void main() {
 
   group('notificationIdFor', () {
     test('is deterministic for the same inputs', () {
-      expect(notificationIdFor('abc', 1, 0), notificationIdFor('abc', 1, 0));
+      expect(notificationIdFor('abc', 0), notificationIdFor('abc', 0));
     });
 
-    test('differs across weekday for the same block', () {
-      expect(notificationIdFor('abc', 1, 0), isNot(notificationIdFor('abc', 2, 0)));
+    test('differs across blocks for the same slot', () {
+      expect(notificationIdFor('abc', 0), isNot(notificationIdFor('xyz', 0)));
     });
   });
 
   group('nextInstanceOf', () {
-    test('result always lands on the requested weekday and time-of-day', () {
-      for (var day = 1; day <= 7; day++) {
-        final result = nextInstanceOf(day, 9 * 60 + 30);
-        expect(result.weekday, day, reason: 'day $day');
-        expect(result.hour, 9);
-        expect(result.minute, 30);
-      }
+    test('result lands on the requested time-of-day', () {
+      final result = nextInstanceOf(9 * 60 + 30);
+      expect(result.hour, 9);
+      expect(result.minute, 30);
     });
 
     test('result is always strictly in the future', () {
       final now = tz.TZDateTime.now(tz.local);
-      final result = nextInstanceOf(now.weekday, now.hour * 60 + now.minute);
+      final result = nextInstanceOf(now.hour * 60 + now.minute);
       expect(result.isAfter(now), true);
     });
   });

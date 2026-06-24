@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/models/segment.dart';
@@ -19,7 +21,14 @@ class SegmentsController {
   final Ref _ref;
 
   Future<void> upsert(Segment segment) async {
-    await _ref.read(plannerRepositoryProvider)!.upsertSegment(segment);
+    // NOT awaited: the Firestore write Future only resolves once the backend
+    // acknowledges it, which never happens while offline (the local cache still
+    // updates synchronously). Awaiting it here would block the alarm reschedule
+    // below from ever running on a flaky/offline connection -- so turning a
+    // block's alarm off would save locally yet never actually cancel the armed
+    // alarm, leaving it ringing every day. The reschedule reads the synchronously
+    // -updated local cache, so it still sees the just-saved alarmEnabled.
+    unawaited(_ref.read(plannerRepositoryProvider)!.upsertSegment(segment));
     await _rescheduleAll();
   }
 
@@ -36,7 +45,11 @@ class SegmentsController {
         break;
       }
     }
-    await repo.deleteSegment(id);
+    // NOT awaited, for the same reason as [upsert]: an offline delete's Future
+    // never resolves, which would block the reschedule. The block's own alarms
+    // are already cancelled above, and the local cache drops the doc
+    // synchronously so the reschedule sees the post-delete list.
+    unawaited(repo.deleteSegment(id));
     await _rescheduleAll();
   }
 

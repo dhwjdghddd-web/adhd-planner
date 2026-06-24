@@ -215,7 +215,7 @@ class NotificationService {
 
     final specs = buildSchedule(segments);
     for (final spec in specs) {
-      final triggerAt = nextInstanceOf(spec.isoWeekday, spec.minuteOfDay);
+      final triggerAt = nextInstanceOf(spec.minuteOfDay);
       await _plugin.zonedSchedule(
         spec.id,
         spec.title,
@@ -231,20 +231,20 @@ class NotificationService {
         // ringer mode/DND. Trade-off: a permanent alarm-clock icon shows in
         // the status bar whenever one of these is pending.
         androidScheduleMode: AndroidScheduleMode.alarmClock,
-        matchDateTimeComponents: DateTimeComponents.dayOfWeekAndTime,
+        matchDateTimeComponents: DateTimeComponents.time,
         payload: spec.payload,
       );
       // The notification's own vibration is what 무음 ringer mode silences
       // (see VibrationAlarmReceiver.kt) -- this directly-triggered Vibrator
       // call alongside it is the part that actually buzzes in that mode.
-      // Re-arms itself weekly on the native side, so it stays in sync with
+      // Re-arms itself daily on the native side, so it stays in sync with
       // matchDateTimeComponents above without Dart needing to be running.
       await _scheduleVibrationAlarm(
         requestCode: spec.id,
         triggerAt: triggerAt,
         pattern: vibrationPatternFor(settings.vibrationPattern),
         durationMs: _alarmRepeatMs,
-        repeatInterval: const Duration(days: 7),
+        repeatInterval: const Duration(days: 1),
       );
     }
 
@@ -254,7 +254,14 @@ class NotificationService {
     }
     for (final segment in segments) {
       final ids = idsBySegment[segment.id] ?? const <int>[];
-      await repo.upsertSegment(segment.copyWith(notificationIds: ids));
+      // NOT awaited: persisting notificationIds is a cache-side bookkeeping
+      // write whose Firestore Future doesn't resolve until the backend acks
+      // (never, while offline). The alarms themselves are already scheduled
+      // above, so awaiting this here would, at app-startup (main.dart awaits
+      // rescheduleAll before runApp), hang an offline launch on a black screen
+      // for no benefit. The local cache updates synchronously, so cancelBlock
+      // Alarms still reads the right ids.
+      unawaited(repo.upsertSegment(segment.copyWith(notificationIds: ids)));
     }
   }
 

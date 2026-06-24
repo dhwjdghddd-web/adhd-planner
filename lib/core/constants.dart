@@ -76,6 +76,3 @@ Color onSegmentColor(Color background) =>
     background.computeLuminance() > 0.5 ? Colors.black87 : Colors.white;
 
 const double kMinTapTarget = 48.0;
-
-/// Repeat-day encoding shared by routines: 1=Mon .. 7=Sun (ISO-8601 weekday).
-const List<String> kWeekdayShortLabels = ['월', '화', '수', '목', '금', '토', '일'];

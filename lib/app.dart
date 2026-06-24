@@ -219,7 +219,7 @@ class _ForegroundAlarmWatcherState extends ConsumerState<_ForegroundAlarmWatcher
       if (segment.startMinute == minuteOfDay) {
         _showAlarmDialog(
           segmentId: segment.id,
-          notificationId: notificationIdFor(segment.id, now.weekday, 0),
+          notificationId: notificationIdFor(segment.id, 0),
         );
         break; // one dialog at a time is enough even if two start the same minute
       }

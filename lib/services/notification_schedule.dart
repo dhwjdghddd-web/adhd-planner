@@ -32,16 +32,15 @@ Int64List vibrationPatternFor(AlarmVibrationPattern preset) {
 int vibrationCycleMs(AlarmVibrationPattern preset) =>
     vibrationPatternFor(preset).fold(0, (sum, ms) => sum + ms);
 
-/// One concrete alarm that should exist on the device: a single weekday
-/// occurrence of a block's start-of-block alarm. Kept as a plain value (rather
-/// than calling the plugin while iterating blocks) so [buildSchedule] — the
-/// "which alarms should exist" logic — is unit-testable without a real Android
+/// One concrete alarm that should exist on the device: a block's
+/// start-of-block alarm, recurring daily. Kept as a plain value (rather than
+/// calling the plugin while iterating blocks) so [buildSchedule] — the "which
+/// alarms should exist" logic — is unit-testable without a real Android
 /// runtime.
 class ScheduledSpec {
   const ScheduledSpec({
     required this.id,
     required this.segmentId,
-    required this.isoWeekday,
     required this.minuteOfDay,
     required this.title,
     required this.body,
@@ -49,7 +48,6 @@ class ScheduledSpec {
 
   final int id;
   final String segmentId;
-  final int isoWeekday;
   final int minuteOfDay;
   final String title;
   final String body;
@@ -57,46 +55,44 @@ class ScheduledSpec {
   String get payload => 'block:$segmentId';
 }
 
-/// Deterministic notification id for a (block, weekday) pair, so a later
-/// `cancelAll` + reschedule always replaces exactly what it created before.
-/// [slot] is kept (always 0 for the single start alarm) so the id shape stays
-/// compatible with the device-side request-code tracking.
-int notificationIdFor(String segmentId, int isoWeekday, int slot) {
+/// Deterministic notification id for a block's alarm, so a later `cancelAll` +
+/// reschedule always replaces exactly what it created before. [slot] is kept
+/// (always 0 for the single start alarm) so the id shape stays compatible with
+/// the device-side request-code tracking.
+int notificationIdFor(String segmentId, int slot) {
   final base = segmentId.hashCode.abs() % 100000;
-  return base * 100 + isoWeekday * 10 + slot;
+  return base * 10 + slot;
 }
 
 /// Pure: turns the current block list into the exact set of alarms that should
-/// exist on the device — one start-of-block alarm per alarm-enabled block, on
-/// every weekday (blocks recur daily). No plugin calls here —
-/// [NotificationService.rescheduleAll] is the thin layer that applies this.
+/// exist on the device — one start-of-block alarm per alarm-enabled block,
+/// recurring daily (blocks recur every day, with no weekday selection). No
+/// plugin calls here — [NotificationService.rescheduleAll] is the thin layer
+/// that applies this.
 List<ScheduledSpec> buildSchedule(List<Segment> segments) {
   final specs = <ScheduledSpec>[];
   for (final segment in segments) {
     if (!segment.alarmEnabled) continue;
-    for (var day = 1; day <= 7; day++) {
-      specs.add(ScheduledSpec(
-        id: notificationIdFor(segment.id, day, 0),
-        segmentId: segment.id,
-        isoWeekday: day,
-        minuteOfDay: segment.startMinute,
-        title: segment.name,
-        body: '지금 시작할 시간이에요',
-      ));
-    }
+    specs.add(ScheduledSpec(
+      id: notificationIdFor(segment.id, 0),
+      segmentId: segment.id,
+      minuteOfDay: segment.startMinute,
+      title: segment.name,
+      body: '지금 시작할 시간이에요',
+    ));
   }
   return specs;
 }
 
-/// Next moment (today or later) that lands on [isoWeekday] (1=Mon..7=Sun) at
-/// [minuteOfDay], in the local timezone. Used as the anchor for a weekly
-/// recurring `zonedSchedule`.
-tz.TZDateTime nextInstanceOf(int isoWeekday, int minuteOfDay) {
+/// Next moment (today if it's still ahead, otherwise tomorrow) at [minuteOfDay]
+/// in the local timezone. Used as the anchor for a daily recurring
+/// `zonedSchedule`.
+tz.TZDateTime nextInstanceOf(int minuteOfDay) {
   final now = tz.TZDateTime.now(tz.local);
   var scheduled = tz.TZDateTime(
     tz.local, now.year, now.month, now.day, minuteOfDay ~/ 60, minuteOfDay % 60,
   );
-  while (scheduled.weekday != isoWeekday || !scheduled.isAfter(now)) {
+  if (!scheduled.isAfter(now)) {
     scheduled = scheduled.add(const Duration(days: 1));
   }
   return scheduled;
