@@ -26,11 +26,28 @@ Future<void> showQuickAddSheet(BuildContext context) {
   ).whenComplete(() => quickAddSheetOpen.value = false);
 }
 
+/// Opens the same sheet pre-filled with an existing memo's text to edit it
+/// (saving updates that memo instead of creating a new one).
+Future<void> showEditMemoSheet(BuildContext context, Memo memo) {
+  quickAddSheetOpen.value = true;
+  return showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    builder: (sheetContext) => Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(sheetContext).viewInsets.bottom),
+      child: QuickAddSheet(existing: memo),
+    ),
+  ).whenComplete(() => quickAddSheetOpen.value = false);
+}
+
 /// Bottom sheet for capturing a stray thought in one tap: a text field plus
 /// a large mic button for voice input. Saving closes the sheet immediately
-/// to keep friction to a minimum.
+/// to keep friction to a minimum. When [existing] is set, it edits that memo's
+/// text instead of adding a new one.
 class QuickAddSheet extends ConsumerStatefulWidget {
-  const QuickAddSheet({super.key});
+  const QuickAddSheet({super.key, this.existing});
+
+  final Memo? existing;
 
   @override
   ConsumerState<QuickAddSheet> createState() => _QuickAddSheetState();
@@ -46,6 +63,9 @@ class _QuickAddSheetState extends ConsumerState<QuickAddSheet> {
   @override
   void initState() {
     super.initState();
+    if (widget.existing != null) {
+      _controller.text = widget.existing!.text;
+    }
     _speech.init().then((available) {
       if (mounted) setState(() => _speechAvailable = available);
     });
@@ -84,10 +104,15 @@ class _QuickAddSheetState extends ConsumerState<QuickAddSheet> {
   void _save() {
     final text = _controller.text.trim();
     if (text.isEmpty) return;
-    unawaited(ref.read(memosControllerProvider).add(
-          text,
-          source: _usedVoice ? MemoSource.voice : MemoSource.text,
-        ));
+    final existing = widget.existing;
+    if (existing != null) {
+      unawaited(ref.read(memosControllerProvider).edit(existing, text));
+    } else {
+      unawaited(ref.read(memosControllerProvider).add(
+            text,
+            source: _usedVoice ? MemoSource.voice : MemoSource.text,
+          ));
+    }
     Navigator.of(context).pop();
   }
 
@@ -101,7 +126,10 @@ class _QuickAddSheetState extends ConsumerState<QuickAddSheet> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('빠른 메모', style: Theme.of(context).textTheme.titleMedium),
+          Text(
+            widget.existing != null ? '메모 수정' : '빠른 메모',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
           const SizedBox(height: 12),
           TextField(
             controller: _controller,

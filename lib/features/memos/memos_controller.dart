@@ -32,5 +32,10 @@ class MemosController {
     return _ref.read(plannerRepositoryProvider)!.updateMemo(memo.copyWith(reviewed: reviewed));
   }
 
+  /// Edits an existing memo's text (keeping its id/created time/reviewed state).
+  Future<void> edit(Memo memo, String text) {
+    return _ref.read(plannerRepositoryProvider)!.updateMemo(memo.copyWith(text: text));
+  }
+
   Future<void> delete(String id) => _ref.read(plannerRepositoryProvider)!.deleteMemo(id);
 }

@@ -5,6 +5,7 @@ import '../../data/models/memo.dart';
 import '../../data/providers.dart';
 import 'memos_controller.dart';
 import 'quick_add_button.dart';
+import 'quick_add_sheet.dart';
 
 /// Memo inbox: unreviewed thoughts by default (with a toggle to also show
 /// ones already reviewed), a search box, and swipe-to-delete. Memos are
@@ -131,12 +132,16 @@ class _MemoList extends ConsumerWidget {
             padding: const EdgeInsets.symmetric(horizontal: 20),
             child: const Icon(Icons.delete_outline),
           ),
-          child: CheckboxListTile(
-            value: memo.reviewed,
-            onChanged: (value) => ref
-                .read(memosControllerProvider)
-                .setReviewed(memo, value ?? false),
-            controlAffinity: ListTileControlAffinity.leading,
+          // Tapping the row body edits the memo; the leading checkbox (a
+          // separate tap target) toggles reviewed, so the two don't collide.
+          child: ListTile(
+            onTap: () => showEditMemoSheet(context, memo),
+            leading: Checkbox(
+              value: memo.reviewed,
+              onChanged: (value) => ref
+                  .read(memosControllerProvider)
+                  .setReviewed(memo, value ?? false),
+            ),
             title: Text(
               memo.text,
               style: memo.reviewed
