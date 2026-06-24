@@ -92,17 +92,20 @@ void main() {
   });
 
   testWidgets(
-      'a current block with no checklist defers to the next block instead of '
-      'showing a completion screen', (tester) async {
+      'a current block with no checklist shows its own calm rest screen, not '
+      'the next block', (tester) async {
     final repo = FakePlannerRepository();
     await repo.upsertSegment(_currentBlock(id: 's1', name: '회의'));
     await repo.upsertSegment(_futureBlock(id: 's2', name: '저녁', microSteps: const ['저녁 먹기']));
 
     await openFocusPage(tester, repo);
 
-    expect(find.text('회의'), findsNothing);
+    // The routine-less current block presents itself (icon + name + rest
+    // message), rather than detouring to the next block's waiting screen.
+    expect(find.text('회의'), findsOneWidget);
     expect(find.text('모두 완료'), findsNothing);
-    expect(find.text('다음: 저녁'), findsOneWidget);
+    expect(find.text('다음: 저녁'), findsNothing);
+    expect(find.text(restQuoteForToday()), findsOneWidget);
   });
 
   testWidgets('a pinned block with no items stays horizontally centered '

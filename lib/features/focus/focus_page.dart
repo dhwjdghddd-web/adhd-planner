@@ -95,11 +95,16 @@ class _FocusPageState extends ConsumerState<FocusPage> {
 
     final pinned = widget.pinnedBlock;
     final segments = segmentsAsync.value;
+    // Whatever block the clock is inside — shown as-is, including a routine-less
+    // block's own calm rest screen. (We used to skip a checklist-less current
+    // block and defer to the next one, but now that such a block has its own
+    // proper waiting/rest screen that detour just produced a confusing "next
+    // block" screen when entering Focus during it.)
     final status = pinned != null
         ? BlockStatus(segment: pinned, isCurrent: true)
         : segments == null
             ? null
-            : _liveStatus(segments, _currentMinute);
+            : findBlockStatus(segments, _currentMinute);
 
     return Scaffold(
       body: SafeArea(
@@ -452,14 +457,3 @@ class _FocusPageState extends ConsumerState<FocusPage> {
 /// failing that, the same "다음" preview [findBlockStatus] would already show
 /// for a gap with nothing current at all — checklist-less or not, since that
 /// preview is just informational and never offers a 완료 action.
-BlockStatus _liveStatus(List<Segment> segments, int nowMinute) {
-  var candidates = segments;
-  while (true) {
-    final status = findBlockStatus(candidates, nowMinute);
-    final segment = status.segment;
-    if (!status.isCurrent || segment == null || segment.microSteps.isNotEmpty) {
-      return status;
-    }
-    candidates = candidates.where((s) => s.id != segment.id).toList();
-  }
-}
