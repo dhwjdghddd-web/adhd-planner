@@ -17,8 +17,8 @@ import '../rewards/daily_checklist_badge.dart';
 import '../rewards/streak_badge.dart';
 import '../segments/segment_editor_page.dart';
 import '../segments/segment_form_page.dart';
-import '../segments/segment_icons.dart';
-import '../memos/quick_add_button.dart' show MultiFabRow, GlobalQuickAddButton;
+import '../memos/quick_add_button.dart'
+    show MultiFabRow, GlobalQuickAddButton, fabAvoidingBottomInset;
 import '../settings/settings_page.dart';
 import 'dial_painter.dart';
 
@@ -101,37 +101,63 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
       body: Stack(
         children: [
           const Positioned.fill(child: _AmbientBackdrop()),
+          // Date/greeting header, streak/checklist badges, and the dial are one
+          // vertically-centred cluster so the header sits right above the dial
+          // rather than stranded at the top of the screen. Anything that fills
+          // the space *below* must stay above the bottom quick-add FAB.
           Column(
             children: [
-              _HomeHeader(minuteOfDay: _currentMinute),
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 8),
-                child: Center(
-                  child: Wrap(
-                    spacing: 12,
-                    alignment: WrapAlignment.center,
-                    children: [StreakBadge(), DailyChecklistBadge()],
-                  ),
+              Expanded(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    // Reserve room above the dial for the header + badges so the
+                    // whole centred cluster fits without overflowing.
+                    final dialSize = math.min(
+                      constraints.maxWidth,
+                      constraints.maxHeight - 132,
+                    );
+                    return Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _HomeHeader(minuteOfDay: _currentMinute),
+                          const SizedBox(height: 10),
+                          const Wrap(
+                            spacing: 12,
+                            alignment: WrapAlignment.center,
+                            children: [StreakBadge(), DailyChecklistBadge()],
+                          ),
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            width: dialSize,
+                            height: dialSize,
+                            child: segmentsAsync.when(
+                              data: (segments) => _Dial(
+                                segments: segments,
+                                currentMinute: _currentMinute,
+                                completedSegmentIds: completedSegmentIds,
+                              ),
+                              loading: () => const Center(child: CircularProgressIndicator()),
+                              error: (e, st) => Center(child: Text('오류: $e')),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
                 ),
               ),
-              Expanded(
-                child: segmentsAsync.when(
-                  data: (segments) => _Dial(
+              // Countdown to the next block, pinned just above the bottom
+              // quick-add FAB (never into its space — see the FAB-inset rule).
+              Padding(
+                padding: EdgeInsets.only(bottom: fabAvoidingBottomInset(context)),
+                child: segmentsAsync.maybeWhen(
+                  data: (segments) => _NextBlockCountdown(
                     segments: segments,
                     currentMinute: _currentMinute,
-                    completedSegmentIds: completedSegmentIds,
                   ),
-                  loading: () => const Center(child: CircularProgressIndicator()),
-                  error: (e, st) => Center(child: Text('오류: $e')),
+                  orElse: () => const SizedBox.shrink(),
                 ),
-              ),
-              segmentsAsync.maybeWhen(
-                data: (segments) => _TodayTimelineStrip(
-                  segments: segments,
-                  currentMinute: _currentMinute,
-                  completedSegmentIds: completedSegmentIds,
-                ),
-                orElse: () => const SizedBox.shrink(),
               ),
             ],
           ),
@@ -398,123 +424,73 @@ class _HomeHeader extends StatelessWidget {
   }
 }
 
-/// A horizontal, time-ordered strip of today's blocks beneath the dial — a
-/// glanceable overview plus shortcuts: tap a block to open it in Focus,
-/// long-press to edit it (mirrors the dial's own tap/long-press). Fills the
-/// band below the dial that would otherwise sit empty on tall screens.
-class _TodayTimelineStrip extends StatelessWidget {
-  const _TodayTimelineStrip({
-    required this.segments,
-    required this.currentMinute,
-    required this.completedSegmentIds,
-  });
+/// A calm one-line countdown to the next block's start, filling the band
+/// between the dial and the bottom quick-add FAB. Hidden when no block is still
+/// ahead today.
+class _NextBlockCountdown extends StatelessWidget {
+  const _NextBlockCountdown({required this.segments, required this.currentMinute});
 
   final List<Segment> segments;
   final int currentMinute;
-  final Set<String> completedSegmentIds;
 
   @override
   Widget build(BuildContext context) {
     if (segments.isEmpty) return const SizedBox.shrink();
     final ordered = [...segments]..sort((a, b) => a.startMinute.compareTo(b.startMinute));
+    Segment? next;
+    for (final s in ordered) {
+      if (s.startMinute > currentMinute) {
+        next = s;
+        break;
+      }
+    }
+    if (next == null) return const SizedBox.shrink();
 
-    return SizedBox(
-      height: 64,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-        itemCount: ordered.length,
-        separatorBuilder: (_, _) => const SizedBox(width: 8),
-        itemBuilder: (context, i) {
-          final s = ordered[i];
-          final isCurrent = currentMinute >= s.startMinute && currentMinute < s.endMinute;
-          return _TimelineChip(
-            segment: s,
-            isCurrent: isCurrent,
-            isDone: completedSegmentIds.contains(s.id),
-          );
-        },
-      ),
-    );
-  }
-}
+    final remaining = next.startMinute - currentMinute;
+    final h = remaining ~/ 60;
+    final m = remaining % 60;
+    final remLabel = h > 0 ? '$h시간 $m분' : '$m분';
 
-class _TimelineChip extends StatelessWidget {
-  const _TimelineChip({
-    required this.segment,
-    required this.isCurrent,
-    required this.isDone,
-  });
-
-  final Segment segment;
-  final bool isCurrent;
-  final bool isDone;
-
-  @override
-  Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final primary = theme.colorScheme.primary;
     final mutedColor = isDark ? const Color(0xFFA6B2BE) : const Color(0xFF525C68);
 
     return Semantics(
-      button: true,
-      label: '${TimeGeometry.formatMinute(segment.startMinute)} ${segment.name}'
-          '${isCurrent ? ', 현재' : ''}${isDone ? ', 완료' : ''}, 눌러서 열기',
-      child: InkWell(
-        borderRadius: BorderRadius.circular(14),
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => FocusPage.forBlock(segment)),
-        ),
-        onLongPress: () {
-          HapticFeedback.mediumImpact();
-          Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => SegmentFormPage(existing: segment)),
-          );
-        },
-        child: Container(
-          constraints: const BoxConstraints(maxWidth: 150),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(14),
-            color: isCurrent ? primary.withValues(alpha: isDark ? 0.18 : 0.10) : AppTheme.surface3(context),
-            border: Border.all(
-              color: isCurrent ? primary.withValues(alpha: 0.6) : (isDark ? Colors.transparent : const Color(0xFFE4E9EF)),
-              width: isCurrent ? 1.5 : 1,
-            ),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                isDone ? Icons.check_circle : iconForKey(segment.iconKey),
-                size: 16,
-                color: isDone ? primary : (isCurrent ? primary : mutedColor),
-              ),
-              const SizedBox(width: 6),
-              Flexible(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
+      label: '다음 구간 ${next.name}까지 $remLabel 남음',
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.schedule, size: 16, color: mutedColor),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text.rich(
+                TextSpan(
                   children: [
-                    Text(
-                      TimeGeometry.formatMinute(segment.startMinute),
-                      style: theme.textTheme.labelSmall?.copyWith(color: mutedColor),
-                    ),
-                    Text(
-                      segment.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.labelMedium?.copyWith(
-                        fontWeight: isCurrent ? FontWeight.w700 : FontWeight.w500,
-                        color: isDone ? mutedColor : null,
+                    const TextSpan(text: '다음 '),
+                    TextSpan(
+                      text: next.name,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        color: theme.colorScheme.primary,
                       ),
+                    ),
+                    const TextSpan(text: '까지 '),
+                    TextSpan(
+                      text: remLabel,
+                      style: const TextStyle(fontWeight: FontWeight.w600),
                     ),
                   ],
                 ),
+                style: theme.textTheme.bodyMedium?.copyWith(color: mutedColor),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
