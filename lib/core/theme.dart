@@ -27,7 +27,7 @@ class AppTheme {
         ? const ColorScheme.dark(
             surface: Color(0xFF171C23),
             surfaceContainerHighest: Color(0xFF1E2630),
-            primary: Color(0xFFA8CAFF),
+            primary: Color(0xFF93BBFF),
             onPrimary: Color(0xFF06305F),
             primaryContainer: Color(0xFF284B73),
             onPrimaryContainer: Color(0xFFD8E7FF),
