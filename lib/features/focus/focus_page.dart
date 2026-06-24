@@ -87,7 +87,7 @@ class _FocusPageState extends ConsumerState<FocusPage> {
         ? BlockStatus(segment: pinned, isCurrent: true)
         : segments == null
             ? null
-            : findBlockStatus(segments, _currentMinute);
+            : _liveStatus(segments, _currentMinute);
 
     return Scaffold(
       body: SafeArea(
@@ -168,7 +168,12 @@ class _FocusPageState extends ConsumerState<FocusPage> {
   /// unit.
   Widget _buildFabRow(BlockStatus? status) {
     final segment = status?.segment;
-    final showComplete = segment != null && status!.isCurrent;
+    // A block with no checklist has nothing to mark done -- pressing 완료 on
+    // one never moves the checked/total streak ratio either way (see
+    // daily_achievement.dart), so there's no real action here to offer at all,
+    // pinned/review mode included.
+    final showComplete =
+        segment != null && status!.isCurrent && segment.microSteps.isNotEmpty;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -220,9 +225,9 @@ class _FocusPageState extends ConsumerState<FocusPage> {
   Widget _buildContent(BuildContext context, BlockStatus status) {
     final theme = Theme.of(context);
     final segment = status.segment;
+    final reduceMotion = ref.watch(settingsProvider).value?.reduceMotion ?? false;
 
     if (segment == null) {
-      final reduceMotion = ref.watch(settingsProvider).value?.reduceMotion ?? false;
       return WaitingIllustration(
         reduceMotion: reduceMotion,
         message: '오늘 일정이 없어요\n지금은 편히 쉬셔도 좋습니다.',
@@ -235,7 +240,6 @@ class _FocusPageState extends ConsumerState<FocusPage> {
     if (!status.isCurrent) {
       // Not inside any block right now -- show the next one and when it starts.
       final startTime = TimeGeometry.formatMinute(segment.startMinute);
-      final reduceMotion = ref.watch(settingsProvider).value?.reduceMotion ?? false;
       return Column(
         children: [
           Expanded(
@@ -272,12 +276,17 @@ class _FocusPageState extends ConsumerState<FocusPage> {
           ),
         ),
         Expanded(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
-            child: Column(
-              children: _microStepsChecklist(segment, autoCompleteWhenAllChecked: true),
-            ),
-          ),
+          child: segment.microSteps.isEmpty
+              ? WaitingIllustration(
+                  reduceMotion: reduceMotion,
+                  message: '체크할 항목이 없어요\n편히 보내도 좋아요.',
+                )
+              : SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+                  child: Column(
+                    children: _microStepsChecklist(segment, autoCompleteWhenAllChecked: true),
+                  ),
+                ),
         ),
       ],
     );
@@ -347,5 +356,26 @@ class _FocusPageState extends ConsumerState<FocusPage> {
     }
 
     if (mounted) Navigator.of(context).pop();
+  }
+}
+
+/// [findBlockStatus] for the live (unpinned) screen specifically: a block
+/// with no checklist has nothing for this screen to do, so it shouldn't
+/// surface as a "지금" completion screen here the way it still correctly does
+/// on the dial's centre summary (which keeps using [findBlockStatus] directly,
+/// unfiltered). Excluding it and re-resolving falls through to whatever block
+/// is actually current underneath it (relevant for overlapping blocks) or,
+/// failing that, the same "다음" preview [findBlockStatus] would already show
+/// for a gap with nothing current at all — checklist-less or not, since that
+/// preview is just informational and never offers a 완료 action.
+BlockStatus _liveStatus(List<Segment> segments, int nowMinute) {
+  var candidates = segments;
+  while (true) {
+    final status = findBlockStatus(candidates, nowMinute);
+    final segment = status.segment;
+    if (!status.isCurrent || segment == null || segment.microSteps.isNotEmpty) {
+      return status;
+    }
+    candidates = candidates.where((s) => s.id != segment.id).toList();
   }
 }

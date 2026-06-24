@@ -39,7 +39,7 @@ Segment _currentBlock({
 }
 
 /// A block strictly in the future with no overlap of now (reads as "next").
-Segment _futureBlock({String id = 's1', String name = '나중 일'}) {
+Segment _futureBlock({String id = 's1', String name = '나중 일', List<String> microSteps = const []}) {
   final now = _currentMinuteOfNow();
   final start = (now + 60) > 1380 ? 1380 : now + 60;
   return Segment(
@@ -50,6 +50,7 @@ Segment _futureBlock({String id = 's1', String name = '나중 일'}) {
     startMinute: start,
     endMinute: start + 30,
     order: 0,
+    microSteps: microSteps,
   );
 }
 
@@ -83,20 +84,47 @@ void main() {
 
   testWidgets('shows the current block', (tester) async {
     final repo = FakePlannerRepository();
-    await repo.upsertSegment(_currentBlock(name: '오전'));
+    await repo.upsertSegment(_currentBlock(name: '오전', microSteps: const ['아무거나']));
 
     await openFocusPage(tester, repo);
 
     expect(find.text('오전'), findsOneWidget);
   });
 
-  testWidgets('a current block with no items stays horizontally centered '
+  testWidgets(
+      'a current block with no checklist defers to the next block instead of '
+      'showing a completion screen', (tester) async {
+    final repo = FakePlannerRepository();
+    await repo.upsertSegment(_currentBlock(id: 's1', name: '회의'));
+    await repo.upsertSegment(_futureBlock(id: 's2', name: '저녁', microSteps: const ['저녁 먹기']));
+
+    await openFocusPage(tester, repo);
+
+    expect(find.text('회의'), findsNothing);
+    expect(find.text('모두 완료'), findsNothing);
+    expect(find.text('다음: 저녁'), findsOneWidget);
+  });
+
+  testWidgets('a pinned block with no items stays horizontally centered '
       '(regression: body Column used to shrink-wrap and hug the left edge)',
       (tester) async {
     final repo = FakePlannerRepository();
-    await repo.upsertSegment(_currentBlock(name: '오전'));
+    final block = Segment(
+      id: 's1',
+      name: '오전',
+      colorValue: 0xFF000000,
+      iconKey: 'wb_sunny',
+      startMinute: 0,
+      endMinute: 60,
+      order: 0,
+    );
+    await repo.upsertSegment(block);
 
-    await openFocusPage(tester, repo);
+    await tester.pumpWidget(ProviderScope(
+      overrides: [plannerRepositoryProvider.overrideWithValue(repo)],
+      child: MaterialApp(home: FocusPage.forBlock(block)),
+    ));
+    await tester.pumpAndSettle();
 
     final screenCenterX = tester.view.physicalSize.width / tester.view.devicePixelRatio / 2;
     final titleCenterX = tester.getCenter(find.text('오전')).dx;
@@ -124,7 +152,7 @@ void main() {
 
   testWidgets('완료 records a completion and closes the screen', (tester) async {
     final repo = FakePlannerRepository();
-    await repo.upsertSegment(_currentBlock(name: '오전'));
+    await repo.upsertSegment(_currentBlock(name: '오전', microSteps: const ['아무거나']));
     final snapshots = <List<Completion>>[];
     repo.watchCompletions().listen(snapshots.add);
 
@@ -311,6 +339,7 @@ void main() {
         startMinute: 0,
         endMinute: 60,
         order: 0,
+        microSteps: const ['물 마시기'],
       );
       await repo.upsertSegment(block);
       final snapshots = <List<Completion>>[];
@@ -324,6 +353,49 @@ void main() {
 
       expect(snapshots.last.any((c) => c.segmentId == 's1'), true);
       expect(find.byType(FocusPage), findsNothing);
+    });
+
+    testWidgets('a block with no checklist has no 모두 완료 button in review mode '
+        "either (nothing to complete -- doesn't move the streak ratio at all)",
+        (tester) async {
+      final repo = FakePlannerRepository();
+      final block = Segment(
+        id: 's1',
+        name: '퇴근',
+        colorValue: 0xFF000000,
+        iconKey: 'wb_sunny',
+        startMinute: 0,
+        endMinute: 60,
+        order: 0,
+      );
+      await repo.upsertSegment(block);
+
+      await tester.pumpWidget(wrapForBlock(repo, block));
+      await tester.pumpAndSettle();
+
+      expect(find.text('퇴근'), findsOneWidget);
+      expect(find.text('모두 완료'), findsNothing);
+    });
+
+    testWidgets('a block with no checklist shows the calm waiting illustration '
+        'instead of a blank body', (tester) async {
+      final repo = FakePlannerRepository();
+      final block = Segment(
+        id: 's1',
+        name: '퇴근',
+        colorValue: 0xFF000000,
+        iconKey: 'wb_sunny',
+        startMinute: 0,
+        endMinute: 60,
+        order: 0,
+      );
+      await repo.upsertSegment(block);
+
+      await tester.pumpWidget(wrapForBlock(repo, block));
+      await tester.pumpAndSettle();
+
+      expect(find.text('퇴근'), findsOneWidget);
+      expect(find.textContaining('체크할 항목이 없어요'), findsOneWidget);
     });
   });
 

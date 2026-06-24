@@ -207,7 +207,7 @@ class DialPainter extends CustomPainter {
       canvas.drawArc(rect, startAngle, sweep, false, paint);
       _paintSegmentLabel(canvas, center, radius, segment);
 
-      if (completedSegmentIds.contains(segment.id)) {
+      if (segment.microSteps.isNotEmpty && completedSegmentIds.contains(segment.id)) {
         final midMinute = (segment.startMinute + segment.lengthMinutes / 2).round();
         _paintCompletedBadge(canvas, TimeGeometry.pointOnCircle(center, radius, midMinute));
       }
