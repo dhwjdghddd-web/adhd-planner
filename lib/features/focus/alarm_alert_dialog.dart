@@ -17,9 +17,12 @@ import 'focus_page.dart';
 /// is all the interaction a block alarm needs.
 ///
 /// [notificationId] identifies exactly which still-showing (and insistently
-/// repeating) notification to dismiss once 확인 is pressed — the notification's
-/// `autoCancel` is off specifically so tapping it to open this dialog doesn't
-/// already silently stop the sound/vibration before the user has acted on it.
+/// repeating) notification to dismiss once 확인 is pressed -- though by the
+/// time this dialog is even showing, the tap that opened it (see
+/// notification_service.dart's `_handleResponse`) has already silenced the
+/// alarm; 확인 re-cancelling the same id here is a harmless no-op safety net
+/// for the one path that reaches this dialog without a real notification tap
+/// at all (the foreground clock watcher, `_ForegroundAlarmWatcher`).
 class AlarmAlertDialog extends ConsumerWidget {
   const AlarmAlertDialog({
     super.key,

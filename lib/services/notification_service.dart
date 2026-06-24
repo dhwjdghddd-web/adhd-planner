@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -84,17 +86,19 @@ AndroidNotificationDetails _androidDetailsFor(ScheduledSpec spec, AppSettings se
     audioAttributesUsage: _alarmAudioUsage,
     category: _alarmCategory,
     additionalFlags: _insistentFlag,
-    // Tapping the body must not silently stop the sound/vibration before the
-    // alert dialog's own 확인 is pressed -- autoCancel's default (true) would
-    // dismiss (and so stop) it right on tap.
+    // autoCancel's default (true) only removes the notification (and so its
+    // own sound) on tap -- it has no idea about the separate native Vibrator
+    // alarm riding alongside it, which would keep buzzing regardless. Left
+    // off so dismissal always goes through our own explicit cancel in
+    // _handleResponse below, which stops both.
     autoCancel: false,
     timeoutAfter: _alarmRepeatMs,
     // Pops AlarmAlertDialog over the lock screen like a real alarm clock,
     // rather than waiting for the user to pull down the shade and tap it.
     fullScreenIntent: true,
-    // No action buttons: the only alarm interaction (확인) goes through
-    // AlarmAlertDialog, which is the one path that reliably stops the separate
-    // native Vibrator alarm too.
+    // No action buttons: a plain body tap (or the fullScreenIntent
+    // auto-launch) is the only alarm interaction there is, and it already
+    // silences the alarm on its own -- see _handleResponse.
   );
 }
 
@@ -255,15 +259,12 @@ class NotificationService {
   }
 
   /// Dismisses a still-showing notification outright — needed when a UI
-  /// screen (rather than tapping the notification's own action) handles 확인,
-  /// since the insistently-repeating alarm notification has to be cancelled
-  /// manually to actually stop the sound. Also stops (and un-arms) this id's
+  /// screen (rather than the notification tap itself) handles 확인, since the
+  /// insistently-repeating alarm notification has to be cancelled manually to
+  /// actually stop the sound. Also stops (and un-arms) this id's
   /// directly-triggered Vibrator call alongside it (see VibrationAlarmReceiver
   /// .kt) — that one keeps buzzing on its own timer independently.
-  Future<void> cancelNotification(int id) async {
-    await _plugin.cancel(id);
-    await _cancelVibrationAlarm(id);
-  }
+  Future<void> cancelNotification(int id) => _silenceAlarm(id);
 
   /// Cancels every still-armed notification (and the Vibrator alarm riding
   /// alongside each) for a block that's about to be deleted. `rescheduleAll`'s
@@ -336,15 +337,24 @@ class NotificationService {
     }
   }
 
-  Future<void> _cancelVibrationAlarm(int requestCode) async {
-    try {
-      await _alarmChannelChannel.invokeMethod('cancelVibrationAlarm', {
-        'requestCode': requestCode,
-      });
-    } catch (e) {
-      // No platform channel available (e.g. under flutter test).
-      logSwallowed('cancelVibrationAlarm', e);
-    }
+}
+
+/// Stops [id]'s alarm notification and the native Vibrator alarm riding
+/// alongside it (see VibrationAlarmReceiver.kt). Shared by
+/// [NotificationService.cancelNotification] (a UI screen's own 확인) and
+/// [_handleResponse] (any tap on the notification itself, including the
+/// fullScreenIntent auto-launch) — a closed/folded phone's cover screen can't
+/// reliably render the dialog that follows a tap, so the alarm has to
+/// actually stop right there rather than wait on reaching 확인 inside it.
+Future<void> _silenceAlarm(int id) async {
+  await _plugin.cancel(id);
+  try {
+    await _alarmChannelChannel.invokeMethod('cancelVibrationAlarm', {
+      'requestCode': id,
+    });
+  } catch (e) {
+    // No platform channel available (e.g. under flutter test).
+    logSwallowed('cancelVibrationAlarm', e);
   }
 }
 
@@ -380,17 +390,22 @@ void handleNotificationResponseBackground(NotificationResponse response) {
 
 // The notifications carry no action buttons (see _androidDetailsFor), so this
 // only ever handles a plain body-tap or the system auto-launching the app via
-// fullScreenIntent -- both arrive in the main isolate, where App's launcher
-// picks up the pending alert. The only thing the user can do (확인) happens in
-// AlarmAlertDialog, never on the notification itself.
+// fullScreenIntent. Either way the tap itself already silences the alarm --
+// AlarmAlertDialog (popped by App's launcher picking up the pending alert
+// below) is then just the review/confirm step into Focus, not the thing that
+// stops the buzzing. That matters most exactly when it's least reachable: a
+// closed/folded phone's cover screen may never render the dialog properly,
+// but the tap that got this far always fires.
 void _handleResponse(NotificationResponse response) {
   final payload = response.payload;
   if (payload == null) return;
   final parts = payload.split(':');
   if (parts.length != 2 || parts[0] != 'block') return;
-  if (response.id == null) return;
+  final id = response.id;
+  if (id == null) return;
+  unawaited(_silenceAlarm(id));
   pendingAlarmAlert.value = PendingAlarmAlert(
-    notificationId: response.id!,
+    notificationId: id,
     segmentId: parts[1],
   );
 }
