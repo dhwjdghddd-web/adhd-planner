@@ -3,8 +3,10 @@ package com.adhdplanner.adhd_planner
 import android.app.Activity
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.media.AudioAttributes
 import android.media.RingtoneManager
 import android.net.Uri
@@ -37,10 +39,17 @@ class MainActivity : FlutterActivity() {
     private val pickRequestCode = 4242
     private var pendingResult: MethodChannel.Result? = null
 
+    // Set while an AlarmScreen is showing: lets native treat a power-button
+    // press (ACTION_SCREEN_OFF) as "dismiss this alarm" and call back into Dart.
+    private var alarmChannel: MethodChannel? = null
+    private var screenOffReceiver: BroadcastReceiver? = null
+    private var guardedNotificationId: Int = -1
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName)
-            .setMethodCallHandler { call, result ->
+        val channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName)
+        alarmChannel = channel
+        channel.setMethodCallHandler { call, result ->
                 when (call.method) {
                     "pickAlarmSound" -> {
                         pendingResult = result
@@ -76,6 +85,15 @@ class MainActivity : FlutterActivity() {
                         // by id (reaches orphans its own cancelAll tracking lost).
                         val cancelled = VibrationAlarmReceiver.cancelAll(applicationContext)
                         result.success(cancelled)
+                    }
+                    "startScreenOffGuard" -> {
+                        guardedNotificationId = (call.argument<Number>("notificationId"))?.toInt() ?: -1
+                        startScreenOffGuard()
+                        result.success(null)
+                    }
+                    "stopScreenOffGuard" -> {
+                        stopScreenOffGuard()
+                        result.success(null)
                     }
                     else -> result.notImplemented()
                 }
@@ -171,6 +189,46 @@ class MainActivity : FlutterActivity() {
         val requestCode = (call.argument<Number>("requestCode"))!!.toInt()
         VibrationAlarmReceiver.cancel(applicationContext, requestCode)
         result.success(null)
+    }
+
+    // Registers a one-shot watcher for the screen turning off (the power button)
+    // while an alarm is showing. On the stock clock app the power button stops a
+    // ringing alarm; this mirrors that. ACTION_SCREEN_OFF is a protected system
+    // broadcast, so a plain context-registered receiver is allowed on all API
+    // levels without an exported/not-exported flag.
+    private fun startScreenOffGuard() {
+        if (screenOffReceiver != null) return
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                if (intent.action != Intent.ACTION_SCREEN_OFF) return
+                // Silence the still-ringing alarm without unarming its daily
+                // recurrence: dismiss the shown notification (stops its looping
+                // sound) and stop the current vibration only -- stopVibration
+                // cancels the active buzz, not the scheduled AlarmManager alarm.
+                if (guardedNotificationId >= 0) {
+                    val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                    nm.cancel(guardedNotificationId)
+                }
+                VibrationAlarmReceiver.stopVibration(applicationContext)
+                // Ask Dart to close the alarm screen (runs on the main thread,
+                // since this dynamically-registered receiver fires there).
+                alarmChannel?.invokeMethod("onAlarmDismissedByPower", null)
+                stopScreenOffGuard()
+            }
+        }
+        screenOffReceiver = receiver
+        registerReceiver(receiver, IntentFilter(Intent.ACTION_SCREEN_OFF))
+    }
+
+    private fun stopScreenOffGuard() {
+        val receiver = screenOffReceiver ?: return
+        screenOffReceiver = null
+        guardedNotificationId = -1
+        try {
+            unregisterReceiver(receiver)
+        } catch (e: IllegalArgumentException) {
+            // Already unregistered -- harmless.
+        }
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {

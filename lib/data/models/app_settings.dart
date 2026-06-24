@@ -33,6 +33,9 @@ class AppSettings {
   final String? alarmSoundUri;
   final String? alarmSoundLabel;
   final AlarmVibrationPattern vibrationPattern;
+  // Day-key (yyyy-MM-dd) of the last day the "all of today's checklist done"
+  // celebration was shown, so it fires at most once per day. null = never.
+  final String? lastCelebratedDate;
 
   const AppSettings({
     this.themeMode = AppThemeMode.system,
@@ -43,6 +46,7 @@ class AppSettings {
     this.alarmSoundUri,
     this.alarmSoundLabel,
     this.vibrationPattern = AlarmVibrationPattern.defaultPattern,
+    this.lastCelebratedDate,
   });
 
   const AppSettings.defaults() : this();
@@ -59,6 +63,7 @@ class AppSettings {
     // `alarmSoundUri: null` argument can't be told apart from "unchanged".
     bool clearAlarmSound = false,
     AlarmVibrationPattern? vibrationPattern,
+    String? lastCelebratedDate,
   }) {
     return AppSettings(
       themeMode: themeMode ?? this.themeMode,
@@ -69,6 +74,7 @@ class AppSettings {
       alarmSoundUri: clearAlarmSound ? null : (alarmSoundUri ?? this.alarmSoundUri),
       alarmSoundLabel: clearAlarmSound ? null : (alarmSoundLabel ?? this.alarmSoundLabel),
       vibrationPattern: vibrationPattern ?? this.vibrationPattern,
+      lastCelebratedDate: lastCelebratedDate ?? this.lastCelebratedDate,
     );
   }
 
@@ -81,6 +87,7 @@ class AppSettings {
         'alarmSoundUri': alarmSoundUri,
         'alarmSoundLabel': alarmSoundLabel,
         'vibrationPattern': vibrationPattern.name,
+        'lastCelebratedDate': lastCelebratedDate,
       };
 
   factory AppSettings.fromMap(Map<String, dynamic> map) => AppSettings(
@@ -98,5 +105,6 @@ class AppSettings {
           (v) => v.name == map['vibrationPattern'],
           orElse: () => AlarmVibrationPattern.defaultPattern,
         ),
+        lastCelebratedDate: map['lastCelebratedDate'] as String?,
       );
 }

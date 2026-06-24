@@ -7,7 +7,7 @@ import 'package:adhd_planner/data/models/micro_step_progress.dart';
 import 'package:adhd_planner/data/models/segment.dart';
 import 'package:adhd_planner/data/providers.dart';
 import 'package:adhd_planner/data/today.dart';
-import 'package:adhd_planner/features/focus/alarm_alert_dialog.dart';
+import 'package:adhd_planner/features/focus/alarm_screen.dart';
 import 'package:adhd_planner/services/notification_service.dart';
 
 import 'fakes/fake_planner_repository.dart';
@@ -31,11 +31,11 @@ Segment _block({
 }
 
 void main() {
-  // pendingAlarmAlert/alarmDialogOpen are module-level singletons -- reset them
-  // so one test's leftover dialog state can't leak into the next.
+  // pendingAlarmAlert/alarmScreenOpen are module-level singletons -- reset them
+  // so one test's leftover alarm state can't leak into the next.
   setUp(() {
     pendingAlarmAlert.value = null;
-    alarmDialogOpen.value = false;
+    alarmScreenOpen.value = false;
   });
 
   testWidgets('App boots and shows the circular planner home', (tester) async {
@@ -88,8 +88,13 @@ void main() {
     ));
     await tester.pumpAndSettle();
 
-    expect(find.byType(AlarmAlertDialog), findsOneWidget);
-    expect(find.text('약 먹기'), findsOneWidget);
+    expect(find.byType(AlarmScreen), findsOneWidget);
+    // Scoped to the alarm screen: the block name also now appears in the home
+    // screen's today-timeline strip behind it.
+    expect(
+      find.descendant(of: find.byType(AlarmScreen), matching: find.text('약 먹기')),
+      findsOneWidget,
+    );
     // Consumed, not left around to re-trigger on the next rebuild.
     expect(pendingAlarmAlert.value, isNull);
   });
@@ -111,12 +116,17 @@ void main() {
     addTearDown(() => pendingAlarmAlert.value = null);
     await tester.pumpAndSettle();
 
-    expect(find.byType(AlarmAlertDialog), findsOneWidget);
+    expect(find.byType(AlarmScreen), findsOneWidget);
   });
 
   testWidgets('_AchievementRecorder banks settled past days but never today', (tester) async {
     final repo = FakePlannerRepository();
-    await repo.saveSettings(const AppSettings.defaults().copyWith(onboardingComplete: true));
+    // Mark today already celebrated so the full-screen completion celebration
+    // (today is set up 100% complete below) doesn't pop and keep the confetti
+    // animation pumping forever -- this test is about achievement banking.
+    await repo.saveSettings(
+      AppSettings.defaults().copyWith(onboardingComplete: true, lastCelebratedDate: dayKeyFor()),
+    );
     // A block with two items.
     await repo.upsertSegment(_block(id: 's1', name: '약 먹기', microSteps: const ['a', 'b']));
     // Both today and yesterday cleared every item (100% >= the 50% bar).

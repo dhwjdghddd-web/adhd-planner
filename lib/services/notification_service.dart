@@ -93,7 +93,7 @@ AndroidNotificationDetails _androidDetailsFor(ScheduledSpec spec, AppSettings se
     // _handleResponse below, which stops both.
     autoCancel: false,
     timeoutAfter: _alarmRepeatMs,
-    // Pops AlarmAlertDialog over the lock screen like a real alarm clock,
+    // Launches AlarmScreen over the lock screen like a real alarm clock,
     // rather than waiting for the user to pull down the shade and tap it.
     fullScreenIntent: true,
     // No action buttons: a plain body tap (or the fullScreenIntent
@@ -398,7 +398,7 @@ void handleNotificationResponseBackground(NotificationResponse response) {
 // The notifications carry no action buttons (see _androidDetailsFor), so this
 // only ever handles a plain body-tap or the system auto-launching the app via
 // fullScreenIntent. Either way the tap itself already silences the alarm --
-// AlarmAlertDialog (popped by App's launcher picking up the pending alert
+// AlarmScreen (pushed by App's launcher picking up the pending alert
 // below) is then just the review/confirm step into Focus, not the thing that
 // stops the buzzing. That matters most exactly when it's least reachable: a
 // closed/folded phone's cover screen may never render the dialog properly,

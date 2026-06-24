@@ -9,10 +9,11 @@ import 'data/models/achieved_day.dart';
 import 'data/models/app_settings.dart';
 import 'data/providers.dart';
 import 'data/today.dart';
-import 'features/focus/alarm_alert_dialog.dart';
+import 'features/focus/alarm_screen.dart';
 import 'features/memos/quick_add_button.dart';
 import 'features/onboarding/onboarding_page.dart';
 import 'features/planner/planner_page.dart';
+import 'features/rewards/completion_celebration.dart';
 import 'features/rewards/daily_achievement.dart';
 import 'services/notification_service.dart';
 
@@ -47,6 +48,7 @@ class App extends ConsumerWidget {
               const _ForegroundAlarmWatcher(),
               const _AccountAlarmSync(),
               const _AchievementRecorder(),
+              const _CompletionCelebrator(),
             ],
           ),
         );
@@ -55,30 +57,33 @@ class App extends ConsumerWidget {
   }
 }
 
-/// True while [AlarmAlertDialog] is up, shared by [_AlarmAlertLauncher]
+/// True while [AlarmScreen] is up, shared by [_AlarmAlertLauncher]
 /// (the notification-tap/fullScreenIntent path) and
 /// [_ForegroundAlarmWatcher] (the "app is already open" path below) so
-/// they never pop two dialogs on top of each other for the same alarm.
+/// they never push two alarm screens on top of each other for the same alarm.
 /// Public (not `_`-prefixed) so tests can reset it between cases the same
 /// way they already do for `quickAddSheetOpen`/`fabSuppressionCount`.
-final ValueNotifier<bool> alarmDialogOpen = ValueNotifier(false);
+final ValueNotifier<bool> alarmScreenOpen = ValueNotifier(false);
 
-void _showAlarmDialog({
+void _showAlarmScreen({
   required String segmentId,
   required int notificationId,
 }) {
-  if (alarmDialogOpen.value) return;
-  final context = appNavigatorKey.currentContext;
-  if (context == null) return;
-  alarmDialogOpen.value = true;
-  showDialog<void>(
-    context: context,
-    barrierDismissible: false,
-    builder: (_) => AlarmAlertDialog(
-      segmentId: segmentId,
-      notificationId: notificationId,
-    ),
-  ).whenComplete(() => alarmDialogOpen.value = false);
+  if (alarmScreenOpen.value) return;
+  final navigator = appNavigatorKey.currentState;
+  if (navigator == null) return;
+  alarmScreenOpen.value = true;
+  // A full-screen route, not a dialog: it takes the whole screen (and, with the
+  // activity's showWhenLocked/turnScreenOn, the lock screen) like a real alarm.
+  navigator
+      .push(MaterialPageRoute<void>(
+        fullscreenDialog: true,
+        builder: (_) => AlarmScreen(
+          segmentId: segmentId,
+          notificationId: notificationId,
+        ),
+      ))
+      .whenComplete(() => alarmScreenOpen.value = false);
 }
 
 ThemeMode _toThemeMode(AppThemeMode mode) => switch (mode) {
@@ -137,9 +142,9 @@ class _RootRouterState extends ConsumerState<_RootRouter> {
 /// No visual presence of its own — just watches [pendingAlarmAlert] (set by
 /// notification_service.dart whenever the main alarm notification is
 /// tapped, including the system auto-launching the app via
-/// fullScreenIntent) and pops up [AlarmAlertDialog] once the Navigator
+/// fullScreenIntent) and pushes [AlarmScreen] once the Navigator
 /// actually exists. A plain callback from the notification handler can't
-/// show the dialog directly: on a cold start, that handler can fire before
+/// show the screen directly: on a cold start, that handler can fire before
 /// `runApp()`'s widget tree — and therefore [appNavigatorKey] — is ready.
 class _AlarmAlertLauncher extends StatefulWidget {
   const _AlarmAlertLauncher();
@@ -164,7 +169,7 @@ class _AlarmAlertLauncherState extends State<_AlarmAlertLauncher> {
     if (pending == null) return;
     if (appNavigatorKey.currentContext == null) return;
     pendingAlarmAlert.value = null;
-    _showAlarmDialog(
+    _showAlarmScreen(
       segmentId: pending.segmentId,
       notificationId: pending.notificationId,
     );
@@ -180,11 +185,11 @@ class _AlarmAlertLauncherState extends State<_AlarmAlertLauncher> {
   Widget build(BuildContext context) => const SizedBox.shrink();
 }
 
-/// Pops [AlarmAlertDialog] on its own, without waiting for a notification
+/// Pushes [AlarmScreen] on its own, without waiting for a notification
 /// tap, whenever a block's start alarm time arrives while this app is already
 /// the one on screen — checked once a second (cheap: just a minute-of-day
 /// comparison) but only acted on once per actual minute change, so a block's
-/// start time only ever opens the dialog once. The underlying notification
+/// start time only ever opens the screen once. The underlying notification
 /// still fires too (so the alarm still works when the app isn't in the
 /// foreground); this just means whoever's already looking at the app doesn't
 /// have to notice and tap a heads-up banner first.
@@ -217,7 +222,7 @@ class _ForegroundAlarmWatcherState extends ConsumerState<_ForegroundAlarmWatcher
     for (final segment in segments) {
       if (!segment.alarmEnabled) continue;
       if (segment.startMinute == minuteOfDay) {
-        _showAlarmDialog(
+        _showAlarmScreen(
           segmentId: segment.id,
           notificationId: notificationIdFor(segment.id, 0),
         );
@@ -365,6 +370,75 @@ class _AchievementRecorderState extends ConsumerState<_AchievementRecorder> {
           }
         }
       });
+    }
+
+    return const SizedBox.shrink();
+  }
+}
+
+/// No visual presence — watches today's checklist progress and, the moment every
+/// one of today's "루틴" items is ticked, pops the full-screen completion
+/// celebration ([showCompletionCelebration]) exactly once per day. The day-key
+/// of the last celebration is persisted in [AppSettings.lastCelebratedDate], so
+/// it doesn't re-fire on rebuild, app restart, or un-checking and re-checking
+/// the same day. Lives here (not on the home screen) so it lands wherever the
+/// final item is checked — Focus, the catch-up checklist, anywhere.
+class _CompletionCelebrator extends ConsumerStatefulWidget {
+  const _CompletionCelebrator();
+
+  @override
+  ConsumerState<_CompletionCelebrator> createState() => _CompletionCelebratorState();
+}
+
+class _CompletionCelebratorState extends ConsumerState<_CompletionCelebrator> {
+  // Guards a double-pop in the window between deciding to celebrate and the
+  // persisted lastCelebratedDate write round-tripping back through settings.
+  bool _shownThisSession = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final segments = ref.watch(segmentsProvider).value;
+    final completions = ref.watch(completionsProvider).value;
+    final progress = ref.watch(microStepProgressProvider).value;
+    final settings = ref.watch(settingsProvider).value;
+
+    if (segments == null || completions == null || progress == null || settings == null) {
+      return const SizedBox.shrink();
+    }
+
+    final todayKey = dayKeyFor();
+    final achievement = dailyAchievementFor(
+      dateKey: todayKey,
+      segments: segments,
+      completions: completions,
+      progress: progress,
+    );
+
+    // Only blocks that actually use checklist items can be "all done" -- a day
+    // with no items at all never triggers it (there's nothing to finish).
+    final fullyDone = achievement.total > 0 && achievement.checked >= achievement.total;
+    final alreadyToday = settings.lastCelebratedDate == todayKey;
+
+    if (fullyDone && !alreadyToday && !_shownThisSession) {
+      _shownThisSession = true;
+      // After this frame: persisting (and showing a dialog) mid-build would
+      // re-enter the provider graph / Navigator.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        // Fire-and-forget: the Firestore write's Future doesn't resolve offline,
+        // but the local cache (which gates re-firing) updates synchronously.
+        final repo = ref.read(plannerRepositoryProvider);
+        repo
+            ?.saveSettings(settings.copyWith(lastCelebratedDate: todayKey))
+            .catchError((Object e) => logSwallowed('완료 축하 표시일 저장', e));
+        final ctx = appNavigatorKey.currentContext;
+        if (ctx != null) {
+          showCompletionCelebration(ctx, reduceMotion: settings.reduceMotion);
+        }
+      });
+    } else if (!fullyDone && _shownThisSession) {
+      // Fell back below 100% (un-checked an item) -- reset the session guard so a
+      // later day can celebrate again (lastCelebratedDate still gates today).
+      _shownThisSession = false;
     }
 
     return const SizedBox.shrink();
