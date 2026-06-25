@@ -95,4 +95,28 @@ void main() {
     expect(find.byType(AlarmScreen), findsNothing);
     expect(find.byType(FocusPage), findsOneWidget);
   });
+
+  testWidgets('dismissing while already on a Focus screen leaves exactly one Focus '
+      '(no stacked double-Focus)', (tester) async {
+    final repo = FakePlannerRepository();
+    await repo.upsertSegment(_block());
+    await tester.pumpWidget(wrap(repo));
+    await tester.pumpAndSettle();
+
+    final navigator = appNavigatorKey.currentState!;
+    // The user is already viewing this block in Focus when the alarm fires.
+    navigator.push(MaterialPageRoute<void>(builder: (_) => FocusPage.forBlock(_block())));
+    await tester.pumpAndSettle();
+    navigator.push(MaterialPageRoute<void>(
+      builder: (_) => const AlarmScreen(segmentId: 's1', notificationId: 42),
+    ));
+    await tester.pumpAndSettle();
+
+    await tester.drag(find.byKey(const Key('alarm-dismiss-thumb')), const Offset(600, 0));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(AlarmScreen), findsNothing);
+    // Exactly one Focus, not the old one plus a freshly pushed one.
+    expect(find.byType(FocusPage), findsOneWidget);
+  });
 }

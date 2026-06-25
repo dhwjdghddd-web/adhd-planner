@@ -165,10 +165,17 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
   // start this block" leads straight into actually doing it (and ticking its
   // 루틴 items). It never records a completion on its own -- that's Focus's job
   // once the items are checked.
+  //
+  // pushAndRemoveUntil down to the root (not pushReplacement): the alarm can
+  // fire while the user is *already* on a Focus screen, and a plain replacement
+  // would leave that earlier Focus underneath this one -- two stacked Focus
+  // screens, needing two back-taps to reach home. Resetting to [home, Focus]
+  // guarantees exactly one Focus regardless of what was open when it rang.
   void _dismiss(Segment segment) {
     unawaited(_tryCancelNotification());
-    Navigator.of(context).pushReplacement(
+    Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute(builder: (_) => FocusPage.forBlock(segment)),
+      (route) => route.isFirst,
     );
   }
 
