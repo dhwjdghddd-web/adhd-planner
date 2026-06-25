@@ -287,26 +287,27 @@ class _FocusPageState extends ConsumerState<FocusPage> {
         // one without read as the same family instead of an alarm icon clashing
         // with the calm rings.
         Padding(
-          padding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
+          padding: const EdgeInsets.fromLTRB(24, 40, 24, 0),
           child: Semantics(
             label: '지금 집중: ${segment.name}',
             child: Column(
               children: [
                 WaitingIllustration(
                   reduceMotion: reduceMotion,
-                  size: 150,
+                  size: 220,
+                  showOrbit: false,
                   message: '',
                   center: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(
                         iconForKey(segment.iconKey),
-                        size: 30,
+                        size: 34,
                         color: theme.colorScheme.primary,
                       ),
                       const SizedBox(height: 6),
                       ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 120),
+                        constraints: const BoxConstraints(maxWidth: 130),
                         child: Text(
                           segment.name,
                           style: theme.textTheme.titleMedium,
@@ -318,7 +319,7 @@ class _FocusPageState extends ConsumerState<FocusPage> {
                     ],
                   ),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 16),
                 const StreakBadge(),
               ],
             ),
@@ -326,7 +327,7 @@ class _FocusPageState extends ConsumerState<FocusPage> {
         ),
         Expanded(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+            padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
             child: Column(
               children: _microStepsChecklist(segment, autoCompleteWhenAllChecked: true),
             ),

@@ -101,65 +101,62 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
       body: Stack(
         children: [
           const Positioned.fill(child: _AmbientBackdrop()),
-          // Date/greeting header, streak/checklist badges, and the dial are one
-          // vertically-centred cluster so the header sits right above the dial
-          // rather than stranded at the top of the screen. Anything that fills
-          // the space *below* must stay above the bottom quick-add FAB.
-          Column(
-            children: [
-              Expanded(
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    // Reserve room above the dial for the header + badges so the
-                    // whole centred cluster fits without overflowing.
-                    final dialSize = math.min(
-                      constraints.maxWidth,
-                      constraints.maxHeight - 132,
-                    );
-                    return Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          _HomeHeader(minuteOfDay: _currentMinute),
-                          const SizedBox(height: 10),
-                          const Wrap(
-                            spacing: 12,
-                            alignment: WrapAlignment.center,
-                            children: [StreakBadge(), DailyChecklistBadge()],
-                          ),
-                          const SizedBox(height: 12),
-                          SizedBox(
-                            width: dialSize,
-                            height: dialSize,
-                            child: segmentsAsync.when(
-                              data: (segments) => _Dial(
-                                segments: segments,
-                                currentMinute: _currentMinute,
-                                completedSegmentIds: completedSegmentIds,
-                              ),
-                              loading: () => const Center(child: CircularProgressIndicator()),
-                              error: (e, st) => Center(child: Text('오류: $e')),
-                            ),
-                          ),
-                        ],
+          // Header, badges, dial, and the next-block countdown are ONE
+          // vertically-centred group, balanced within the space above the
+          // bottom quick-add FAB. Centring the whole group (rather than pinning
+          // header to the top and countdown to the bottom) keeps both reading as
+          // a calm cluster around the dial, and the LayoutBuilder sizing keeps
+          // that balance on any screen height. Reserving the FAB inset at the
+          // bottom guarantees nothing ever sits in the FAB's space.
+          Padding(
+            padding: EdgeInsets.only(bottom: fabAvoidingBottomInset(context)),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                // Dial is kept a little narrower than the full width (so it
+                // doesn't run edge-to-edge and crowd the texts), with generous
+                // gaps above/below so the header and countdown read as clearly
+                // separated from it. Reserve covers header+badges+countdown+gaps.
+                final dialSize = math
+                    .min(constraints.maxWidth * 0.9, constraints.maxHeight - 260)
+                    .clamp(180.0, constraints.maxWidth);
+                return Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _HomeHeader(minuteOfDay: _currentMinute),
+                      const SizedBox(height: 12),
+                      const Wrap(
+                        spacing: 12,
+                        alignment: WrapAlignment.center,
+                        children: [StreakBadge(), DailyChecklistBadge()],
                       ),
-                    );
-                  },
-                ),
-              ),
-              // Countdown to the next block, pinned just above the bottom
-              // quick-add FAB (never into its space — see the FAB-inset rule).
-              Padding(
-                padding: EdgeInsets.only(bottom: fabAvoidingBottomInset(context)),
-                child: segmentsAsync.maybeWhen(
-                  data: (segments) => _NextBlockCountdown(
-                    segments: segments,
-                    currentMinute: _currentMinute,
+                      const SizedBox(height: 56),
+                      SizedBox(
+                        width: dialSize,
+                        height: dialSize,
+                        child: segmentsAsync.when(
+                          data: (segments) => _Dial(
+                            segments: segments,
+                            currentMinute: _currentMinute,
+                            completedSegmentIds: completedSegmentIds,
+                          ),
+                          loading: () => const Center(child: CircularProgressIndicator()),
+                          error: (e, st) => Center(child: Text('오류: $e')),
+                        ),
+                      ),
+                      const SizedBox(height: 56),
+                      segmentsAsync.maybeWhen(
+                        data: (segments) => _NextBlockCountdown(
+                          segments: segments,
+                          currentMinute: _currentMinute,
+                        ),
+                        orElse: () => const SizedBox.shrink(),
+                      ),
+                    ],
                   ),
-                  orElse: () => const SizedBox.shrink(),
-                ),
-              ),
-            ],
+                );
+              },
+            ),
           ),
         ],
       ),
@@ -408,7 +405,7 @@ class _HomeHeader extends StatelessWidget {
     final mutedColor = isDark ? const Color(0xFFA6B2BE) : const Color(0xFF525C68);
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
+      padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [

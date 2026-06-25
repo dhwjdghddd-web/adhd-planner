@@ -9,10 +9,16 @@ class WaitingIllustration extends StatefulWidget {
     this.message = '곧 알려드릴게요\n지금은 쉬어도 좋아요',
     this.center,
     this.size = 200,
+    this.showOrbit = true,
   });
 
   final bool reduceMotion;
   final String message;
+
+  /// Whether to draw the small dot orbiting the rings. Off for the block
+  /// icon+name compositions, where the moving dot just distracts from the
+  /// icon at the centre.
+  final bool showOrbit;
 
   /// Optional widget sat at the dead centre of the rings (inside the inner
   /// breathing ring), so the composition can read as one object — e.g. a
@@ -121,6 +127,7 @@ class _WaitingIllustrationState extends State<WaitingIllustration>
                         primaryColor: theme.colorScheme.primary,
                         outlineColor: theme.colorScheme.outline,
                         isDark: isDark,
+                        showOrbit: widget.showOrbit,
                       ),
                     );
                   },
@@ -158,6 +165,7 @@ class _ConcentricRingsPainter extends CustomPainter {
     required this.primaryColor,
     required this.outlineColor,
     required this.isDark,
+    required this.showOrbit,
   });
 
   final double breatheScale;
@@ -165,6 +173,7 @@ class _ConcentricRingsPainter extends CustomPainter {
   final Color primaryColor;
   final Color outlineColor;
   final bool isDark;
+  final bool showOrbit;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -220,9 +229,11 @@ class _ConcentricRingsPainter extends CustomPainter {
     canvas.drawCircle(center, innerRadius, primaryInnerPaint);
 
     // Draw a single small dot on the mid orbit marking "what's next"
-    final dotX = center.dx + midRadius * math.cos(orbitAngle);
-    final dotY = center.dy + midRadius * math.sin(orbitAngle);
-    canvas.drawCircle(Offset(dotX, dotY), 4.5, dotPaint);
+    if (showOrbit) {
+      final dotX = center.dx + midRadius * math.cos(orbitAngle);
+      final dotY = center.dy + midRadius * math.sin(orbitAngle);
+      canvas.drawCircle(Offset(dotX, dotY), 4.5, dotPaint);
+    }
   }
 
   @override
@@ -231,6 +242,7 @@ class _ConcentricRingsPainter extends CustomPainter {
         oldDelegate.orbitAngle != orbitAngle ||
         oldDelegate.primaryColor != primaryColor ||
         oldDelegate.outlineColor != outlineColor ||
-        oldDelegate.isDark != isDark;
+        oldDelegate.isDark != isDark ||
+        oldDelegate.showOrbit != showOrbit;
   }
 }
