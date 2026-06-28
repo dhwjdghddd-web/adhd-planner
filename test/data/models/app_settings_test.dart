@@ -83,6 +83,17 @@ void main() {
       expect(restored.leadMinutes, 10);
     });
 
+    test('toMap/fromMap round-trips lastMemoNudgeDate', () {
+      const settings = AppSettings(lastMemoNudgeDate: '2026-06-20');
+      final restored = AppSettings.fromMap(settings.toMap());
+      expect(restored.lastMemoNudgeDate, '2026-06-20');
+    });
+
+    test('fromMap defaults lastMemoNudgeDate to null on a legacy doc missing it', () {
+      final restored = AppSettings.fromMap(const {'themeMode': 'dark'});
+      expect(restored.lastMemoNudgeDate, isNull);
+    });
+
     test('clearAlarmSound resets to the system default even with a uri/label passed', () {
       const settings = AppSettings(
         alarmSoundUri: 'content://media/some/sound',

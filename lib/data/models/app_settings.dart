@@ -48,6 +48,10 @@ class AppSettings {
   // before a block's start. No settings-screen control yet (see
   // Segment.leadWarning for the per-block on/off).
   final int leadMinutes;
+  // Day-key of the last day the memo inbox's "이 메모, 아직이에요" resurfacing
+  // nudge was shown (or dismissed) — at most once per day, the same pattern
+  // as [lastCelebratedDate]. null = never.
+  final String? lastMemoNudgeDate;
 
   const AppSettings({
     this.themeMode = AppThemeMode.system,
@@ -62,6 +66,7 @@ class AppSettings {
     this.lastPartialCelebratedDate,
     this.snoozeMinutes = 10,
     this.leadMinutes = 10,
+    this.lastMemoNudgeDate,
   });
 
   const AppSettings.defaults() : this();
@@ -82,6 +87,7 @@ class AppSettings {
     String? lastPartialCelebratedDate,
     int? snoozeMinutes,
     int? leadMinutes,
+    String? lastMemoNudgeDate,
   }) {
     return AppSettings(
       themeMode: themeMode ?? this.themeMode,
@@ -96,6 +102,7 @@ class AppSettings {
       lastPartialCelebratedDate: lastPartialCelebratedDate ?? this.lastPartialCelebratedDate,
       snoozeMinutes: snoozeMinutes ?? this.snoozeMinutes,
       leadMinutes: leadMinutes ?? this.leadMinutes,
+      lastMemoNudgeDate: lastMemoNudgeDate ?? this.lastMemoNudgeDate,
     );
   }
 
@@ -112,6 +119,7 @@ class AppSettings {
         'lastPartialCelebratedDate': lastPartialCelebratedDate,
         'snoozeMinutes': snoozeMinutes,
         'leadMinutes': leadMinutes,
+        'lastMemoNudgeDate': lastMemoNudgeDate,
       };
 
   factory AppSettings.fromMap(Map<String, dynamic> map) => AppSettings(
@@ -133,5 +141,6 @@ class AppSettings {
         lastPartialCelebratedDate: map['lastPartialCelebratedDate'] as String?,
         snoozeMinutes: (map['snoozeMinutes'] as num?)?.toInt() ?? 10,
         leadMinutes: (map['leadMinutes'] as num?)?.toInt() ?? 10,
+        lastMemoNudgeDate: map['lastMemoNudgeDate'] as String?,
       );
 }

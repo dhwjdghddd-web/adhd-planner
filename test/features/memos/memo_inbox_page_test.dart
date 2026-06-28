@@ -22,7 +22,11 @@ void main() {
   Widget wrap(FakePlannerRepository repo) {
     return ProviderScope(
       overrides: [plannerRepositoryProvider.overrideWithValue(repo)],
-      child: const MaterialApp(home: MemoInboxPage()),
+      // Pinned to the same day every fixture memo below is created on, so
+      // none of them are "old enough" to trigger the resurfacing nudge card
+      // (see memo_resurfacing_test.dart / memo_inbox_nudge_test.dart for
+      // that) -- these tests are about the plain list/search/swipe behaviour.
+      child: MaterialApp(home: MemoInboxPage(debugNow: DateTime(2026, 6, 18, 12))),
     );
   }
 

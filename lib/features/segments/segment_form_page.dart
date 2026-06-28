@@ -20,9 +20,14 @@ const _uuid = Uuid();
 /// Reachable from [SegmentEditorPage]'s list, the home dial's "구간 추가" FAB,
 /// or by tapping a block's arc on the home dial.
 class SegmentFormPage extends ConsumerStatefulWidget {
-  const SegmentFormPage({super.key, this.existing});
+  const SegmentFormPage({super.key, this.existing, this.initialName});
 
   final Segment? existing;
+
+  /// Pre-fills the name field for a brand-new block (e.g. promoting a memo's
+  /// text straight into a block) — ignored when [existing] is set, since an
+  /// edit always starts from that block's own name.
+  final String? initialName;
 
   @override
   ConsumerState<SegmentFormPage> createState() => _SegmentFormPageState();
@@ -51,7 +56,7 @@ class _SegmentFormPageState extends ConsumerState<SegmentFormPage> {
   void initState() {
     super.initState();
     final existing = widget.existing;
-    _nameController = TextEditingController(text: existing?.name ?? '');
+    _nameController = TextEditingController(text: existing?.name ?? widget.initialName ?? '');
     _noteController = TextEditingController(text: existing?.note ?? '');
     _microStepController = TextEditingController();
     _colorValue = existing?.colorValue ?? kSegmentPalette.first.toARGB32();
@@ -196,7 +201,7 @@ class _SegmentFormPageState extends ConsumerState<SegmentFormPage> {
     // acknowledges it, which never happens while offline. The local cache
     // updates synchronously either way.
     unawaited(controller.upsert(segment));
-    if (mounted) Navigator.pop(context);
+    if (mounted) Navigator.pop(context, true);
   }
 
   Future<void> _confirmDelete() async {

@@ -3,16 +3,25 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/models/memo.dart';
 import '../../data/providers.dart';
+import '../../data/today.dart';
+import 'memo_resurfacing.dart';
 import 'memos_controller.dart';
+import 'promote_memo_sheet.dart';
 import 'quick_add_button.dart';
 import 'quick_add_sheet.dart';
 
 /// Memo inbox: unreviewed thoughts by default (with a toggle to also show
 /// ones already reviewed), a search box, and swipe-to-delete. Memos are
 /// captured elsewhere via the global quick-add sheet — this page is purely
-/// for triage.
+/// for triage. Long-pressing a row offers to promote it into a block/checklist
+/// item (see [showPromoteMemoSheet]) instead of just ticking it off.
 class MemoInboxPage extends ConsumerStatefulWidget {
-  const MemoInboxPage({super.key});
+  const MemoInboxPage({super.key, @visibleForTesting this.debugNow});
+
+  /// Test-only override for "now", used when deciding which memo (if any)
+  /// is old enough to resurface -- without this, a test run near a day
+  /// boundary could pick a different memo than the one it expects.
+  final DateTime? debugNow;
 
   @override
   ConsumerState<MemoInboxPage> createState() => _MemoInboxPageState();
@@ -28,14 +37,45 @@ class _MemoInboxPageState extends ConsumerState<MemoInboxPage> {
     super.dispose();
   }
 
+  DateTime get _now => widget.debugNow ?? DateTime.now();
+
+  Future<void> _dismissNudge() async {
+    final settings = ref.read(settingsProvider).value;
+    if (settings == null) return;
+    await ref
+        .read(plannerRepositoryProvider)
+        ?.saveSettings(settings.copyWith(lastMemoNudgeDate: dayKeyFor(_now)));
+  }
+
+  Future<void> _handleNudge(Memo memo) async {
+    await _dismissNudge();
+    if (mounted) await showPromoteMemoSheet(context, memo);
+  }
+
   @override
   Widget build(BuildContext context) {
     final memosAsync = ref.watch(memosProvider);
+    final settings = ref.watch(settingsProvider).value;
 
     return Scaffold(
       appBar: AppBar(title: const Text('메모')),
       body: Column(
         children: [
+          memosAsync.maybeWhen(
+            data: (memos) {
+              if (settings == null || settings.lastMemoNudgeDate == dayKeyFor(_now)) {
+                return const SizedBox.shrink();
+              }
+              final nudge = oldestNudgeworthyMemo(memos, _now);
+              if (nudge == null) return const SizedBox.shrink();
+              return _MemoNudgeCard(
+                memo: nudge,
+                onHandle: () => _handleNudge(nudge),
+                onDismiss: _dismissNudge,
+              );
+            },
+            orElse: () => const SizedBox.shrink(),
+          ),
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
             child: TextField(
@@ -134,8 +174,12 @@ class _MemoList extends ConsumerWidget {
           ),
           // Tapping the row body edits the memo; the leading checkbox (a
           // separate tap target) toggles reviewed, so the two don't collide.
+          // Long-pressing offers to promote it into a block/checklist item
+          // instead -- a third action, but on a gesture none of the other two
+          // use, so it doesn't compete with them.
           child: ListTile(
             onTap: () => showEditMemoSheet(context, memo),
+            onLongPress: () => showPromoteMemoSheet(context, memo),
             leading: Checkbox(
               value: memo.reviewed,
               onChanged: (value) => ref
@@ -197,5 +241,58 @@ class _MemoList extends ConsumerWidget {
       ),
     );
     return confirmed ?? false;
+  }
+}
+
+/// "이 메모, 아직이에요" -- nudges about the single oldest memo that's been
+/// sitting unreviewed for a while (see [oldestNudgeworthyMemo]), so a stray
+/// thought that's gone quiet doesn't just rot at the bottom of the inbox.
+/// Shown at most once a day (see [MemoInboxPage._dismissNudge]).
+class _MemoNudgeCard extends StatelessWidget {
+  const _MemoNudgeCard({
+    required this.memo,
+    required this.onHandle,
+    required this.onDismiss,
+  });
+
+  final Memo memo;
+  final VoidCallback onHandle;
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Card(
+      margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+      color: theme.colorScheme.secondaryContainer,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '이 메모, 아직이에요',
+              style: theme.textTheme.titleSmall
+                  ?.copyWith(color: theme.colorScheme.onSecondaryContainer),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              memo.text,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: theme.colorScheme.onSecondaryContainer),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton(onPressed: onDismiss, child: const Text('나중에')),
+                FilledButton(onPressed: onHandle, child: const Text('지금 처리')),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
