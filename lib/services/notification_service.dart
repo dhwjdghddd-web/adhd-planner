@@ -474,12 +474,19 @@ void handleNotificationResponseBackground(NotificationResponse response) {
 
 // The notifications carry no action buttons (see _androidDetailsFor), so this
 // only ever handles a plain body-tap or the system auto-launching the app via
-// fullScreenIntent. Either way the tap itself already silences the alarm --
-// AlarmScreen (pushed by App's launcher picking up the pending alert
-// below) is then just the review/confirm step into Focus, not the thing that
-// stops the buzzing. That matters most exactly when it's least reachable: a
-// closed/folded phone's cover screen may never render the dialog properly,
-// but the tap that got this far always fires.
+// fullScreenIntent -- on a locked screen, that auto-launch is what actually
+// fires this, with no user action involved at all. It deliberately does NOT
+// silence the alarm itself (a past version did, on the theory that a
+// closed/folded phone's cover screen might never render AlarmScreen properly
+// -- but that meant the ring/vibration cut out the instant the screen turned
+// on, before the user had any chance to actually notice or respond to it,
+// which defeated the point of having an insistent alarm at all). Silencing is
+// now only ever explicit: AlarmScreen's own slide-to-dismiss/snooze/skip
+// actions, or the power-button screen-off guard (see alarm_screen.dart) --
+// plus the notification's own `timeoutAfter`/the native Vibrator's `durationMs`
+// (_alarmRepeatMs, 60s) as the unreachable-screen fallback, so a folded phone
+// that's truly unreachable still self-silences eventually rather than ringing
+// forever.
 void _handleResponse(NotificationResponse response) {
   final payload = response.payload;
   if (payload == null) return;
@@ -487,7 +494,6 @@ void _handleResponse(NotificationResponse response) {
   if (parts.length != 2 || parts[0] != 'block') return;
   final id = response.id;
   if (id == null) return;
-  unawaited(_silenceAlarm(id));
   pendingAlarmAlert.value = PendingAlarmAlert(
     notificationId: id,
     segmentId: parts[1],

@@ -29,11 +29,15 @@ const _alarmGuardChannel = MethodChannel('com.adhdplanner.adhd_planner/alarm_sou
 /// 해" rather than only ever being able to start or silently ignore it.
 ///
 /// [notificationId] is the still-showing, insistently repeating alarm
-/// notification to silence on dismiss — though the tap/auto-launch that opened
-/// this has usually silenced it already (see notification_service's
-/// `_handleResponse`); re-cancelling the same id is a harmless no-op safety net
-/// for the foreground-clock path (`_ForegroundAlarmWatcher`) that reaches here
-/// without a real notification tap.
+/// notification: opening this screen (whether via a real tap, the system
+/// auto-launching it, or `_ForegroundAlarmWatcher`'s own foreground check)
+/// never silences it on its own -- only this screen's own three actions below
+/// (slide-to-dismiss/snooze/skip) or the power-button screen-off guard do, so
+/// the ring/vibration keeps going exactly the way a real alarm clock's would
+/// until actually responded to. The notification's own `timeoutAfter` and the
+/// native Vibrator's `durationMs` (60s, see notification_service.dart) are the
+/// fallback for a screen that's truly unreachable (e.g. a folded phone's cover
+/// screen) -- it self-silences eventually rather than ringing forever.
 class AlarmScreen extends ConsumerStatefulWidget {
   const AlarmScreen({
     super.key,

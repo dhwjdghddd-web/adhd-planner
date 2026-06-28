@@ -1,3 +1,5 @@
+import 'package:flutter/services.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:timezone/data/latest_all.dart' as tz_data;
 import 'package:timezone/timezone.dart' as tz;
@@ -29,6 +31,8 @@ Segment _block({
 }
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   setUpAll(() {
     tz_data.initializeTimeZones();
     tz.setLocalLocation(tz.UTC);
@@ -149,6 +153,59 @@ void main() {
           expect(patterns[i], isNot(patterns[j]), reason: '$i vs $j');
         }
       }
+    });
+  });
+
+  group('handleNotificationResponse', () {
+    const channel = MethodChannel('com.adhdplanner.adhd_planner/alarm_sound');
+
+    setUp(() {
+      pendingAlarmAlert.value = null;
+    });
+    tearDown(() {
+      pendingAlarmAlert.value = null;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null);
+    });
+
+    test(
+        'opening the alarm screen (a real tap or the system auto-launching it) '
+        "queues the pending alert WITHOUT silencing the ring/vibration -- only "
+        "AlarmScreen's own actions (or the power-button guard, or the 60s "
+        'timeout) do that (regression: a past version silenced it the instant '
+        'the screen turned on, before the user had any chance to notice or '
+        'respond)', () async {
+      final calls = <MethodCall>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+        calls.add(call);
+        return null;
+      });
+
+      handleNotificationResponse(const NotificationResponse(
+        notificationResponseType: NotificationResponseType.selectedNotification,
+        id: 123,
+        payload: 'block:s1',
+      ));
+      // Let the (intentionally absent) silencing have a chance to run if it
+      // existed -- nothing here is awaited inside the handler, so a microtask
+      // pump is enough to surface a regression.
+      await Future<void>.delayed(Duration.zero);
+
+      expect(pendingAlarmAlert.value?.notificationId, 123);
+      expect(pendingAlarmAlert.value?.segmentId, 's1');
+      expect(calls.where((c) => c.method == 'cancelVibrationAlarm'), isEmpty);
+    });
+
+    test('a non-block payload (e.g. the lead-warning notification) is ignored',
+        () async {
+      handleNotificationResponse(const NotificationResponse(
+        notificationResponseType: NotificationResponseType.selectedNotification,
+        id: 999,
+        payload: 'lead:s1',
+      ));
+
+      expect(pendingAlarmAlert.value, isNull);
     });
   });
 }
