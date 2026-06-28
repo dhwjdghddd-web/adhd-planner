@@ -54,15 +54,20 @@ class MainActivity : FlutterActivity() {
                     "pickAlarmSound" -> {
                         pendingResult = result
                         val currentUriString = call.argument<String>("currentUri")
-                        val existingUri = if (currentUriString != null) Uri.parse(currentUriString) else null
+                        val defaultUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+                        // null currentUri means "use the system default" (the app's own
+                        // semantics -- see _soundFor in notification_service.dart). Passing
+                        // null here for EXTRA_RINGTONE_EXISTING_URI leaves nothing checked
+                        // in the picker's list, so the user can't tell where "기본 알람음"
+                        // even is. Passing the default's own URI instead tells the picker
+                        // the current selection *is* the Default entry, so it's highlighted.
+                        val existingUri =
+                            if (currentUriString != null) Uri.parse(currentUriString) else defaultUri
                         val intent = Intent(RingtoneManager.ACTION_RINGTONE_PICKER).apply {
                             putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE, RingtoneManager.TYPE_ALARM)
                             putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true)
                             putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, false)
-                            putExtra(
-                                RingtoneManager.EXTRA_RINGTONE_DEFAULT_URI,
-                                RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
-                            )
+                            putExtra(RingtoneManager.EXTRA_RINGTONE_DEFAULT_URI, defaultUri)
                             putExtra(RingtoneManager.EXTRA_RINGTONE_EXISTING_URI, existingUri)
                         }
                         startActivityForResult(intent, pickRequestCode)
