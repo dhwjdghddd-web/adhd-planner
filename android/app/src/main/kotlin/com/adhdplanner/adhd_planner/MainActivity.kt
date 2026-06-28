@@ -54,20 +54,32 @@ class MainActivity : FlutterActivity() {
                     "pickAlarmSound" -> {
                         pendingResult = result
                         val currentUriString = call.argument<String>("currentUri")
-                        val defaultUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+                        // The *indirection* URI (e.g. content://settings/system/alarm_alert)
+                        // -- this is what EXTRA_RINGTONE_DEFAULT_URI must be: the symbolic
+                        // marker the picker associates with its own "기본 알람음" list row.
+                        val defaultIndirectionUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
                         // null currentUri means "use the system default" (the app's own
-                        // semantics -- see _soundFor in notification_service.dart). Passing
-                        // null here for EXTRA_RINGTONE_EXISTING_URI leaves nothing checked
-                        // in the picker's list, so the user can't tell where "기본 알람음"
-                        // even is. Passing the default's own URI instead tells the picker
-                        // the current selection *is* the Default entry, so it's highlighted.
-                        val existingUri =
-                            if (currentUriString != null) Uri.parse(currentUriString) else defaultUri
+                        // semantics -- see _soundFor in notification_service.dart). The
+                        // picker decides which row is *checked* by comparing
+                        // EXTRA_RINGTONE_EXISTING_URI against each row's resolved sound
+                        // file URI -- the Default row's resolved URI is the *actual*
+                        // current default sound file, not the indirection marker above.
+                        // Passing the indirection URI there left nothing checked (the
+                        // first attempt at this fix); the actual resolved URI is what
+                        // matches.
+                        val existingUri = if (currentUriString != null) {
+                            Uri.parse(currentUriString)
+                        } else {
+                            RingtoneManager.getActualDefaultRingtoneUri(
+                                applicationContext,
+                                RingtoneManager.TYPE_ALARM,
+                            )
+                        }
                         val intent = Intent(RingtoneManager.ACTION_RINGTONE_PICKER).apply {
                             putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE, RingtoneManager.TYPE_ALARM)
                             putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true)
                             putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, false)
-                            putExtra(RingtoneManager.EXTRA_RINGTONE_DEFAULT_URI, defaultUri)
+                            putExtra(RingtoneManager.EXTRA_RINGTONE_DEFAULT_URI, defaultIndirectionUri)
                             putExtra(RingtoneManager.EXTRA_RINGTONE_EXISTING_URI, existingUri)
                         }
                         startActivityForResult(intent, pickRequestCode)
