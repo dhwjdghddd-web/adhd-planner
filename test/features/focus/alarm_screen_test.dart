@@ -10,6 +10,7 @@ import 'package:adhd_planner/data/today.dart';
 import 'package:adhd_planner/features/focus/alarm_screen.dart';
 import 'package:adhd_planner/features/focus/focus_page.dart';
 import 'package:adhd_planner/features/memos/quick_add_button.dart';
+import 'package:adhd_planner/services/notification_service.dart';
 
 import '../../fakes/fake_planner_repository.dart';
 
@@ -25,14 +26,45 @@ Segment _block({String id = 's1', String name = '약 먹기', int startMinute = 
   );
 }
 
+/// Records the order [cancelNotification]/[scheduleSnooze] *complete* in, with
+/// [cancelNotification] artificially slow -- so a regression that fires the
+/// two unawaited and unsequenced (racing cancel-vs-reschedule of the same
+/// AlarmManager entry) would show scheduleSnooze finishing first here, the
+/// same way it could land first against the real native channel.
+class _OrderRecordingNotificationService extends NotificationService {
+  _OrderRecordingNotificationService() : super(FakePlannerRepository());
+
+  final List<String> order = [];
+
+  @override
+  Future<void> cancelNotification(int id) async {
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    order.add('cancel');
+  }
+
+  @override
+  Future<void> scheduleSnooze({required Segment segment, required AppSettings settings}) async {
+    order.add('schedule');
+  }
+}
+
 void main() {
   // AlarmScreen is pushed as a full-screen route over the existing Navigator
   // (see app.dart's _showAlarmScreen) -- never as MaterialApp.home directly --
   // so push it the same way here. Dismiss's "open Focus" path reaches the
   // Navigator through appNavigatorKey, the same as app.dart.
-  Widget wrap(FakePlannerRepository repo, {String segmentId = 's1', int notificationId = 42}) {
+  Widget wrap(
+    FakePlannerRepository repo, {
+    String segmentId = 's1',
+    int notificationId = 42,
+    NotificationService? notificationService,
+  }) {
     return ProviderScope(
-      overrides: [plannerRepositoryProvider.overrideWithValue(repo)],
+      overrides: [
+        plannerRepositoryProvider.overrideWithValue(repo),
+        if (notificationService != null)
+          notificationServiceProvider.overrideWithValue(notificationService),
+      ],
       child: MaterialApp(
         navigatorKey: appNavigatorKey,
         home: Builder(
@@ -54,8 +86,12 @@ void main() {
     );
   }
 
-  Future<void> openAlarm(WidgetTester tester, FakePlannerRepository repo) async {
-    await tester.pumpWidget(wrap(repo));
+  Future<void> openAlarm(
+    WidgetTester tester,
+    FakePlannerRepository repo, {
+    NotificationService? notificationService,
+  }) async {
+    await tester.pumpWidget(wrap(repo, notificationService: notificationService));
     await tester.pumpAndSettle();
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
@@ -149,6 +185,22 @@ void main() {
     expect(find.byType(AlarmScreen), findsNothing);
     expect(find.byType(FocusPage), findsNothing);
     expect(snapshots.last, isEmpty);
+  });
+
+  testWidgets(
+      "tapping '다시' cancels today's ring before arming the snooze, even when "
+      'cancelling is the slower of the two (regression: firing both unawaited '
+      "and unsequenced let a slow cancel land *after* schedule and silently "
+      "wipe out the just-armed snooze alarm)", (tester) async {
+    final repo = FakePlannerRepository();
+    await repo.upsertSegment(_block());
+    final service = _OrderRecordingNotificationService();
+
+    await openAlarm(tester, repo, notificationService: service);
+    await tester.tap(find.textContaining('분 뒤 다시'));
+    await tester.pumpAndSettle();
+
+    expect(service.order, ['cancel', 'schedule']);
   });
 
   testWidgets("tapping '오늘은 건너뛰기' closes the alarm screen and records "

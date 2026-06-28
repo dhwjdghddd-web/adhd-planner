@@ -218,14 +218,30 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
   // (see NotificationService.scheduleSnooze) rather than just disappearing
   // until tomorrow, which is what a bare 해제/무시 would do.
   void _snooze(Segment segment, int snoozeMinutes) {
-    unawaited(_tryCancelNotification());
-    unawaited(_tryScheduleSnooze(segment));
+    unawaited(_cancelThenScheduleSnooze(segment));
     // pop, not maybePop: this screen's PopScope(canPop: false) blocks
     // maybePop()/popDisposition-based pops (that's the whole point -- it's
     // what stops a stray system back gesture) but does NOT affect this direct
     // imperative pop, which is exactly the deliberate exit these two buttons
     // are meant to be.
     Navigator.of(context).pop();
+  }
+
+  // Cancel and schedule both round-trip through the SAME native channel
+  // (com.adhdplanner.adhd_planner/alarm_sound) and act on the SAME
+  // requestCode's AlarmManager entry -- cancelNotification's
+  // cancelVibrationAlarm call and scheduleSnooze's scheduleVibrationAlarm call
+  // are two independent platform-channel round-trips with no ordering
+  // guarantee between them if fired concurrently (each goes through its own
+  // chain of awaits -- e.g. cancel waits on flutter_local_notifications' own
+  // plugin.cancel first). Firing them unawaited side-by-side let the
+  // schedule's "arm the snooze alarm" sometimes land *before* the dismiss's
+  // "cancel whatever's armed for this id" -- silently wiping out the just-armed
+  // snooze. Awaiting cancel to fully finish first makes the order
+  // deterministic: cancel today's ring, *then* arm the snooze.
+  Future<void> _cancelThenScheduleSnooze(Segment segment) async {
+    await _tryCancelNotification();
+    await _tryScheduleSnooze(segment);
   }
 
   Future<void> _tryScheduleSnooze(Segment segment) async {
