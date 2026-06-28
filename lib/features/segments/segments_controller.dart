@@ -32,6 +32,17 @@ class SegmentsController {
     await _rescheduleAll();
   }
 
+  /// Saves every block in [segments] (the empty-dial starter chips, or a
+  /// brain-dump's batch of new blocks), then reschedules exactly once for
+  /// the whole batch rather than once per block.
+  Future<void> upsertAll(List<Segment> segments) async {
+    final repo = _ref.read(plannerRepositoryProvider)!;
+    for (final segment in segments) {
+      unawaited(repo.upsertSegment(segment));
+    }
+    await _rescheduleAll();
+  }
+
   /// Deletes a block, cancelling its still-armed alarms first -- rescheduleAll
   /// only rebuilds from blocks still in the list, so a deleted block's alarms
   /// (and the Vibrator alarms riding alongside them) would otherwise never get

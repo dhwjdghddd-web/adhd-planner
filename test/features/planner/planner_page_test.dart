@@ -41,12 +41,32 @@ void main() {
     );
   }
 
-  testWidgets('shows empty-schedule message when there are no blocks', (tester) async {
+  testWidgets(
+      'shows the starter-chip empty state (not the dial) when there are no blocks',
+      (tester) async {
     await tester.pumpWidget(wrap(FakePlannerRepository()));
     await tester.pumpAndSettle();
 
-    expect(find.byType(CustomPaint), findsWidgets);
-    expect(find.text('오늘 일정이 없어요'), findsOneWidget);
+    // No dial at all -- the empty state replaces it outright.
+    expect(find.byWidgetPredicate((w) => w is CustomPaint && w.painter is DialPainter),
+        findsNothing);
+    expect(find.text('기상'), findsOneWidget);
+    expect(find.text('수면'), findsOneWidget);
+  });
+
+  testWidgets('tapping a starter chip adds exactly that block and the dial '
+      'replaces the empty state', (tester) async {
+    final repo = FakePlannerRepository();
+    await tester.pumpWidget(wrap(repo));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.widgetWithText(ActionChip, '기상'));
+    await tester.pumpAndSettle();
+
+    expect(find.byWidgetPredicate((w) => w is CustomPaint && w.painter is DialPainter),
+        findsOneWidget);
+    final saved = await repo.watchSegments().first;
+    expect(saved.map((s) => s.name), ['기상']);
   });
 
   testWidgets('tapping the dial on a block opens it in Focus (review), not the editor',
@@ -139,13 +159,7 @@ void main() {
     expect(find.byType(FocusPage), findsOneWidget);
   });
 
-  testWidgets("'지금' button opens FocusPage even with no blocks at all", (tester) async {
-    await tester.pumpWidget(wrap(FakePlannerRepository()));
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.text('지금'));
-    await tester.pumpAndSettle();
-
-    expect(find.byType(FocusPage), findsOneWidget);
-  });
+  // '지금' lives inside the dial's centre summary, which the empty state
+  // (see above) replaces outright -- with no blocks at all there's no dial,
+  // and the starter chips are the correct way in now, not a contentless Focus.
 }

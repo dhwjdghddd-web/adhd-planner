@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../core/theme.dart';
 import '../../core/time_geometry.dart';
@@ -15,12 +16,18 @@ import '../focus/focus_page.dart';
 import '../memos/memo_inbox_page.dart';
 import '../rewards/daily_checklist_badge.dart';
 import '../rewards/streak_badge.dart';
+import '../segments/brain_dump_page.dart';
 import '../segments/segment_editor_page.dart';
 import '../segments/segment_form_page.dart';
+import '../segments/segment_icons.dart';
+import '../segments/segment_templates.dart';
+import '../segments/segments_controller.dart';
 import '../memos/quick_add_button.dart'
     show MultiFabRow, GlobalQuickAddButton, fabAvoidingBottomInset;
 import '../settings/settings_page.dart';
 import 'dial_painter.dart';
+
+const _uuid = Uuid();
 
 /// Home screen: the 24h circular dial with block arcs and a current-time hand
 /// that advances roughly every minute. Tapping a block's arc opens it in Focus
@@ -112,6 +119,43 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
             padding: EdgeInsets.only(bottom: fabAvoidingBottomInset(context)),
             child: LayoutBuilder(
               builder: (context, constraints) {
+                final isEmpty = segmentsAsync.value?.isEmpty ?? false;
+
+                // Empty case: there's no dialSize-style computed height to
+                // budget around (the starter chips' natural height isn't
+                // capped the way the dial's square size is), so this is laid
+                // out as a normal top-to-bottom Column with the content area
+                // left free to scroll -- on a short screen it scrolls instead
+                // of overflowing, rather than trying to force everything to
+                // fit via mainAxisSize.min like the non-empty layout below.
+                if (isEmpty) {
+                  return Column(
+                    children: [
+                      const SizedBox(height: 8),
+                      _HomeHeader(minuteOfDay: _currentMinute),
+                      const SizedBox(height: 12),
+                      const Wrap(
+                        spacing: 12,
+                        alignment: WrapAlignment.center,
+                        children: [StreakBadge(), DailyChecklistBadge()],
+                      ),
+                      Expanded(
+                        child: SingleChildScrollView(
+                          padding: const EdgeInsets.symmetric(vertical: 24),
+                          child: Center(
+                            child: ConstrainedBox(
+                              constraints: BoxConstraints(
+                                maxWidth: math.min(constraints.maxWidth * 0.9, 420),
+                              ),
+                              child: const _EmptyHomeStarter(),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                }
+
                 // Dial is kept a little narrower than the full width (so it
                 // doesn't run edge-to-edge and crowd the texts), with generous
                 // gaps above/below so the header and countdown read as clearly
@@ -175,6 +219,77 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
     );
+  }
+}
+
+/// Shown instead of the dial when there are no blocks yet at all -- a cold,
+/// empty ring gives a brand-new user no hint of what to do, so this offers
+/// two zero-effort ways in: tap one starter chip (adds exactly that one
+/// block; the dial fills in immediately, replacing this) or list out
+/// whatever's on your mind and let 브레인덤프 page suggest times for all of
+/// it at once.
+class _EmptyHomeStarter extends ConsumerWidget {
+  const _EmptyHomeStarter();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final mutedColor = theme.brightness == Brightness.dark
+        ? const Color(0xFFA6B2BE)
+        : const Color(0xFF525C68);
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          '아직 만든 구간이 없어요\n아래에서 하나 골라 시작해보세요',
+          textAlign: TextAlign.center,
+          style: theme.textTheme.bodyMedium?.copyWith(color: mutedColor),
+        ),
+        const SizedBox(height: 16),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          alignment: WrapAlignment.center,
+          children: [
+            for (final template in kSegmentTemplates)
+              ActionChip(
+                avatar: Icon(
+                  iconForKey(template.iconKey),
+                  size: 18,
+                  color: Color(template.colorValue),
+                ),
+                label: Text(template.name),
+                onPressed: () => _addTemplate(ref, template),
+              ),
+          ],
+        ),
+        const SizedBox(height: 20),
+        TextButton.icon(
+          onPressed: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const BrainDumpPage()),
+          ),
+          icon: const Icon(Icons.psychology_outlined),
+          label: const Text('또는, 떠오르는 일들을 적어보기'),
+        ),
+      ],
+    );
+  }
+
+  // Not awaited: the same offline-safe fire-and-forget pattern every other
+  // save action in this app uses (see SegmentsController.upsert) -- the dial
+  // reappearing (segments becomes non-empty) is itself the feedback.
+  void _addTemplate(WidgetRef ref, SegmentTemplate template) {
+    final segment = Segment(
+      id: _uuid.v4(),
+      name: template.name,
+      colorValue: template.colorValue,
+      iconKey: template.iconKey,
+      startMinute: template.startMinute,
+      endMinute: template.endMinute,
+      order: 0,
+    );
+    unawaited(ref.read(segmentsControllerProvider).upsert(segment));
   }
 }
 
