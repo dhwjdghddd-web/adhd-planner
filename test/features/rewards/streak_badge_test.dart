@@ -57,8 +57,10 @@ void main() {
 
     expect(find.text('최고 1일'), findsOneWidget);
     expect(find.text('· 다시 시작해도 좋아요'), findsOneWidget);
-    // Never speaks the streak as a bare 0, in the accessible label either.
+    // Never speaks the streak as a bare 0, in the accessible label either --
+    // and positively offers the warm restart cue to screen readers.
     expect(find.bySemanticsLabel(RegExp(r'현재 연속 0일')), findsNothing);
+    expect(find.bySemanticsLabel(RegExp('최고 연속 1일, 다시 시작해도 좋아요')), findsOneWidget);
   });
 
   testWidgets('a banked past day keeps counting even after its routine is deleted',

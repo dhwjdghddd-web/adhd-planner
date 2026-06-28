@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:adhd_planner/app.dart';
 import 'package:adhd_planner/data/models/achieved_day.dart';
 import 'package:adhd_planner/data/models/app_settings.dart';
+import 'package:adhd_planner/data/models/completion.dart';
 import 'package:adhd_planner/data/models/micro_step_progress.dart';
 import 'package:adhd_planner/data/models/segment.dart';
 import 'package:adhd_planner/data/providers.dart';
@@ -179,6 +180,48 @@ void main() {
     await repo.saveSettings(
       AppSettings.defaults()
           .copyWith(onboardingComplete: true, lastPartialCelebratedDate: dayKeyFor()),
+    );
+    await repo.upsertSegment(_block(id: 's1', name: '약 먹기', microSteps: const ['a', 'b', 'c', 'd']));
+    await repo.saveMicroStepProgress(MicroStepProgress.today('s1', const [0, 1]));
+
+    await tester.pumpWidget(ProviderScope(
+      overrides: [plannerRepositoryProvider.overrideWithValue(repo)],
+      child: const App(),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.text('오늘 절반을 해냈어요 — 충분히 잘하고 있어요'), findsNothing);
+  });
+
+  testWidgets(
+      'the halfway snackbar never fires on a day with no checklist items at all '
+      '(whole-block fallback achievement is not a "halfway")', (tester) async {
+    final repo = FakePlannerRepository();
+    await repo.saveSettings(const AppSettings.defaults().copyWith(onboardingComplete: true));
+    // A block with NO checklist items, completed for the whole day -- this makes
+    // DailyAchievement.isAchieved true via the whole-block fallback (total == 0),
+    // but there's no real "halfway" to celebrate.
+    await repo.upsertSegment(_block(id: 's1', name: '퇴근'));
+    await repo.setCompletion(Completion.now('s1'));
+
+    await tester.pumpWidget(ProviderScope(
+      overrides: [plannerRepositoryProvider.overrideWithValue(repo)],
+      child: const App(),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.text('오늘 절반을 해냈어요 — 충분히 잘하고 있어요'), findsNothing);
+  });
+
+  testWidgets(
+      'the halfway snackbar is suppressed once today is already fully celebrated '
+      '(un-checking back to 50% must not downgrade to a halfway nudge)', (tester) async {
+    final repo = FakePlannerRepository();
+    // Today already got its full 100% celebration; now sitting at 50% again
+    // (e.g. pressed 모두 완료 then un-checked an item). The lighter snackbar
+    // must not fire after the full one -- guarded by !alreadyToday.
+    await repo.saveSettings(
+      AppSettings.defaults().copyWith(onboardingComplete: true, lastCelebratedDate: dayKeyFor()),
     );
     await repo.upsertSegment(_block(id: 's1', name: '약 먹기', microSteps: const ['a', 'b', 'c', 'd']));
     await repo.saveMicroStepProgress(MicroStepProgress.today('s1', const [0, 1]));

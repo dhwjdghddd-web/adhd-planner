@@ -468,7 +468,10 @@ class _CompletionCelebratorState extends ConsumerState<_CompletionCelebrator> {
           );
         }
       });
-    } else if (partiallyDone && !alreadyPartialToday && !_partialShownThisSession) {
+    } else if (partiallyDone && !alreadyPartialToday && !alreadyToday && !_partialShownThisSession) {
+      // !alreadyToday: if today's full 100% celebration already happened (e.g.
+      // pressed "모두 완료" then un-checked back below 100%), don't follow it
+      // with the lighter "오늘 절반을 해냈어요" -- that would read as a downgrade.
       _partialShownThisSession = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         final repo = ref.read(plannerRepositoryProvider);
