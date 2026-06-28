@@ -142,6 +142,7 @@
 
 ### T3 — 빈 상태·계획 보조 (스타터 칩 + 브레인덤프→자동배치)  〔규모 M~L〕 [UI-CONFIRM 완료] ✅(8a47371)
 - **목표**: 빈 다이얼 콜드스타트 제거.
+- **T3 범위 밖, 실기기 검증 중 발견·수정한 독립 버그 (커밋 88fc9c4)**: 사용자가 로그아웃 시 완료축하 팝업이 잘못 뜨고, 실제 체크완료 시엔 팝업이 순식간에 사라진다고 보고. 두 가지 별개 원인 — ① 로그아웃의 uid=null 구간에서 `settingsProvider`는 즉시 defaults로 리셋되는데 `segments/completions/progress/achievedDays`는 빈 스트림으로 바뀌어도 Riverpod가 이전 계정의 마지막 값을 유지(스트림이 새로 emit 안 함) — 그 불일치로 `_CompletionCelebrator`가 오판해 재발화. `plannerRepositoryProvider == null`이면 통째로 건너뛰는 가드 추가. ② `focus_page.dart`의 `_complete()`가 자체 900ms 셀러브레이션 후 `Navigator.pop()`으로 Focus를 닫는데, 같은 순간 `_CompletionCelebrator`도 완료축하 다이얼로그를 같은 네비게이터 위에 띄워 경쟁 — `pop()`은 항상 "현재 맨 위"를 제거하므로 늦게 도착한 Focus의 pop이 다이얼로그를 지워버림. `route.isCurrent`로 위에 뭔가 떴는지 확인해 그 경우만 자기 라우트를 `removeRoute`로 specifically 제거(유일 라우트일 때 `removeRoute`가 `_history.isNotEmpty` 단언을 깨는 것도 같은 분기로 회피). 부수로 `brain_dump_page_test.dart`의 자정-인접 플레이키 테스트도 발견해 `BrainDumpPage`에 `debugNowMinuteOfDay` 시드 추가. test 208→210.
 - **실행 결과 (2026-06-28, Sonnet 4.6 구현)**: 확정 사양대로 구현. 한 가지 실제 버그를 구현 중 발견·수정: 빈 상태 콘텐츠(안내문+칩7+버튼)의 자연 높이가 옛 다이얼의 `dialSize`처럼 화면 크기에 맞춰 계산되지 않아, 작은 화면/테스트 서피스에서 `RenderFlex` 오버플로우가 났음(기존 `app bar action`/`구간 추가 FAB` 테스트가 이걸로 깨짐 — 내 변경의 직접 회귀). 빈 상태 전용 Column을 `Expanded`+`SingleChildScrollView`로 분리해 해결. 기존 "지금' 버튼이 빈 상태에서도 동작" 테스트는 그 어포던스 자체가 새 디자인에서 의도적으로 사라졌으므로(빈 다이얼 자체가 없어짐) 삭제, "오늘 일정이 없어요" 테스트는 새 스타터칩 기준으로 교체.
 - **확정 사양 (UI 결정 완료)**:
   1. **빈 상태 홈**: `segments`가 비면 다이얼 대신 안내문 + **개별 스타터 칩**을 Wrap으로. 칩 1탭 = 그 블록 1개를 기본 시각·아이콘으로 추가(다이얼이 즉시 채워짐). 칩 세트(7종, 합리적 기본 시각·아이콘):
