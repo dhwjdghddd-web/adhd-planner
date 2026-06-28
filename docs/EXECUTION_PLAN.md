@@ -102,17 +102,18 @@
 > 권장 순서: **T1 → T2 → T3 → T4 → T5 → T6 → T7 → T8 → T9 → T10 → T11**.
 > **UI 형태는 이미 확정 완료** — T2·T3·T5·T6·T9의 "확정 사양" 블록을 그대로 따르면 되고, 화면 형태를 다시 묻지 말 것(세부 픽셀/배치 미세조정만 재량). 남은 사용자 확인 지점은 **[REVIEW]**(T2 실기기 검증, T8 데이터 스키마, T11 범위)뿐.
 
-### T1 — 스트릭 안전장치 + 부분 보상 + 자기연민 카피  〔규모 M〕
+### T1 — 스트릭 안전장치 + 부분 보상 + 자기연민 카피  〔규모 M〕 ✅(ab0f013)
 - **목표**: 나쁜 날에도 앱이 안전한 곳. 스트릭 절벽 완화, 부분 성공 보상.
+- **실행 결과 (2026-06-26, Sonnet 4.6 실행)**: 구현 전 코드 확인 결과 **항목 1(유예일)은 이미 구현돼 있었음** — `streak.dart`의 `currentStreak`/`longestStreak`가 `freezeAllowance=2`로 grace를 처리하고(`streakDateKeys`보다 한 계층 위), `streak_test.dart`에 경계 테스트도 이미 존재. 재구현하지 않고 그대로 둠. 항목 2~4(부분 보상·마일스톤·카피)만 신규 구현. 다음 실행자는 "유예일"을 다시 만들지 말 것.
 - **변경**:
-  1. **유예/회복**: `streakDateKeys` 계산에 "유예일" 도입. 설계안 A(권장): 최근 스트릭이 *어제 1일 비었어도* 끊지 않는 grace 1일 허용. 단 **과거 달성일 레코드를 덮어쓰지 않는다**(별도 파생 계산으로만). `daily_achievement.dart`에 grace 로직 추가하고 순수 함수 단위테스트로 고정.
-  2. **부분 보상**: `_CompletionCelebrator`(app.dart)를 확장 — 100%는 현행 컨페티, **50% 최초 도달 시** 가벼운 1회 피드백(스낵바/소형 배지). 둘 다 `AppSettings.lastCelebratedDate`처럼 일자 키로 1일 1회 영속(두 단계 각각의 마커 필요 → 설정 필드 2개 또는 "단계" 저장).
-  3. **마일스톤 가변화**: 3·7·30일에 문구/연출 분기(`completion_celebration` 또는 streak 배지 탭 시 표시).
-  4. **카피**: "실패/미달성" 제거, 최고 기록 병기, 0 추락은 "다시 시작" 톤.
-- **파일**: `daily_achievement.dart`, `app_settings.dart`(마커 필드), `app.dart`(`_CompletionCelebrator`), `completion_celebration.dart`, `streak_badge.dart`.
-- **검증**: `daily_achievement` 순수 단위테스트(유예 경계: 어제 비고 오늘 달성→유지, 이틀 비면 끊김). `_CompletionCelebrator` 위젯테스트(50%/100% 1회 발화·재발화 안 함, 애니메이션이 pumpAndSettle 막지 않도록 억제 경로). 전체 테스트 통과.
-- **커밋**: `추가: 스트릭 유예일·부분 달성 보상·자기연민 카피`.
-- 비고: [[영구 저장 규칙]] 위반 금지 — 유예/회복은 파생 계산이지 저장 변경이 아니다.
+  1. ~~유예/회복~~ — 스킵(이미 구현됨, 위 참고).
+  2. **부분 보상 (구현 완료)**: `_CompletionCelebrator`(app.dart) 확장. `achievement.total > 0 && achievement.isAchieved && !fullyDone`을 `partiallyDone`으로 정의(체크리스트가 있는 날의 50%↑·100%미달만 — 항목 없는 날의 whole-block fallback 달성은 제외해 "절반"이라는 말이 의미 없는 케이스를 막음). 100%(`fullyDone`)와 `if/else-if`로 상호배타 처리 후 각각 독립적으로 reset. 마커: `AppSettings.lastPartialCelebratedDate`(신규 필드, `lastCelebratedDate`와 동일 패턴으로 필드·생성자·copyWith·toMap·fromMap 4곳 갱신). 표시는 `showAppSnackBar`(quick_add_button.dart, 이미 app.dart에 import돼 있음) — 풀스크린 다이얼로그 아님, 가벼운 스낵바. 문구: `오늘 절반을 해냈어요 — 충분히 잘하고 있어요`.
+  3. **마일스톤 가변화 (구현 완료)**: `completion_celebration.dart`에 `const Set<int> celebrationMilestones = {3, 7, 14, 30, 60, 100}` 공개 상수 추가. `showCompletionCelebration`/`_CompletionCelebration`에 `int streakDays = 0` 파라미터 추가 — 마일스톤에 해당하면 본문 타이틀 아래 `$streakDays일 연속, 정말 멋져요!` 줄 추가, 아니면 기존과 완전 동일(매일 숫자 노출 안 함). `_CompletionCelebrator`가 100% 트리거 시 `achievedDaysProvider`를 watch해 `currentStreak(streakDateKeys(...))`로 오늘 포함 스트릭을 계산해 전달.
+  4. **카피 (구현 완료)**: `StreakBadge`에서 `best > 0 && current == 0`(스트릭이 막 0으로 끊긴 상태) 케이스를 위해 시각 텍스트와 **Semantics 라벨 둘 다** `· 다시 시작해도 좋아요` / `최고 연속 N일, 다시 시작해도 좋아요`로 교체 — 기존엔 시각은 침묵, 라벨은 "현재 연속 0일"이라는 적나라한 0을 그대로 말하고 있었음(접근성 누락 발견·수정). "실패/미달성" 어휘는 grep 확인 결과 rewards/checklist 쪽엔 이미 없었음(코드 주석 1건 제외, user-facing 아님).
+- **파일 (실제)**: `app_settings.dart`(`lastPartialCelebratedDate` 필드), `app.dart`(`_CompletionCelebrator` — partiallyDone 분기·streak 계산, import `features/rewards/streak.dart` 추가), `completion_celebration.dart`(`celebrationMilestones`·`streakDays` 파라미터), `streak_badge.dart`(0-추락 카피). `daily_achievement.dart`는 **변경 없음**(grace는 다른 파일에 이미 있었으므로).
+- **검증 (실제)**: `streak_test.dart`의 기존 grace 경계 테스트 그대로 유효(재확인만, 변경 없음). 신규: `streak_badge_test.dart`에 best>0&&current==0 케이스(시각 텍스트 + Semantics 라벨에 "현재 연속 0일" 부재 확인) 1개, `completion_celebration_test.dart`(신규 파일) 4개(비-마일스톤/마일스톤/상수값/reduceMotion), `widget_test.dart`에 App 레벨 통합 3개(50% 스낵바 발화·재발화 안 함·100%+마일스톤 줄). 전체 162→**170개 통과**, analyze 무결, `flutter build apk --debug` 성공.
+- **커밋**: `ab0f013` — `추가: 스트릭 부분 달성(50%) 보상 마일스톤 변주 자기연민 카피 (T1)`.
+- 비고: [[영구 저장 규칙]] 위반 없음 — `AchievedDay` 저장/`daily_achievement.dart` 미변경, 새 마커들은 설정 문서일 뿐 달성 이력이 아님.
 
 ### T2 — 알람 반응 옵션 복원 (스누즈 · 오늘 건너뛰기 · 전환 예고)  〔규모 L〕 [UI-CONFIRM 완료]
 - **목표**: 알람을 무시 대신 "미루기/오늘 패스/미리 알림"으로 응답 가능하게.
