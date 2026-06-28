@@ -122,6 +122,7 @@
   - **버그 발견·수정**: `AlarmScreen`의 `PopScope(canPop: false)`가 시스템 백제스처만 막아야 하는데 `Navigator.maybePop()`(따라서 `popDisposition` 경로 전체)까지 막는다는 걸 위젯테스트가 잡음 — 새 스누즈/건너뛰기 버튼이 `maybePop()`으로 화면을 닫으려다 안 닫히던 실제 버그. `Navigator.pop()`(직접 호출, `popDisposition` 미경유)으로 교체해 해결. **[REVIEW] 항목**: 이 PopScope 동작은 Flutter 프레임워크 소스로 확인했지만, 실기기에서 두 버튼이 실제로 화면을 닫는지 별도 확인 가치 있음.
   - 세 기능이 `app_settings.dart`/`notification_service.dart` 등 같은 파일의 같은 함수 안에서 얽혀 구현돼, 계획서가 제안한 2-커밋 분리(`스누즈/건너뛰기` vs `전환예고`) 대신 **하나의 커밋**으로 묶음 — 인위적 분리 시 중간 커밋이 컴파일 안 되는 상태가 될 위험.
   - `AppSettings.leadMinutes`는 필드만 추가(전역 기본 10), 사양대로 설정화면 UI는 만들지 않음(스누즈 분만 UI 있음).
+  - **실기기 검증 중 추가 버그 발견·수정 (커밋 f76fa51)**: 사용자가 Z Flip7 실기기에서 "스누즈로 미룬 알람이 다시 울릴 때 벨소리모드는 전혀 안 울리고 무음모드는 진동이 짧게 한 번만"이라고 보고. 원인은 `_snooze()`가 `cancelNotification`(취소)과 `scheduleSnooze`(재예약)을 `unawaited`로 순서 보장 없이 나란히 발사 — 둘 다 같은 네이티브 채널로 같은 `requestCode`의 AlarmManager 항목을 다루는데 각자 다른 await 체인을 타 실제 도착 순서가 뒤집힐 수 있었음(스케줄이 취소보다 먼저 도착하면 막 건 스누즈 알람이 바로 지워짐). `await cancel; await schedule;`로 순서 고정. 기기에서 알람 볼륨/DND/STREAM_ALARM 상태를 `adb dumpsys audio`로 확인해 기기 설정 쪽 원인은 배제. 가짜 NotificationService(취소를 인위적으로 지연)로 호출 완료 순서를 고정하는 회귀테스트 추가. test 189→190.
 - **확정 사양 (UI 결정 완료 — 추가 질문 불필요)**:
   - AlarmScreen 레이아웃: 기존 **슬라이드 해제(=시작)** 유지, 그 **아래에 텍스트버튼 2개 좌우** — 왼쪽 `10분 뒤 다시`, 오른쪽 `오늘은 건너뛰기`. (하단 콘텐츠가 슬라이드 트랙을 가리지 않게 간격 확보.)
   - **스누즈 기본 10분**, `AppSettings`에 `snoozeMinutes`(허용값 5/10/15, 기본 10) + 설정 화면 선택 UI.
