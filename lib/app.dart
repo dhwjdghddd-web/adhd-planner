@@ -326,10 +326,32 @@ class _AchievementRecorderState extends ConsumerState<_AchievementRecorder> {
 
   @override
   Widget build(BuildContext context) {
-    final segments = ref.watch(segmentsProvider).value;
-    final completions = ref.watch(completionsProvider).value;
-    final progress = ref.watch(microStepProgressProvider).value;
-    final stored = ref.watch(achievedDaysProvider).value;
+    final segmentsAsync = ref.watch(segmentsProvider);
+    final completionsAsync = ref.watch(completionsProvider);
+    final progressAsync = ref.watch(microStepProgressProvider);
+    final storedAsync = ref.watch(achievedDaysProvider);
+
+    // Wait until everything we'd compute from has actually loaded *for the
+    // current account* -- not just non-null, but settled (not mid-reload
+    // from a uid change). During a logout/login transition,
+    // plannerRepositoryProvider can already point at the new account while
+    // these still report the previous account's last-known values (Riverpod
+    // keeps a StreamProvider's previous data visible while its new
+    // subscription's first event is in flight) -- acting on that mix could
+    // bank a *past* day the old account hadn't gotten to yet into the new,
+    // unrelated account. Same hazard as _CompletionCelebrator's
+    // lastCelebratedDate write; same fix.
+    if (segmentsAsync.isLoading ||
+        completionsAsync.isLoading ||
+        progressAsync.isLoading ||
+        storedAsync.isLoading) {
+      return const SizedBox.shrink();
+    }
+
+    final segments = segmentsAsync.value;
+    final completions = completionsAsync.value;
+    final progress = progressAsync.value;
+    final stored = storedAsync.value;
 
     // Wait until everything we'd compute from has actually loaded — acting on
     // a half-loaded picture could bank a day that isn't really achieved yet,
@@ -413,26 +435,43 @@ class _CompletionCelebratorState extends ConsumerState<_CompletionCelebrator> {
 
   @override
   Widget build(BuildContext context) {
-    // During the brief uid=null gap (signOut -> signInAnonymously),
-    // settingsProvider resets to AppSettings.defaults() *immediately* (a
-    // synchronous Stream.value) while segments/completions/progress/
-    // achievedDays -- switched to a Stream.empty() that never emits -- keep
-    // showing the *previous* (now logging-out) account's data, since Riverpod
-    // retains a StreamProvider's last value while its new stream hasn't
-    // emitted yet. That mismatch -- stale "fully done today" data alongside a
-    // freshly-reset lastCelebratedDate=null -- looked exactly like "today
-    // hasn't been celebrated yet" and re-popped the celebration for an
-    // account that's on its way out. Bailing out whenever there's no active
-    // account closes that gap entirely.
-    if (ref.watch(plannerRepositoryProvider) == null) {
+    // On logout (signOut -> signInAnonymously), plannerRepositoryProvider
+    // switches straight from the old account's repo to null to the new
+    // (empty) anonymous account's repo -- but segments/completions/progress/
+    // achievedDays each depend on it via their own ref.watch, so each one
+    // independently goes through its own AsyncLoading-with-previous-data
+    // phase while its *own* new stream subscription gets its first event.
+    // settingsProvider's catches up fastest (its null-repo fallback and a
+    // brand new account's first read are both near-instant), but
+    // segments/completions/progress took ~100ms longer on a real device --
+    // long enough for one build to see the *old* account's "fully done
+    // today" segments/completions/progress (still mid-AsyncLoading, value
+    // retained) alongside the *new* account's already-reset
+    // lastCelebratedDate=null, which looked exactly like "today hasn't been
+    // celebrated yet" and re-popped the celebration (and then wrote
+    // lastCelebratedDate into the *new*, empty account). Checking
+    // !hasValue/isLoading on every one of them -- not just whether the repo
+    // itself is currently null -- closes that gap regardless of which
+    // provider lags.
+    final segmentsAsync = ref.watch(segmentsProvider);
+    final completionsAsync = ref.watch(completionsProvider);
+    final progressAsync = ref.watch(microStepProgressProvider);
+    final settingsAsync = ref.watch(settingsProvider);
+    final achievedDaysAsync = ref.watch(achievedDaysProvider);
+
+    if (segmentsAsync.isLoading ||
+        completionsAsync.isLoading ||
+        progressAsync.isLoading ||
+        settingsAsync.isLoading ||
+        achievedDaysAsync.isLoading) {
       return const SizedBox.shrink();
     }
 
-    final segments = ref.watch(segmentsProvider).value;
-    final completions = ref.watch(completionsProvider).value;
-    final progress = ref.watch(microStepProgressProvider).value;
-    final settings = ref.watch(settingsProvider).value;
-    final achievedDays = ref.watch(achievedDaysProvider).value;
+    final segments = segmentsAsync.value;
+    final completions = completionsAsync.value;
+    final progress = progressAsync.value;
+    final settings = settingsAsync.value;
+    final achievedDays = achievedDaysAsync.value;
 
     if (segments == null ||
         completions == null ||

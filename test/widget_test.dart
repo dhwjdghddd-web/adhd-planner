@@ -4,11 +4,14 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:adhd_planner/app.dart';
 import 'package:adhd_planner/data/models/achieved_day.dart';
+import 'package:adhd_planner/data/models/alarm_skip.dart';
 import 'package:adhd_planner/data/models/app_settings.dart';
 import 'package:adhd_planner/data/models/completion.dart';
+import 'package:adhd_planner/data/models/memo.dart';
 import 'package:adhd_planner/data/models/micro_step_progress.dart';
 import 'package:adhd_planner/data/models/segment.dart';
 import 'package:adhd_planner/data/providers.dart';
+import 'package:adhd_planner/data/repositories/planner_repository.dart';
 import 'package:adhd_planner/data/today.dart';
 import 'package:adhd_planner/features/focus/alarm_screen.dart';
 import 'package:adhd_planner/features/focus/focus_page.dart';
@@ -33,6 +36,65 @@ Segment _block({
     order: 0,
     microSteps: microSteps,
   );
+}
+
+/// Wraps a [PlannerRepository], delaying the *first* emission of
+/// segments/completions/microStepProgress/achievedDays by a beat -- settings
+/// (and everything else) passes straight through. Reproduces the asymmetric
+/// catch-up speed Riverpod's StreamProviders showed on a real device after
+/// plannerRepositoryProvider switched accounts: settingsProvider's first read
+/// resolved near-instantly, while these needed an actual round trip, leaving
+/// a real window where the new account is active but its checklist data
+/// hasn't arrived yet.
+class _DelayedDataRepository implements PlannerRepository {
+  _DelayedDataRepository(this._inner);
+  final PlannerRepository _inner;
+
+  Stream<T> _delayed<T>(Stream<T> source) => source.asyncMap((v) async {
+        await Future.delayed(const Duration(milliseconds: 10));
+        return v;
+      });
+
+  @override
+  Stream<List<Segment>> watchSegments() => _delayed(_inner.watchSegments());
+  @override
+  Stream<List<Completion>> watchCompletions() => _delayed(_inner.watchCompletions());
+  @override
+  Stream<List<MicroStepProgress>> watchMicroStepProgress() =>
+      _delayed(_inner.watchMicroStepProgress());
+  @override
+  Stream<List<AchievedDay>> watchAchievedDays() => _delayed(_inner.watchAchievedDays());
+
+  @override
+  Stream<List<Memo>> watchMemos() => _inner.watchMemos();
+  @override
+  Stream<List<AlarmSkip>> watchAlarmSkips() => _inner.watchAlarmSkips();
+  @override
+  Stream<AppSettings> watchSettings() => _inner.watchSettings();
+
+  @override
+  Future<void> upsertSegment(Segment s) => _inner.upsertSegment(s);
+  @override
+  Future<void> deleteSegment(String id) => _inner.deleteSegment(id);
+  @override
+  Future<void> addMemo(Memo m) => _inner.addMemo(m);
+  @override
+  Future<void> updateMemo(Memo m) => _inner.updateMemo(m);
+  @override
+  Future<void> deleteMemo(String id) => _inner.deleteMemo(id);
+  @override
+  Future<void> setCompletion(Completion c) => _inner.setCompletion(c);
+  @override
+  Future<void> removeCompletion(String dateKey, String segmentId) =>
+      _inner.removeCompletion(dateKey, segmentId);
+  @override
+  Future<void> saveMicroStepProgress(MicroStepProgress p) => _inner.saveMicroStepProgress(p);
+  @override
+  Future<void> saveAchievedDay(AchievedDay d) => _inner.saveAchievedDay(d);
+  @override
+  Future<void> saveAlarmSkip(AlarmSkip s) => _inner.saveAlarmSkip(s);
+  @override
+  Future<void> saveSettings(AppSettings s) => _inner.saveSettings(s);
 }
 
 void main() {
@@ -266,39 +328,58 @@ void main() {
   });
 
   testWidgets(
-      'the completion celebration is suppressed while there is no active account '
-      '(regression: during the brief uid=null gap on logout, '
-      'segments/completions/progress kept showing the logging-out account\'s '
-      'stale "fully done today" data while settings had already reset to '
-      'defaults -- lastCelebratedDate=null -- which used to look exactly like '
-      '"today has not been celebrated yet" and re-fired it)', (tester) async {
-    await tester.pumpWidget(ProviderScope(
-      overrides: [
-        // No active account -- this is the guard _CompletionCelebrator must
-        // bail out on, regardless of what the other providers below say.
-        plannerRepositoryProvider.overrideWithValue(null),
-        // Reproduces the stale-data combination directly and deterministically
-        // (rather than racing a live uid transition): a fully-done day...
-        segmentsProvider.overrideWith(
-          (ref) => Stream.value(
-            [_block(id: 's1', name: '약 먹기', microSteps: const ['a', 'b'])],
-          ),
-        ),
-        completionsProvider.overrideWith((ref) => Stream.value(const <Completion>[])),
-        microStepProgressProvider.overrideWith(
-          (ref) => Stream.value([MicroStepProgress.today('s1', const [0, 1])]),
-        ),
-        achievedDaysProvider.overrideWith((ref) => Stream.value(const <AchievedDay>[])),
-        // ...alongside freshly-reset settings (lastCelebratedDate: null), the
-        // way settingsProvider's own null-repo fallback behaves.
-        settingsProvider.overrideWith(
-          (ref) => Stream.value(const AppSettings.defaults().copyWith(onboardingComplete: true)),
-        ),
-      ],
-      child: const App(),
-    ));
+      'the completion celebration is suppressed during the in-between window '
+      "where segments/completions/progress/achievedDays haven't caught up to "
+      'a brand new account yet, even though plannerRepositoryProvider and '
+      'settings already have (regression: on a real device, '
+      'signInAnonymously took over a second -- long enough for one rebuild '
+      "to see the logged-out account's stale \"fully done today\" "
+      'segments/completions/progress alongside the new account\'s '
+      'already-reset lastCelebratedDate=null, which looked exactly like '
+      '"today not yet celebrated" and fired the celebration -- persisting '
+      'lastCelebratedDate into the *new*, unrelated account)', (tester) async {
+    final repoHolder = StateProvider<PlannerRepository?>((ref) => null);
+
+    final oldRepo = FakePlannerRepository();
+    await oldRepo.saveSettings(
+      AppSettings.defaults().copyWith(onboardingComplete: true, lastCelebratedDate: dayKeyFor()),
+    );
+    await oldRepo.upsertSegment(_block(id: 's1', name: '약 먹기', microSteps: const ['a', 'b']));
+    await oldRepo.saveMicroStepProgress(MicroStepProgress.today('s1', const [0, 1]));
+
+    final newRepo = _DelayedDataRepository(FakePlannerRepository());
+
+    final container = ProviderContainer(overrides: [
+      plannerRepositoryProvider.overrideWith((ref) => ref.watch(repoHolder)),
+    ]);
+    addTearDown(container.dispose);
+    container.read(repoHolder.notifier).state = oldRepo;
+
+    await tester.pumpWidget(UncontrolledProviderScope(container: container, child: const App()));
     await tester.pumpAndSettle();
 
+    // Already celebrated today on the old account -- nothing to show yet.
+    expect(find.text('오늘 할 일을 다 끝냈어요!'), findsNothing);
+
+    // The account switch: plannerRepositoryProvider flips straight to the new
+    // account. settingsProvider's near-instant first read lands within the
+    // first tick or two, but newRepo's artificially delayed
+    // segments/completions/progress/achievedDays streams stay mid-flight for
+    // ~10ms -- stepping in 1ms ticks (rather than one bare pump(), which
+    // settles past the whole window in a single jump) is what actually
+    // catches the transient mismatch in between.
+    container.read(repoHolder.notifier).state = newRepo;
+    for (var i = 0; i < 15; i++) {
+      await tester.pump(const Duration(milliseconds: 1));
+      // Must never fire during the transition -- this is exactly the
+      // transient window the fix guards against (isLoading still true on the
+      // delayed providers while settings has already reset).
+      expect(find.text('오늘 할 일을 다 끝냈어요!'), findsNothing);
+    }
+
+    // Let the delayed streams finally emit -- the new account settles as the
+    // empty account it really is.
+    await tester.pumpAndSettle();
     expect(find.text('오늘 할 일을 다 끝냈어요!'), findsNothing);
   });
 
