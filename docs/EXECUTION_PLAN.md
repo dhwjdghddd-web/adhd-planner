@@ -115,8 +115,13 @@
 - **커밋**: `ab0f013` — `추가: 스트릭 부분 달성(50%) 보상 마일스톤 변주 자기연민 카피 (T1)`.
 - 비고: [[영구 저장 규칙]] 위반 없음 — `AchievedDay` 저장/`daily_achievement.dart` 미변경, 새 마커들은 설정 문서일 뿐 달성 이력이 아님.
 
-### T2 — 알람 반응 옵션 복원 (스누즈 · 오늘 건너뛰기 · 전환 예고)  〔규모 L〕 [UI-CONFIRM 완료]
+### T2 — 알람 반응 옵션 복원 (스누즈 · 오늘 건너뛰기 · 전환 예고)  〔규모 L〕 [UI-CONFIRM 완료] ✅(d46a687)
 - **목표**: 알람을 무시 대신 "미루기/오늘 패스/미리 알림"으로 응답 가능하게.
+- **실행 결과 (2026-06-26, Sonnet 4.6 구현 → Opus 4.8 검토)**:
+  - 세 항목(스누즈/건너뛰기/전환예고)이 모두 확정 사양대로 구현됨. **네이티브 코드 변경 0** — 스누즈의 1회성은 기존 `_scheduleVibrationAlarm`에 `repeatInterval: Duration.zero`만 넘기면 됨(`VibrationAlarmReceiver.kt`가 `repeatIntervalMs > 0`일 때만 재무장 — 이미 그렇게 동작하고 있었음), 전환 예고 채널은 `flutter_local_notifications`가 첫 스케줄 때 자동 생성(메인 알람만 진동 무음화 버그 회피용 네이티브 `ensureAlarmChannel`이 필요했던 것).
+  - **버그 발견·수정**: `AlarmScreen`의 `PopScope(canPop: false)`가 시스템 백제스처만 막아야 하는데 `Navigator.maybePop()`(따라서 `popDisposition` 경로 전체)까지 막는다는 걸 위젯테스트가 잡음 — 새 스누즈/건너뛰기 버튼이 `maybePop()`으로 화면을 닫으려다 안 닫히던 실제 버그. `Navigator.pop()`(직접 호출, `popDisposition` 미경유)으로 교체해 해결. **[REVIEW] 항목**: 이 PopScope 동작은 Flutter 프레임워크 소스로 확인했지만, 실기기에서 두 버튼이 실제로 화면을 닫는지 별도 확인 가치 있음.
+  - 세 기능이 `app_settings.dart`/`notification_service.dart` 등 같은 파일의 같은 함수 안에서 얽혀 구현돼, 계획서가 제안한 2-커밋 분리(`스누즈/건너뛰기` vs `전환예고`) 대신 **하나의 커밋**으로 묶음 — 인위적 분리 시 중간 커밋이 컴파일 안 되는 상태가 될 위험.
+  - `AppSettings.leadMinutes`는 필드만 추가(전역 기본 10), 사양대로 설정화면 UI는 만들지 않음(스누즈 분만 UI 있음).
 - **확정 사양 (UI 결정 완료 — 추가 질문 불필요)**:
   - AlarmScreen 레이아웃: 기존 **슬라이드 해제(=시작)** 유지, 그 **아래에 텍스트버튼 2개 좌우** — 왼쪽 `10분 뒤 다시`, 오른쪽 `오늘은 건너뛰기`. (하단 콘텐츠가 슬라이드 트랙을 가리지 않게 간격 확보.)
   - **스누즈 기본 10분**, `AppSettings`에 `snoozeMinutes`(허용값 5/10/15, 기본 10) + 설정 화면 선택 UI.
@@ -125,10 +130,10 @@
   1. **스누즈**: AlarmScreen 버튼 → 현재 알람 무음 + **+N분 일회성** 알람 예약. `notification_service`에 일회성 예약 경로 추가(반복 아님, `matchDateTimeComponents` 없이 1회 `zonedSchedule` + 네이티브 진동 1회). 알람 화면 닫기.
   2. **오늘 건너뛰기**: 오늘자 해당 블록 알람 억제. 저장은 `microStepProgress` 패턴을 따른 per-(block,day) **skip 레코드**. `_ForegroundAlarmWatcher`가 skip된 블록은 재팝 금지. (이미 발화한 예약 알림은 무음 처리.)
   3. **전환 예고**: 블록 시작 `L분 전` 저강도 헤드업 알림. `buildSchedule`에 예고 spec 추가(별도 slot, fullScreenIntent=false, 별도 채널), `notificationIdFor(segmentId, slot=1)`. 전역 기본 L분 + 블록별 on/off(Segment 필드 또는 설정).
-- **파일**: `alarm_screen.dart`, `notification_service.dart`, `notification_schedule.dart`, `app.dart`(워처 skip 반영), `app_settings.dart`(스누즈 분·예고 분), 필요 시 `segment.dart`(예고 on/off)·네이티브(일회성 진동).
-- **검증**: `notification_schedule` 단위테스트(예고 spec 생성/슬롯 id 비충돌). skip 저장/조회 테스트. AlarmScreen 위젯테스트(스누즈/건너뛰기 버튼 동작·화면 닫힘, 기존 슬라이드 해제 테스트 유지). 빌드(네이티브 변경 시 필수).
-- **커밋**: 의미 단위로 — 예) `추가: 알람 스누즈/오늘 건너뛰기`, `추가: 구간 전환 예고 알림`.
-- 비고: 과거에 의도적으로 제거했던 기능의 재도입이다. 관련 설계 메모를 갱신했다는 점을 커밋 본문에 남길 것. **[REVIEW]** — 네이티브·알림 동작은 실기기 확인이 필요하니 설치 후 사용자 검증 요청.
+- **파일 (실제)**: `lib/data/models/alarm_skip.dart`(신규), `lib/features/focus/alarm_skip_controller.dart`(신규), `data/repositories/planner_repository.dart`/`firestore_planner_repository.dart`/`test/fakes/fake_planner_repository.dart`(alarmSkips 한 벌), `data/providers.dart`(`alarmSkipsProvider`), `data/today.dart`(`skippedBlockIdsOn`), `data/models/segment.dart`(`leadWarning`), `data/models/app_settings.dart`(`snoozeMinutes`/`leadMinutes`), `services/notification_schedule.dart`(`isLeadWarning`/`buildSchedule(leadMinutes)`), `services/notification_service.dart`(`scheduleSnooze`, lead 채널/분기), `features/focus/alarm_screen.dart`(버튼 UI+동작+pop 버그수정), `app.dart`(워처 skip 가드), `features/segments/segment_form_page.dart`(전환예고 토글), `features/settings/settings_page.dart`(스누즈 분 선택).
+- **검증 (실제)**: `notification_schedule`/`notification_service_test.dart`에 6개(예고 spec 생성·슬롯 비충돌·자정 wrap·payload 태그). `data/today_test.dart`에 `skippedBlockIdsOn` 2개. `segment_test.dart`/`app_settings_test.dart`에 round-trip 각 2개. `alarm_screen_test.dart`에 4개(버튼 표시·스누즈 동작·건너뛰기 동작, 기존 슬라이드 테스트 유지). `segment_form_page_test.dart`/`settings_page_test.dart`에 토글/칩 각 2개. 합계 172→**189개 통과**, analyze 무결, `flutter build apk --debug` 성공(네이티브 변경 없음 — 위 참고).
+- **커밋**: `d46a687` — `추가: 알람 스누즈 · 오늘 건너뛰기 · 구간 전환 예고 알림 (T2)` (단일 커밋, 사유는 위 실행 결과 참고).
+- 비고: 과거에 의도적으로 제거했던 기능의 재도입 — 커밋 본문에 명시함([[project_alarm_alert_postpone_design]] 계열 메모가 있다면 함께 갱신 권장). **[REVIEW] 남음**: 실기기에서 잠금화면/포그라운드 상태의 알람·스누즈·건너뛰기·전환예고 실제 동작 확인.
 
 ### T3 — 빈 상태·계획 보조 (스타터 칩 + 브레인덤프→자동배치)  〔규모 M~L〕 [UI-CONFIRM 완료]
 - **목표**: 빈 다이얼 콜드스타트 제거.
