@@ -155,7 +155,7 @@
 - **검증 (실제)**: `slot_suggester_test.dart` 12개(라운딩·기존블록 회피·자정 컷오프·wrap 가드). `brain_dump_page_test.dart` 4개(버튼 활성/비활성·목록 추가삭제·미리보기·일괄생성·목록으로 돌아가기). `planner_page_test.dart`에 빈상태 렌더 1개 + 칩탭→생성 1개(교체). 전체 192→**208개 통과**, analyze 무결, build 성공.
 - **커밋**: `8a47371` — `추가: 빈 다이얼 스타터 칩 + 브레인덤프로 한꺼번에 시각 배치 (T3)` (단일 커밋).
 
-### T4 — 메모 '닫는 고리' (블록 승격 + 재부상)  〔규모 M〕
+### T4 — 메모 '닫는 고리' (블록 승격 + 재부상)  〔규모 M〕 [UI-CONFIRM 완료] ✅(aa5d2e3)
 - **목표**: 메모 무덤 방지 — 캡처를 행동(블록/항목)으로.
 - **변경**:
   1. 메모 항목에 **"블록/할일로 승격"**: `SegmentFormPage`를 메모 텍스트로 프리필해 열거나, 기존 블록의 microStep으로 추가하는 선택 시트.
@@ -164,6 +164,8 @@
 - **파일**: `memo_inbox_page.dart`, `memos_controller.dart`(또는 segments_controller 연계), `quick_add_sheet.dart`(재사용).
 - **검증**: 승격 시 블록/마이크로스텝 생성 컨트롤러 테스트, 메모 인박스 위젯테스트(기존 탭=수정·체크·스와이프 유지). 전체 통과.
 - **커밋**: `추가: 메모를 블록/할일로 승격, 오래된 메모 재부상`.
+- **확정 사양 (UI 결정 완료)**: 1) 승격은 메모 행 **롱프레스** → 바텀시트("새 블록으로 만들기" / "기존 블록에 항목으로 추가"), 완료 시 메모 reviewed=true. 2) 재부상은 인박스 상단 카드, **3일 이상** 미확인 메모 중 가장 오래된 것 하나, **하루 한 번**(AppSettings.lastMemoNudgeDate). 3) "오늘 처리할 메모 N개" 표면은 사용자 지시로 **보류**(project_memo_today_count_surface_deferred 메모리).
+- **실행 결과 (2026-06-29, Sonnet 4.6 구현)**: 확정 사양대로 구현, 1·2번만(3번 보류). `SegmentFormPage`에 `initialName` 파라미터 + 저장 시 `Navigator.pop(context, true)` 추가(승격 성공 여부 판별용). 신규: `memo_resurfacing.dart`(순수 `oldestNudgeworthyMemo`/`kMemoNudgeMinAge`), `promote_memo_sheet.dart`(승격 시트 + 블록 피커). `AppSettings.lastMemoNudgeDate` 필드 추가(4곳 패턴). 구현 중 실제 버그 두 건 발견·수정: ① 기존 `memo_inbox_page_test.dart` 픽스처가 고정 과거 날짜를 써서 재부상 기준(3일)에 걸려 텍스트 중복으로 4개 테스트 깨짐 → `MemoInboxPage`에 `debugNow` 시드 추가(FocusPage의 `debugNowMinuteOfDay`와 같은 패턴). ② 승격 플로우가 `ref.read(segmentsProvider).value`를 직접 읽었는데, 그 provider를 트리의 아무도 먼저 watch한 적 없으면 첫 읽기가 스트림의 비동기 첫 이벤트보다 앞서 동기적으로 빈 리스트를 반환하는 레이스 발견 → `SegmentsController`가 이미 쓰는 "저장소에서 직접 fresh read" 패턴으로 교정. test 210→227(+17). 실기기 설치·확인 완료(사용자 "확인완료").
 
 ### T5 — Focus를 진짜 집중 도구로 (블록 내 잔여시간 + 짧은 타이머 + 2분 룰)  〔규모 M~L〕 [UI-CONFIRM 완료]
 - **목표**: 시간맹(블록 내부)·착수·과몰입 탈출 대응.
