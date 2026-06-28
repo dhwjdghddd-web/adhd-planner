@@ -21,7 +21,13 @@ const _uuid = Uuid();
 /// Two phases in one page: list entry, then a preview where each suggested
 /// time can still be nudged before the whole batch is created together.
 class BrainDumpPage extends ConsumerStatefulWidget {
-  const BrainDumpPage({super.key});
+  const BrainDumpPage({super.key, @visibleForTesting this.debugNowMinuteOfDay});
+
+  /// Test-only override for "now" (minute-of-day), used by [_suggestTimes]
+  /// instead of the wall clock when set -- without this, a test run close to
+  /// midnight could suggest fewer slots than expected (the same class of
+  /// flake [FocusPage.debugNowMinuteOfDay] exists to avoid).
+  final int? debugNowMinuteOfDay;
 
   @override
   ConsumerState<BrainDumpPage> createState() => _BrainDumpPageState();
@@ -82,10 +88,16 @@ class _BrainDumpPageState extends ConsumerState<BrainDumpPage> {
     });
   }
 
+  int _minuteOfNow() {
+    final override = widget.debugNowMinuteOfDay;
+    if (override != null) return override;
+    final now = DateTime.now();
+    return now.hour * 60 + now.minute;
+  }
+
   void _suggestTimes() {
     final segments = ref.read(segmentsProvider).value ?? const [];
-    final now = DateTime.now();
-    final anchor = anchorMinuteFor(now.hour * 60 + now.minute, segments);
+    final anchor = anchorMinuteFor(_minuteOfNow(), segments);
     final suggested = suggestSlots(_items, segments, anchorMinute: anchor);
     setState(() {
       _preview = suggested;

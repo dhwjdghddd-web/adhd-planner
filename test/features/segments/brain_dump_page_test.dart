@@ -10,7 +10,7 @@ import '../../fakes/fake_notification_service.dart';
 import '../../fakes/fake_planner_repository.dart';
 
 void main() {
-  Widget wrap(FakePlannerRepository repo) {
+  Widget wrap(FakePlannerRepository repo, {int? debugNowMinuteOfDay}) {
     return ProviderScope(
       overrides: [
         plannerRepositoryProvider.overrideWithValue(repo),
@@ -18,7 +18,7 @@ void main() {
         // so that doesn't reach the (absent) platform channel.
         notificationServiceProvider.overrideWithValue(FakeNotificationService()),
       ],
-      child: const MaterialApp(home: BrainDumpPage()),
+      child: MaterialApp(home: BrainDumpPage(debugNowMinuteOfDay: debugNowMinuteOfDay)),
     );
   }
 
@@ -69,7 +69,10 @@ void main() {
       'suggesting times previews each item with a time range, and 추가하기 '
       'creates all of them as real blocks', (tester) async {
     final repo = FakePlannerRepository();
-    await tester.pumpWidget(wrap(repo));
+    // Pinned to noon: anchored at the real wall clock, this test would flake
+    // close to midnight (two 30-minute slots from "now rounded up" can run
+    // past the end of the day, suggesting fewer than the 2 items added below).
+    await tester.pumpWidget(wrap(repo, debugNowMinuteOfDay: 12 * 60));
     await tester.pumpAndSettle();
 
     await addItem(tester, '병원 예약');

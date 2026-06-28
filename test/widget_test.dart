@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -10,6 +11,8 @@ import 'package:adhd_planner/data/models/segment.dart';
 import 'package:adhd_planner/data/providers.dart';
 import 'package:adhd_planner/data/today.dart';
 import 'package:adhd_planner/features/focus/alarm_screen.dart';
+import 'package:adhd_planner/features/focus/focus_page.dart';
+import 'package:adhd_planner/features/memos/quick_add_button.dart';
 import 'package:adhd_planner/services/notification_service.dart';
 
 import 'fakes/fake_planner_repository.dart';
@@ -260,5 +263,84 @@ void main() {
 
     expect(find.text('오늘 할 일을 다 끝냈어요!'), findsOneWidget);
     expect(find.text('3일 연속, 정말 멋져요!'), findsOneWidget);
+  });
+
+  testWidgets(
+      'the completion celebration is suppressed while there is no active account '
+      '(regression: during the brief uid=null gap on logout, '
+      'segments/completions/progress kept showing the logging-out account\'s '
+      'stale "fully done today" data while settings had already reset to '
+      'defaults -- lastCelebratedDate=null -- which used to look exactly like '
+      '"today has not been celebrated yet" and re-fired it)', (tester) async {
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        // No active account -- this is the guard _CompletionCelebrator must
+        // bail out on, regardless of what the other providers below say.
+        plannerRepositoryProvider.overrideWithValue(null),
+        // Reproduces the stale-data combination directly and deterministically
+        // (rather than racing a live uid transition): a fully-done day...
+        segmentsProvider.overrideWith(
+          (ref) => Stream.value(
+            [_block(id: 's1', name: '약 먹기', microSteps: const ['a', 'b'])],
+          ),
+        ),
+        completionsProvider.overrideWith((ref) => Stream.value(const <Completion>[])),
+        microStepProgressProvider.overrideWith(
+          (ref) => Stream.value([MicroStepProgress.today('s1', const [0, 1])]),
+        ),
+        achievedDaysProvider.overrideWith((ref) => Stream.value(const <AchievedDay>[])),
+        // ...alongside freshly-reset settings (lastCelebratedDate: null), the
+        // way settingsProvider's own null-repo fallback behaves.
+        settingsProvider.overrideWith(
+          (ref) => Stream.value(const AppSettings.defaults().copyWith(onboardingComplete: true)),
+        ),
+      ],
+      child: const App(),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.text('오늘 할 일을 다 끝냈어요!'), findsNothing);
+  });
+
+  testWidgets(
+      'checking the last item closes Focus even when the separate completion '
+      "celebration races it onto the same navigator (regression: Focus's own "
+      'delayed self-close used to call a blind Navigator.pop(), which by then '
+      'removed whatever was *currently on top* -- the celebration dialog, '
+      'dismissing it after only a flash -- instead of closing Focus as '
+      'intended)', (tester) async {
+    final repo = FakePlannerRepository();
+    // reduceMotion: true keeps Focus's own self-close delay short (250ms
+    // instead of 900ms-plus-confetti) and avoids the celebration's confetti
+    // animation, so pumpAndSettle reaches a true steady state.
+    await repo.saveSettings(
+      const AppSettings.defaults().copyWith(onboardingComplete: true, reduceMotion: true),
+    );
+    final block = _block(id: 's1', name: '약 먹기', microSteps: const ['물 마시기']);
+    await repo.upsertSegment(block);
+
+    await tester.pumpWidget(ProviderScope(
+      overrides: [plannerRepositoryProvider.overrideWithValue(repo)],
+      child: const App(),
+    ));
+    await tester.pumpAndSettle();
+
+    // Pushed over the home route (PlannerPage) -- the same shape as the real
+    // dial-tap entry, so there's something underneath for Focus's fix to
+    // safely target without ever emptying the navigator.
+    appNavigatorKey.currentState!.push(
+      MaterialPageRoute<void>(builder: (_) => FocusPage.forBlock(block)),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.widgetWithText(CheckboxListTile, '물 마시기'));
+    await tester.pumpAndSettle();
+
+    // Focus closed itself correctly (not left stuck open because its delayed
+    // pop hit the wrong route)...
+    expect(find.byType(FocusPage), findsNothing);
+    // ...and the celebration that raced it is still showing, undisturbed
+    // (not yanked away the instant it appeared).
+    expect(find.text('오늘 할 일을 다 끝냈어요!'), findsOneWidget);
   });
 }

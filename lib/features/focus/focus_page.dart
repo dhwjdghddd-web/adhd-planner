@@ -441,6 +441,14 @@ class _FocusPageState extends ConsumerState<FocusPage> {
     final reduceMotion = ref.read(settingsProvider).value?.reduceMotion ?? false;
     HapticFeedback.mediumImpact();
     setState(() => _celebrating = true);
+    // Captured before the delay below: by the time it elapses, the separate
+    // "오늘 다 끝냈어요" completion celebration (app.dart's
+    // _CompletionCelebrator, racing the same checked-everything data change)
+    // may have already pushed its own route on top of this screen. A blind
+    // Navigator.pop() always removes whatever is *currently on top* -- which
+    // by then would be that celebration dialog, not this screen, dismissing
+    // it after only a flash instead of closing this screen as intended.
+    final route = ModalRoute.of(context);
     if (reduceMotion) {
       await Future.delayed(const Duration(milliseconds: 250));
     } else {
@@ -448,7 +456,19 @@ class _FocusPageState extends ConsumerState<FocusPage> {
       await Future.delayed(const Duration(milliseconds: 900));
     }
 
-    if (mounted) Navigator.of(context).pop();
+    if (!mounted) return;
+    if (route != null && !route.isCurrent) {
+      // Something else got pushed on top of this screen in the meantime --
+      // remove THIS route specifically rather than popping whatever's now on
+      // top by mistake. Safe even when this is the navigator's only "real"
+      // route: route.isCurrent being false means something else is on top of
+      // it, so at least one other route is guaranteed to remain afterward.
+      Navigator.of(context).removeRoute(route);
+    } else {
+      // The common case: nothing else was pushed on top -- a plain pop,
+      // exactly as before.
+      Navigator.of(context).pop();
+    }
   }
 }
 

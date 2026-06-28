@@ -413,6 +413,21 @@ class _CompletionCelebratorState extends ConsumerState<_CompletionCelebrator> {
 
   @override
   Widget build(BuildContext context) {
+    // During the brief uid=null gap (signOut -> signInAnonymously),
+    // settingsProvider resets to AppSettings.defaults() *immediately* (a
+    // synchronous Stream.value) while segments/completions/progress/
+    // achievedDays -- switched to a Stream.empty() that never emits -- keep
+    // showing the *previous* (now logging-out) account's data, since Riverpod
+    // retains a StreamProvider's last value while its new stream hasn't
+    // emitted yet. That mismatch -- stale "fully done today" data alongside a
+    // freshly-reset lastCelebratedDate=null -- looked exactly like "today
+    // hasn't been celebrated yet" and re-popped the celebration for an
+    // account that's on its way out. Bailing out whenever there's no active
+    // account closes that gap entirely.
+    if (ref.watch(plannerRepositoryProvider) == null) {
+      return const SizedBox.shrink();
+    }
+
     final segments = ref.watch(segmentsProvider).value;
     final completions = ref.watch(completionsProvider).value;
     final progress = ref.watch(microStepProgressProvider).value;
