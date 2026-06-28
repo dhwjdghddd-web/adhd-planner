@@ -6,9 +6,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/debug_log.dart';
 import '../../core/time_geometry.dart';
+import '../../data/models/app_settings.dart';
 import '../../data/models/segment.dart';
 import '../../data/providers.dart';
 import '../../services/notification_service.dart';
+import 'alarm_skip_controller.dart';
 import 'focus_page.dart';
 
 // Same platform channel MainActivity already handles for alarm sound/vibration.
@@ -21,8 +23,10 @@ const _alarmGuardChannel = MethodChannel('com.adhdplanner.adhd_planner/alarm_sou
 /// app.dart's `_showAlarmScreen` when a block's start alarm fires, including the
 /// system auto-launching the app over the lock screen via `fullScreenIntent`
 /// (the activity declares `showWhenLocked`/`turnScreenOn`, so it wakes the
-/// screen like a real alarm clock). A big clock + block name, dismissed by a
-/// deliberate slide so a groggy half-tap can't clear it by accident.
+/// screen like a real alarm clock). A big clock + block name, started by a
+/// deliberate slide so a groggy half-tap can't clear it by accident -- plus
+/// two lighter exits below it ("N분 뒤 다시"/"오늘은 건너뛰기") for "지금은 못
+/// 해" rather than only ever being able to start or silently ignore it.
 ///
 /// [notificationId] is the still-showing, insistently repeating alarm
 /// notification to silence on dismiss — though the tap/auto-launch that opened
@@ -90,6 +94,7 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
       }
     }
 
+    final settings = ref.watch(settingsProvider).value ?? const AppSettings.defaults();
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
 
@@ -152,7 +157,28 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
                   label: '밀어서 끄기',
                   onDismiss: () => _dismiss(segment!),
                 ),
-                const SizedBox(height: 32),
+                const SizedBox(height: 20),
+                // Two lighter exits below the slide track (never overlapping
+                // it) -- "지금은 못 함"의 출구. A bare 해제 was the only
+                // response before; these turn the alarm into something you can
+                // actually answer instead of just silencing and ignoring.
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextButton(
+                        onPressed: () => _snooze(segment!, settings.snoozeMinutes),
+                        child: Text('${settings.snoozeMinutes}분 뒤 다시'),
+                      ),
+                    ),
+                    Expanded(
+                      child: TextButton(
+                        onPressed: () => _skipToday(segment!),
+                        child: const Text('오늘은 건너뛰기'),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
               ],
             ),
           ),
@@ -186,6 +212,42 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
       // No platform channel available (e.g. under flutter test).
       logSwallowed('알람 끄기-알림취소', e);
     }
+  }
+
+  // "지금은 못 함, 잠시 후에" -- silences this ring and arms a one-time re-alert
+  // (see NotificationService.scheduleSnooze) rather than just disappearing
+  // until tomorrow, which is what a bare 해제/무시 would do.
+  void _snooze(Segment segment, int snoozeMinutes) {
+    unawaited(_tryCancelNotification());
+    unawaited(_tryScheduleSnooze(segment));
+    // pop, not maybePop: this screen's PopScope(canPop: false) blocks
+    // maybePop()/popDisposition-based pops (that's the whole point -- it's
+    // what stops a stray system back gesture) but does NOT affect this direct
+    // imperative pop, which is exactly the deliberate exit these two buttons
+    // are meant to be.
+    Navigator.of(context).pop();
+  }
+
+  Future<void> _tryScheduleSnooze(Segment segment) async {
+    try {
+      final settings = ref.read(settingsProvider).value ?? const AppSettings.defaults();
+      await ref
+          .read(notificationServiceProvider)
+          .scheduleSnooze(segment: segment, settings: settings);
+    } catch (e) {
+      // No platform channel available (e.g. under flutter test).
+      logSwallowed('알람 스누즈 예약', e);
+    }
+  }
+
+  // "오늘은 그냥 패스" -- silences this ring and records a skip for today (see
+  // AlarmSkipController/_ForegroundAlarmWatcher) instead of starting the block.
+  // Tomorrow's normal daily alarm is untouched.
+  void _skipToday(Segment segment) {
+    unawaited(_tryCancelNotification());
+    unawaited(ref.read(alarmSkipControllerProvider).skipToday(segment.id));
+    // pop, not maybePop -- see the comment in _snooze above.
+    Navigator.of(context).pop();
   }
 }
 

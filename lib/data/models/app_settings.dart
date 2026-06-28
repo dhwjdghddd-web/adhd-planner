@@ -41,6 +41,13 @@ class AppSettings {
   // so the two milestones (50%, 100%) each fire at most once per day,
   // independently. null = never.
   final String? lastPartialCelebratedDate;
+  // Minutes the "10분 뒤 다시" alarm-screen button re-alerts after -- one of
+  // 5/10/15, enforced by the settings-screen picker UI (not validated here).
+  final int snoozeMinutes;
+  // App-wide default minutes the quiet "전환 예고" heads-up notification fires
+  // before a block's start. No settings-screen control yet (see
+  // Segment.leadWarning for the per-block on/off).
+  final int leadMinutes;
 
   const AppSettings({
     this.themeMode = AppThemeMode.system,
@@ -53,6 +60,8 @@ class AppSettings {
     this.vibrationPattern = AlarmVibrationPattern.defaultPattern,
     this.lastCelebratedDate,
     this.lastPartialCelebratedDate,
+    this.snoozeMinutes = 10,
+    this.leadMinutes = 10,
   });
 
   const AppSettings.defaults() : this();
@@ -71,6 +80,8 @@ class AppSettings {
     AlarmVibrationPattern? vibrationPattern,
     String? lastCelebratedDate,
     String? lastPartialCelebratedDate,
+    int? snoozeMinutes,
+    int? leadMinutes,
   }) {
     return AppSettings(
       themeMode: themeMode ?? this.themeMode,
@@ -83,6 +94,8 @@ class AppSettings {
       vibrationPattern: vibrationPattern ?? this.vibrationPattern,
       lastCelebratedDate: lastCelebratedDate ?? this.lastCelebratedDate,
       lastPartialCelebratedDate: lastPartialCelebratedDate ?? this.lastPartialCelebratedDate,
+      snoozeMinutes: snoozeMinutes ?? this.snoozeMinutes,
+      leadMinutes: leadMinutes ?? this.leadMinutes,
     );
   }
 
@@ -97,6 +110,8 @@ class AppSettings {
         'vibrationPattern': vibrationPattern.name,
         'lastCelebratedDate': lastCelebratedDate,
         'lastPartialCelebratedDate': lastPartialCelebratedDate,
+        'snoozeMinutes': snoozeMinutes,
+        'leadMinutes': leadMinutes,
       };
 
   factory AppSettings.fromMap(Map<String, dynamic> map) => AppSettings(
@@ -116,5 +131,7 @@ class AppSettings {
         ),
         lastCelebratedDate: map['lastCelebratedDate'] as String?,
         lastPartialCelebratedDate: map['lastPartialCelebratedDate'] as String?,
+        snoozeMinutes: (map['snoozeMinutes'] as num?)?.toInt() ?? 10,
+        leadMinutes: (map['leadMinutes'] as num?)?.toInt() ?? 10,
       );
 }

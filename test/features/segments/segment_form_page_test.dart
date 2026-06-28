@@ -81,7 +81,9 @@ void main() {
     await tester.pumpWidget(wrap(repo, existing: _block(alarmEnabled: true)));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byType(SwitchListTile));
+    // Disambiguated: the new 전환 예고 switch (visible whenever 알람 is on,
+    // as it is here) made find.byType(SwitchListTile) ambiguous.
+    await tester.tap(find.widgetWithText(SwitchListTile, '알람'));
     await tester.pumpAndSettle();
 
     await tester.tap(find.widgetWithText(FilledButton, '저장'));
@@ -89,6 +91,39 @@ void main() {
 
     final saved = (await repo.watchSegments().first).firstWhere((s) => s.id == 's1');
     expect(saved.alarmEnabled, isFalse);
+  });
+
+  testWidgets('전환 예고 toggle is hidden once the main alarm is off', (tester) async {
+    final repo = FakePlannerRepository();
+    await repo.upsertSegment(_block(alarmEnabled: true));
+
+    await tester.pumpWidget(wrap(repo, existing: _block(alarmEnabled: true)));
+    await tester.pumpAndSettle();
+
+    expect(find.text('전환 예고'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(SwitchListTile, '알람'));
+    await tester.pumpAndSettle();
+
+    // Meaningless without the main alarm -- hidden, not just disabled.
+    expect(find.text('전환 예고'), findsNothing);
+  });
+
+  testWidgets('toggling 전환 예고 off and saving persists leadWarning = false',
+      (tester) async {
+    final repo = FakePlannerRepository();
+    await repo.upsertSegment(_block(alarmEnabled: true));
+
+    await tester.pumpWidget(wrap(repo, existing: _block(alarmEnabled: true)));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.widgetWithText(SwitchListTile, '전환 예고'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, '저장'));
+    await tester.pumpAndSettle();
+
+    final saved = (await repo.watchSegments().first).firstWhere((s) => s.id == 's1');
+    expect(saved.leadWarning, isFalse);
   });
 
   testWidgets('an existing block prefills its items', (tester) async {

@@ -1,5 +1,6 @@
 import 'package:intl/intl.dart';
 
+import 'models/alarm_skip.dart';
 import 'models/completion.dart';
 
 /// Helpers for "what's true about a block *today*", in one place so every
@@ -17,5 +18,15 @@ Set<String> completedBlockIdsOn(List<Completion> completions, {DateTime? now}) {
   return {
     for (final c in completions)
       if (c.dateKey == key) c.segmentId,
+  };
+}
+
+/// Block (segment) ids whose alarm was explicitly skipped ("오늘은 건너뛰기")
+/// on [now]'s day (defaults to today).
+Set<String> skippedBlockIdsOn(List<AlarmSkip> skips, {DateTime? now}) {
+  final key = dayKeyFor(now);
+  return {
+    for (final s in skips)
+      if (s.dateKey == key) s.segmentId,
   };
 }

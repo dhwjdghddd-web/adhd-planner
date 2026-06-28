@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:adhd_planner/data/models/alarm_skip.dart';
 import 'package:adhd_planner/data/models/completion.dart';
 import 'package:adhd_planner/data/today.dart';
 
@@ -18,5 +19,22 @@ void main() {
       completedBlockIdsOn(completions, now: DateTime(2026, 6, 18)),
       {'a', 'b'},
     );
+  });
+
+  test('skippedBlockIdsOn keeps only the given day, ignoring other days', () {
+    final skips = [
+      const AlarmSkip(dateKey: '2026-06-18', segmentId: 'a'),
+      const AlarmSkip(dateKey: '2026-06-18', segmentId: 'b'),
+      const AlarmSkip(dateKey: '2026-06-17', segmentId: 'c'),
+    ];
+    expect(
+      skippedBlockIdsOn(skips, now: DateTime(2026, 6, 18)),
+      {'a', 'b'},
+    );
+  });
+
+  test('a block not skipped today is absent even if skipped on another day', () {
+    final skips = [const AlarmSkip(dateKey: '2026-06-17', segmentId: 'a')];
+    expect(skippedBlockIdsOn(skips, now: DateTime(2026, 6, 18)), isEmpty);
   });
 }

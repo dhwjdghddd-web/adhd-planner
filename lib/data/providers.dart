@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'models/achieved_day.dart';
+import 'models/alarm_skip.dart';
 import 'models/app_settings.dart';
 import 'models/completion.dart';
 import 'models/memo.dart';
@@ -70,6 +71,10 @@ final microStepProgressProvider = StreamProvider<List<MicroStepProgress>>(
 
 final achievedDaysProvider = StreamProvider<List<AchievedDay>>(
   (ref) => _guardedStream(ref.watch(plannerRepositoryProvider), (r) => r.watchAchievedDays()),
+);
+
+final alarmSkipsProvider = StreamProvider<List<AlarmSkip>>(
+  (ref) => _guardedStream(ref.watch(plannerRepositoryProvider), (r) => r.watchAlarmSkips()),
 );
 
 /// Settings는 null uid 구간에 기본값을 유지한다(앱이 깜빡이지 않게).

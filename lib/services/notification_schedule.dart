@@ -44,6 +44,7 @@ class ScheduledSpec {
     required this.minuteOfDay,
     required this.title,
     required this.body,
+    this.isLeadWarning = false,
   });
 
   final int id;
@@ -51,8 +52,16 @@ class ScheduledSpec {
   final int minuteOfDay;
   final String title;
   final String body;
+  // False for the main start-of-block alarm (full-screen takeover); true for
+  // the quiet "전환 예고" heads-up fired [leadMinutes] earlier. Tells
+  // NotificationService which channel/urgency to schedule this under.
+  final bool isLeadWarning;
 
-  String get payload => 'block:$segmentId';
+  // Tagged 'lead:' rather than 'block:' for the lead-warning so a tap on it is
+  // a no-op: _handleResponse's `parts[0] != 'block'` guard already discards
+  // anything that isn't the main alarm, so this never pushes AlarmScreen --
+  // it's purely informational.
+  String get payload => isLeadWarning ? 'lead:$segmentId' : 'block:$segmentId';
 }
 
 /// Deterministic notification id for a block's alarm, so a later `cancelAll` +
@@ -64,12 +73,17 @@ int notificationIdFor(String segmentId, int slot) {
   return base * 10 + slot;
 }
 
+// Slot 0 is the main start-of-block alarm (see notificationIdFor); slot 1 is
+// its lead-warning sibling, so the two never collide for the same block.
+const _leadWarningSlot = 1;
+
 /// Pure: turns the current block list into the exact set of alarms that should
 /// exist on the device — one start-of-block alarm per alarm-enabled block,
-/// recurring daily (blocks recur every day, with no weekday selection). No
-/// plugin calls here — [NotificationService.rescheduleAll] is the thin layer
-/// that applies this.
-List<ScheduledSpec> buildSchedule(List<Segment> segments) {
+/// recurring daily (blocks recur every day, with no weekday selection), plus
+/// (when [Segment.leadWarning] is on) a quiet "전환 예고" heads-up
+/// [leadMinutes] before it. No plugin calls here —
+/// [NotificationService.rescheduleAll] is the thin layer that applies this.
+List<ScheduledSpec> buildSchedule(List<Segment> segments, {int leadMinutes = 10}) {
   final specs = <ScheduledSpec>[];
   for (final segment in segments) {
     if (!segment.alarmEnabled) continue;
@@ -80,6 +94,21 @@ List<ScheduledSpec> buildSchedule(List<Segment> segments) {
       title: segment.name,
       body: '지금 시작할 시간이에요',
     ));
+    if (segment.leadWarning) {
+      // Dart's int % always returns a non-negative result for a positive
+      // divisor, so this correctly wraps a block starting very early in the
+      // day (e.g. 00:05) back into the previous day's late-night minutes
+      // (23:55) rather than going negative.
+      final leadMinuteOfDay = (segment.startMinute - leadMinutes) % 1440;
+      specs.add(ScheduledSpec(
+        id: notificationIdFor(segment.id, _leadWarningSlot),
+        segmentId: segment.id,
+        minuteOfDay: leadMinuteOfDay,
+        title: segment.name,
+        body: '$leadMinutes분 후 시작해요',
+        isLeadWarning: true,
+      ));
+    }
   }
   return specs;
 }

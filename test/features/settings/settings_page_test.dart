@@ -74,6 +74,34 @@ void main() {
     expect(settingsLog.last.vibrationPattern, AlarmVibrationPattern.long);
   });
 
+  testWidgets('shows the snooze-minutes choices with the default selected',
+      (tester) async {
+    await growSurface(tester);
+    await tester.pumpWidget(wrap(FakePlannerRepository()));
+    await tester.pumpAndSettle();
+
+    for (final minutes in const [5, 10, 15]) {
+      expect(find.widgetWithText(ChoiceChip, '$minutes분'), findsOneWidget);
+    }
+    final defaultChip = tester.widget<ChoiceChip>(find.widgetWithText(ChoiceChip, '10분'));
+    expect(defaultChip.selected, true);
+  });
+
+  testWidgets('picking a different snooze minutes persists it', (tester) async {
+    final repo = FakePlannerRepository();
+    final settingsLog = <AppSettings>[];
+    repo.watchSettings().listen(settingsLog.add);
+
+    await growSurface(tester);
+    await tester.pumpWidget(wrap(repo));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.widgetWithText(ChoiceChip, '15분'));
+    await tester.pumpAndSettle();
+
+    expect(settingsLog.last.snoozeMinutes, 15);
+  });
+
   testWidgets('tapping the alarm sound row does not crash with no platform channel',
       (tester) async {
     await growSurface(tester);

@@ -219,9 +219,17 @@ class _ForegroundAlarmWatcherState extends ConsumerState<_ForegroundAlarmWatcher
 
     final segments = ref.read(segmentsProvider).value;
     if (segments == null) return;
+    // Blocks skipped for today ("오늘은 건너뛰기" on AlarmScreen) shouldn't pop
+    // again from this independent timer -- mainly a defensive guard against a
+    // same-minute race (this State recreating and resetting
+    // _lastCheckedMinuteOfDay right after a skip, within the same literal
+    // minute the alarm fired in).
+    final skips = ref.read(alarmSkipsProvider).value ?? const [];
+    final skippedToday = skippedBlockIdsOn(skips);
 
     for (final segment in segments) {
       if (!segment.alarmEnabled) continue;
+      if (skippedToday.contains(segment.id)) continue;
       if (segment.startMinute == minuteOfDay) {
         _showAlarmScreen(
           segmentId: segment.id,

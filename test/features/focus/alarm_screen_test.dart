@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:adhd_planner/data/models/app_settings.dart';
 import 'package:adhd_planner/data/models/completion.dart';
 import 'package:adhd_planner/data/models/segment.dart';
 import 'package:adhd_planner/data/providers.dart';
+import 'package:adhd_planner/data/today.dart';
 import 'package:adhd_planner/features/focus/alarm_screen.dart';
 import 'package:adhd_planner/features/focus/focus_page.dart';
 import 'package:adhd_planner/features/memos/quick_add_button.dart';
@@ -118,5 +120,50 @@ void main() {
     expect(find.byType(AlarmScreen), findsNothing);
     // Exactly one Focus, not the old one plus a freshly pushed one.
     expect(find.byType(FocusPage), findsOneWidget);
+  });
+
+  testWidgets('shows the two lighter exits below the slide, labelled with the '
+      "configured snooze minutes", (tester) async {
+    final repo = FakePlannerRepository();
+    await repo.upsertSegment(_block());
+    await repo.saveSettings(const AppSettings.defaults().copyWith(snoozeMinutes: 15));
+
+    await openAlarm(tester, repo);
+
+    expect(find.text('15분 뒤 다시'), findsOneWidget);
+    expect(find.text('오늘은 건너뛰기'), findsOneWidget);
+  });
+
+  testWidgets("tapping '다시' closes the alarm screen without opening Focus or "
+      'recording a completion (a snooze is "later", not "starting now")',
+      (tester) async {
+    final repo = FakePlannerRepository();
+    await repo.upsertSegment(_block());
+    final snapshots = <List<Completion>>[];
+    repo.watchCompletions().listen(snapshots.add);
+
+    await openAlarm(tester, repo);
+    await tester.tap(find.textContaining('분 뒤 다시'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(AlarmScreen), findsNothing);
+    expect(find.byType(FocusPage), findsNothing);
+    expect(snapshots.last, isEmpty);
+  });
+
+  testWidgets("tapping '오늘은 건너뛰기' closes the alarm screen and records "
+      "today's skip, without opening Focus", (tester) async {
+    final repo = FakePlannerRepository();
+    await repo.upsertSegment(_block(id: 's1'));
+
+    await openAlarm(tester, repo);
+    await tester.tap(find.text('오늘은 건너뛰기'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(AlarmScreen), findsNothing);
+    expect(find.byType(FocusPage), findsNothing);
+
+    final skips = await repo.watchAlarmSkips().first;
+    expect(skippedBlockIdsOn(skips), contains('s1'));
   });
 }

@@ -28,6 +28,11 @@ class Segment {
   final List<String> microSteps;
   // Whether this block rings at [startMinute]. Off for blocks like 수면.
   final bool alarmEnabled;
+  // Whether a quiet "전환 예고" heads-up notification fires
+  // AppSettings.leadMinutes before [startMinute], in addition to the main
+  // alarm. Per-block opt-out of the app-wide default (on); meaningless when
+  // [alarmEnabled] is false (no alarm of any kind for this block then).
+  final bool leadWarning;
   // Notification ids this block currently has scheduled, kept so a routine
   // delete/reschedule can cancel exactly what it created (see
   // NotificationService). Same role it had on the old Routine entity.
@@ -44,6 +49,7 @@ class Segment {
     this.note = '',
     this.microSteps = const [],
     this.alarmEnabled = true,
+    this.leadWarning = true,
     this.notificationIds = const [],
   });
 
@@ -101,6 +107,7 @@ class Segment {
     String? note,
     List<String>? microSteps,
     bool? alarmEnabled,
+    bool? leadWarning,
     List<int>? notificationIds,
   }) {
     return Segment(
@@ -114,6 +121,7 @@ class Segment {
       note: note ?? this.note,
       microSteps: microSteps ?? this.microSteps,
       alarmEnabled: alarmEnabled ?? this.alarmEnabled,
+      leadWarning: leadWarning ?? this.leadWarning,
       notificationIds: notificationIds ?? this.notificationIds,
     );
   }
@@ -129,6 +137,7 @@ class Segment {
         'note': note,
         'microSteps': microSteps,
         'alarmEnabled': alarmEnabled,
+        'leadWarning': leadWarning,
         'notificationIds': notificationIds,
       };
 
@@ -143,6 +152,7 @@ class Segment {
         note: (map['note'] as String?) ?? '',
         microSteps: List<String>.from(map['microSteps'] as List? ?? const []),
         alarmEnabled: (map['alarmEnabled'] as bool?) ?? true,
+        leadWarning: (map['leadWarning'] as bool?) ?? true,
         notificationIds: List<int>.from(map['notificationIds'] as List? ?? const []),
       );
 }

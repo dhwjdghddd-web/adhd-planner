@@ -137,6 +137,15 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     await _rescheduleAlarms(updated);
   }
 
+  // No reschedule needed: snoozeMinutes is only read at the moment "N분 뒤
+  // 다시" is actually pressed on AlarmScreen, not baked into any already-armed
+  // schedule the way sound/vibration are.
+  Future<void> _setSnoozeMinutes(AppSettings settings, int minutes) {
+    return ref
+        .read(settingsControllerProvider)
+        .save(settings.copyWith(snoozeMinutes: minutes));
+  }
+
   @override
   Widget build(BuildContext context) {
     final settingsAsync = ref.watch(settingsProvider);
@@ -299,6 +308,28 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                   label: Text(pattern.label),
                   selected: settings.vibrationPattern == pattern,
                   onSelected: (_) => _setVibrationPattern(settings, pattern),
+                ),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+          child: Text(
+            '스누즈 시간 (알람에서 "다시" 눌렀을 때)',
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final minutes in const [5, 10, 15])
+                ChoiceChip(
+                  label: Text('$minutes분'),
+                  selected: settings.snoozeMinutes == minutes,
+                  onSelected: (_) => _setSnoozeMinutes(settings, minutes),
                 ),
             ],
           ),

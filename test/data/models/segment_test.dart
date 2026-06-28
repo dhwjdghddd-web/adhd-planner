@@ -20,11 +20,12 @@ Segment _segment({
 
 void main() {
   group('Segment block fields', () {
-    test('defaults: no note/items, alarm on, no notification ids', () {
+    test('defaults: no note/items, alarm on, lead warning on, no notification ids', () {
       final s = _segment(startMinute: 0, endMinute: 60);
       expect(s.note, '');
       expect(s.microSteps, isEmpty);
       expect(s.alarmEnabled, true);
+      expect(s.leadWarning, true);
       expect(s.notificationIds, isEmpty);
     });
 
@@ -33,12 +34,14 @@ void main() {
         note: 'memo',
         microSteps: ['a', 'b'],
         alarmEnabled: false,
+        leadWarning: false,
         notificationIds: [1, 2, 3],
       );
       final restored = Segment.fromMap(s.toMap());
       expect(restored.note, 'memo');
       expect(restored.microSteps, ['a', 'b']);
       expect(restored.alarmEnabled, false);
+      expect(restored.leadWarning, false);
       expect(restored.notificationIds, [1, 2, 3]);
     });
 
@@ -55,6 +58,7 @@ void main() {
       expect(restored.note, '');
       expect(restored.microSteps, isEmpty);
       expect(restored.alarmEnabled, true);
+      expect(restored.leadWarning, true);
       expect(restored.notificationIds, isEmpty);
     });
 

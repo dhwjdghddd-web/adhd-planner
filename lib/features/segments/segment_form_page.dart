@@ -39,6 +39,7 @@ class _SegmentFormPageState extends ConsumerState<SegmentFormPage> {
   late int _startMinute;
   late int _endMinute;
   late bool _alarmEnabled;
+  late bool _leadWarning;
   late List<String> _microSteps;
   // Parallel to _microSteps, one stable id per item so ReorderableListView can
   // track each item's identity across reorders -- the items are plain strings
@@ -58,6 +59,7 @@ class _SegmentFormPageState extends ConsumerState<SegmentFormPage> {
     _startMinute = existing?.startMinute ?? 6 * 60;
     _endMinute = existing?.endMinute ?? 12 * 60;
     _alarmEnabled = existing?.alarmEnabled ?? true;
+    _leadWarning = existing?.leadWarning ?? true;
     _microSteps = [...(existing?.microSteps ?? const <String>[])];
     _microStepKeyIds = List.generate(_microSteps.length, (_) => _nextMicroStepKeyId++);
   }
@@ -163,6 +165,7 @@ class _SegmentFormPageState extends ConsumerState<SegmentFormPage> {
       note: _noteController.text.trim(),
       microSteps: _microSteps,
       alarmEnabled: _alarmEnabled,
+      leadWarning: _leadWarning,
       notificationIds: widget.existing?.notificationIds ?? const [],
     );
 
@@ -364,6 +367,17 @@ class _SegmentFormPageState extends ConsumerState<SegmentFormPage> {
               value: _alarmEnabled,
               onChanged: (value) => setState(() => _alarmEnabled = value),
             ),
+            // Meaningless without the main alarm above (no alarm of any kind
+            // fires for this block when it's off), so hidden rather than shown
+            // disabled.
+            if (_alarmEnabled)
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('전환 예고'),
+                subtitle: const Text('시작 10분 전에 조용히 미리 알려줘요'),
+                value: _leadWarning,
+                onChanged: (value) => setState(() => _leadWarning = value),
+              ),
             const SizedBox(height: 16),
             const Text('루틴', style: TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 4),

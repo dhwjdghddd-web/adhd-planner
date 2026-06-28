@@ -1,4 +1,5 @@
 import '../models/achieved_day.dart';
+import '../models/alarm_skip.dart';
 import '../models/app_settings.dart';
 import '../models/completion.dart';
 import '../models/memo.dart';
@@ -34,6 +35,10 @@ abstract class PlannerRepository {
   // Achieved days (streak source -- per day, write-once; see [AchievedDay])
   Stream<List<AchievedDay>> watchAchievedDays();
   Future<void> saveAchievedDay(AchievedDay d);
+
+  // Alarm skips (per block, per day -- "오늘은 건너뛰기" on the alarm screen)
+  Stream<List<AlarmSkip>> watchAlarmSkips();
+  Future<void> saveAlarmSkip(AlarmSkip s);
 
   // Settings
   Stream<AppSettings> watchSettings();

@@ -29,6 +29,14 @@ export 'notification_schedule.dart';
 const _alarmChannelBase = 'routine_v2';
 const _alarmChannelName = '구간 알람';
 
+// The quiet "전환 예고" heads-up has no per-user sound/vibration choice (it's
+// always quiet), so unlike the main alarm channel it never needs to vary --
+// one stable id is enough. flutter_local_notifications auto-creates this
+// channel itself on first schedule (no native ensureAlarmChannel dance needed
+// -- that workaround exists only for the main alarm's haptics-muting bug).
+const _leadChannelId = 'lead_warning_v1';
+const _leadChannelName = '구간 전환 예고';
+
 // USAGE_ALARM is what makes these ring/vibrate through the alarm stream
 // instead of the notification stream — the same reason a normal alarm clock
 // app still goes off when the phone's ringer is set to silent or vibrate.
@@ -71,7 +79,7 @@ String _channelSuffix(AppSettings settings) {
 
 String _alarmChannelId(AppSettings settings) => '${_alarmChannelBase}_${_channelSuffix(settings)}';
 
-AndroidNotificationDetails _androidDetailsFor(ScheduledSpec spec, AppSettings settings) {
+AndroidNotificationDetails _androidDetailsFor(AppSettings settings) {
   final sound = _soundFor(settings);
   final vibrationPattern = vibrationPatternFor(settings.vibrationPattern);
 
@@ -101,6 +109,21 @@ AndroidNotificationDetails _androidDetailsFor(ScheduledSpec spec, AppSettings se
     // silences the alarm on its own -- see _handleResponse.
   );
 }
+
+// Deliberately the opposite of the main alarm on every "loudness" axis: no
+// insistent repeat, no custom alarm sound/vibration pattern, no full-screen
+// takeover, autoCancel left at its default (a tap just dismisses it -- see
+// _handleResponse's 'lead:' no-op). Importance.high is still needed for it to
+// actually pop as a heads-up banner rather than sitting silently in the shade.
+const AndroidNotificationDetails _leadAndroidDetails = AndroidNotificationDetails(
+  _leadChannelId,
+  _leadChannelName,
+  channelDescription: '구간이 시작되기 전에 미리 조용히 알려드려요',
+  importance: Importance.high,
+  priority: Priority.high,
+  category: AndroidNotificationCategory.reminder,
+  fullScreenIntent: false,
+);
 
 // Talks to MainActivity.kt's "ensureAlarmChannel" handler — see the long
 // comment there for why this can't just be
@@ -213,15 +236,33 @@ class NotificationService {
     }
     await _plugin.cancelAll();
 
-    final specs = buildSchedule(segments);
+    final specs = buildSchedule(segments, leadMinutes: settings.leadMinutes);
     for (final spec in specs) {
       final triggerAt = nextInstanceOf(spec.minuteOfDay);
+      if (spec.isLeadWarning) {
+        // Quiet heads-up only -- no native Vibrator call, no alarmClock
+        // urgency/status-bar icon. flutter_local_notifications auto-creates
+        // _leadChannelId itself on first use (no native channel dance needed,
+        // unlike the main alarm -- see _leadAndroidDetails).
+        await _plugin.zonedSchedule(
+          spec.id,
+          spec.title,
+          spec.body,
+          triggerAt,
+          const NotificationDetails(android: _leadAndroidDetails),
+          uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
+          androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+          matchDateTimeComponents: DateTimeComponents.time,
+          payload: spec.payload,
+        );
+        continue;
+      }
       await _plugin.zonedSchedule(
         spec.id,
         spec.title,
         spec.body,
         triggerAt,
-        NotificationDetails(android: _androidDetailsFor(spec, settings)),
+        NotificationDetails(android: _androidDetailsFor(settings)),
         uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
         // alarmClock (AlarmManager.setAlarmClock under the hood), not just
         // exactAllowWhileIdle: Samsung OneUI's "무음" ringer mode appears to
@@ -272,6 +313,42 @@ class NotificationService {
   /// directly-triggered Vibrator call alongside it (see VibrationAlarmReceiver
   /// .kt) — that one keeps buzzing on its own timer independently.
   Future<void> cancelNotification(int id) => _silenceAlarm(id);
+
+  /// Schedules a ONE-TIME re-alert for [segment], [settings.snoozeMinutes] from
+  /// now -- the "N분 뒤 다시" action on AlarmScreen. Reuses the block's normal
+  /// slot-0 notification id, so tomorrow's regular [rescheduleAll] naturally
+  /// overwrites it again and a later [cancelBlockAlarms] still finds it via
+  /// [Segment.notificationIds]. Not recurring: `matchDateTimeComponents` is
+  /// omitted (a one-off `zonedSchedule`), and the native vibration alarm is
+  /// armed with `repeatInterval: Duration.zero` -- VibrationAlarmReceiver.kt
+  /// only re-arms itself when `repeatIntervalMs > 0`, so this fires exactly
+  /// once before going quiet on its own.
+  Future<void> scheduleSnooze({
+    required Segment segment,
+    required AppSettings settings,
+  }) async {
+    await _ensureChannels(settings);
+    final id = notificationIdFor(segment.id, 0);
+    final triggerAt =
+        tz.TZDateTime.now(tz.local).add(Duration(minutes: settings.snoozeMinutes));
+    await _plugin.zonedSchedule(
+      id,
+      segment.name,
+      '지금 시작할 시간이에요',
+      triggerAt,
+      NotificationDetails(android: _androidDetailsFor(settings)),
+      uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
+      androidScheduleMode: AndroidScheduleMode.alarmClock,
+      payload: 'block:${segment.id}',
+    );
+    await _scheduleVibrationAlarm(
+      requestCode: id,
+      triggerAt: triggerAt,
+      pattern: vibrationPatternFor(settings.vibrationPattern),
+      durationMs: _alarmRepeatMs,
+      repeatInterval: Duration.zero,
+    );
+  }
 
   /// Cancels every still-armed notification (and the Vibrator alarm riding
   /// alongside each) for a block that's about to be deleted. `rescheduleAll`'s

@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 
 import '../../models/achieved_day.dart';
+import '../../models/alarm_skip.dart';
 import '../../models/app_settings.dart';
 import '../../models/completion.dart';
 import '../../models/memo.dart';
@@ -89,6 +90,17 @@ class FirestorePlannerRepository implements PlannerRepository {
   @override
   Future<void> saveAchievedDay(AchievedDay d) =>
       _collection('achievedDays').doc(d.id).set(d.toMap());
+
+  // Alarm skips -- same unbounded-growth/recent-window reasoning as
+  // completions/microStepProgress above (one skip doc can be created per
+  // block per day).
+  @override
+  Stream<List<AlarmSkip>> watchAlarmSkips() =>
+      _watchSince('alarmSkips', AlarmSkip.fromMap, _historyWindowDays);
+
+  @override
+  Future<void> saveAlarmSkip(AlarmSkip s) =>
+      _collection('alarmSkips').doc(s.id).set(s.toMap());
 
   // Settings
   @override

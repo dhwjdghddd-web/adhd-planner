@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:adhd_planner/data/models/achieved_day.dart';
+import 'package:adhd_planner/data/models/alarm_skip.dart';
 import 'package:adhd_planner/data/models/app_settings.dart';
 import 'package:adhd_planner/data/models/completion.dart';
 import 'package:adhd_planner/data/models/memo.dart';
@@ -17,6 +18,7 @@ class FakePlannerRepository implements PlannerRepository {
   final Map<String, Completion> _completions = {};
   final Map<String, MicroStepProgress> _microStepProgress = {};
   final Map<String, AchievedDay> _achievedDays = {};
+  final Map<String, AlarmSkip> _alarmSkips = {};
   AppSettings _settings = const AppSettings.defaults();
 
   final _segmentsStream = _ReplayStream<List<Segment>>();
@@ -24,6 +26,7 @@ class FakePlannerRepository implements PlannerRepository {
   final _completionsStream = _ReplayStream<List<Completion>>();
   final _microStepProgressStream = _ReplayStream<List<MicroStepProgress>>();
   final _achievedDaysStream = _ReplayStream<List<AchievedDay>>();
+  final _alarmSkipsStream = _ReplayStream<List<AlarmSkip>>();
   final _settingsStream = _ReplayStream<AppSettings>();
 
   FakePlannerRepository() {
@@ -32,6 +35,7 @@ class FakePlannerRepository implements PlannerRepository {
     _completionsStream.add(const []);
     _microStepProgressStream.add(const []);
     _achievedDaysStream.add(const []);
+    _alarmSkipsStream.add(const []);
     _settingsStream.add(_settings);
   }
 
@@ -102,6 +106,15 @@ class FakePlannerRepository implements PlannerRepository {
   Future<void> saveAchievedDay(AchievedDay d) async {
     _achievedDays[d.id] = d;
     _achievedDaysStream.add(_achievedDays.values.toList());
+  }
+
+  @override
+  Stream<List<AlarmSkip>> watchAlarmSkips() => _alarmSkipsStream.stream;
+
+  @override
+  Future<void> saveAlarmSkip(AlarmSkip s) async {
+    _alarmSkips[s.id] = s;
+    _alarmSkipsStream.add(_alarmSkips.values.toList());
   }
 
   @override

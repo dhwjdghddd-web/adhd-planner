@@ -14,6 +14,8 @@ void main() {
       expect(settings.alarmSoundUri, isNull);
       expect(settings.alarmSoundLabel, isNull);
       expect(settings.vibrationPattern, AlarmVibrationPattern.defaultPattern);
+      expect(settings.snoozeMinutes, 10);
+      expect(settings.leadMinutes, 10);
     });
 
     test('toMap/fromMap round-trips every field including onboardingComplete', () {
@@ -66,6 +68,19 @@ void main() {
       final restored = AppSettings.fromMap(const {'themeMode': 'dark'});
       expect(restored.alarmSoundUri, isNull);
       expect(restored.vibrationPattern, AlarmVibrationPattern.defaultPattern);
+    });
+
+    test('toMap/fromMap round-trips snoozeMinutes and leadMinutes', () {
+      const settings = AppSettings(snoozeMinutes: 15, leadMinutes: 5);
+      final restored = AppSettings.fromMap(settings.toMap());
+      expect(restored.snoozeMinutes, 15);
+      expect(restored.leadMinutes, 5);
+    });
+
+    test('fromMap defaults snoozeMinutes/leadMinutes to 10 on a legacy doc missing them', () {
+      final restored = AppSettings.fromMap(const {'themeMode': 'dark'});
+      expect(restored.snoozeMinutes, 10);
+      expect(restored.leadMinutes, 10);
     });
 
     test('clearAlarmSound resets to the system default even with a uri/label passed', () {
