@@ -140,8 +140,9 @@
 - **커밋**: `d46a687` — `추가: 알람 스누즈 · 오늘 건너뛰기 · 구간 전환 예고 알림 (T2)` (단일 커밋, 사유는 위 실행 결과 참고).
 - 비고: 과거에 의도적으로 제거했던 기능의 재도입 — 커밋 본문에 명시함([[project_alarm_alert_postpone_design]] 계열 메모가 있다면 함께 갱신 권장). **[REVIEW] 남음**: 실기기에서 잠금화면/포그라운드 상태의 알람·스누즈·건너뛰기·전환예고 실제 동작 확인.
 
-### T3 — 빈 상태·계획 보조 (스타터 칩 + 브레인덤프→자동배치)  〔규모 M~L〕 [UI-CONFIRM 완료]
+### T3 — 빈 상태·계획 보조 (스타터 칩 + 브레인덤프→자동배치)  〔규모 M~L〕 [UI-CONFIRM 완료] ✅(8a47371)
 - **목표**: 빈 다이얼 콜드스타트 제거.
+- **실행 결과 (2026-06-28, Sonnet 4.6 구현)**: 확정 사양대로 구현. 한 가지 실제 버그를 구현 중 발견·수정: 빈 상태 콘텐츠(안내문+칩7+버튼)의 자연 높이가 옛 다이얼의 `dialSize`처럼 화면 크기에 맞춰 계산되지 않아, 작은 화면/테스트 서피스에서 `RenderFlex` 오버플로우가 났음(기존 `app bar action`/`구간 추가 FAB` 테스트가 이걸로 깨짐 — 내 변경의 직접 회귀). 빈 상태 전용 Column을 `Expanded`+`SingleChildScrollView`로 분리해 해결. 기존 "지금' 버튼이 빈 상태에서도 동작" 테스트는 그 어포던스 자체가 새 디자인에서 의도적으로 사라졌으므로(빈 다이얼 자체가 없어짐) 삭제, "오늘 일정이 없어요" 테스트는 새 스타터칩 기준으로 교체.
 - **확정 사양 (UI 결정 완료)**:
   1. **빈 상태 홈**: `segments`가 비면 다이얼 대신 안내문 + **개별 스타터 칩**을 Wrap으로. 칩 1탭 = 그 블록 1개를 기본 시각·아이콘으로 추가(다이얼이 즉시 채워짐). 칩 세트(7종, 합리적 기본 시각·아이콘):
      - 기상 07:00–07:30, 약 07:30–07:40, 아침 07:40–08:10, 집중 09:00–11:00, 점심 12:00–13:00, 휴식 15:00–15:30, 수면 23:00–익일(end는 1439 등 합리값). 아이콘은 `segment_icons.dart`의 기존 key 사용.
@@ -149,9 +150,9 @@
   2. **브레인덤프 → 블록 (자동 시각 추천 포함)**: 떠오르는 일들을 나열(텍스트, 음성 캡처 재사용) → **"시각 자동 배치"** 버튼으로 각 항목에 시각 제안 → 사용자가 조정 가능 → 일괄 생성.
      - 자동배치는 **순수·결정적 함수** `suggestSlots(items, existingSegments, anchorMinute)`로 구현(단위테스트 필수). 휴리스틱(1차): anchor = max(현재시각을 30분 올림, 마지막 기존 블록 end). 각 항목 기본 30분, 기존 블록과 겹치면 다음 빈 구간으로 밀어 순차 배치. 자정 넘기면 중단/경고.
      - 생성 전 미리보기에서 시각/길이 수정 가능. 일괄 생성은 `segments_controller`에 bulk upsert 추가.
-- **파일**: 홈 빈 상태 위젯(`planner_page.dart` 또는 신규), 템플릿 데이터(신규 `lib/features/segments/segment_templates.dart`), `segments_controller`(일괄 upsert), 브레인덤프 화면(신규).
-- **검증**: 템플릿 추가 후 `segments`에 반영되는 위젯/컨트롤러 테스트. 빈 상태 렌더 테스트. 전체 통과.
-- **커밋**: `추가: 빈 상태 스타터 템플릿`, (후속) `추가: 브레인덤프로 블록 만들기`.
+- **파일 (실제)**: `lib/features/segments/segment_templates.dart`(신규, 칩 7개 데이터), `lib/features/segments/slot_suggester.dart`(신규, `suggestSlots`/`anchorMinuteFor`/`SuggestedSlot` 순수 함수), `lib/features/segments/brain_dump_page.dart`(신규, 2단계 화면: 목록입력→미리보기), `segments_controller.dart`(`upsertAll` 추가), `planner_page.dart`(빈 상태 분기 + `_EmptyHomeStarter`), `test/features/planner/planner_page_test.dart`(빈 상태 테스트 교체).
+- **검증 (실제)**: `slot_suggester_test.dart` 12개(라운딩·기존블록 회피·자정 컷오프·wrap 가드). `brain_dump_page_test.dart` 4개(버튼 활성/비활성·목록 추가삭제·미리보기·일괄생성·목록으로 돌아가기). `planner_page_test.dart`에 빈상태 렌더 1개 + 칩탭→생성 1개(교체). 전체 192→**208개 통과**, analyze 무결, build 성공.
+- **커밋**: `8a47371` — `추가: 빈 다이얼 스타터 칩 + 브레인덤프로 한꺼번에 시각 배치 (T3)` (단일 커밋).
 
 ### T4 — 메모 '닫는 고리' (블록 승격 + 재부상)  〔규모 M〕
 - **목표**: 메모 무덤 방지 — 캡처를 행동(블록/항목)으로.
