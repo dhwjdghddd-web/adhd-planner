@@ -41,6 +41,26 @@ void main() {
     expect(find.text('· 현재 2일'), findsOneWidget);
   });
 
+  testWidgets(
+      'a streak that just dropped to 0 shows a gentle restart cue instead of a bare 0',
+      (tester) async {
+    final repo = FakePlannerRepository();
+    final now = DateTime.now();
+    // Banked 10 days ago: far enough in the past that the gap exceeds the
+    // freeze allowance, so longestStreak is 1 (best > 0) but currentStreak is
+    // 0 -- exactly the "just dropped to 0" case that must not read as a bare
+    // "0" or go silent.
+    await repo.saveAchievedDay(AchievedDay.forDay(now.subtract(const Duration(days: 10))));
+
+    await tester.pumpWidget(wrap(repo));
+    await tester.pumpAndSettle();
+
+    expect(find.text('최고 1일'), findsOneWidget);
+    expect(find.text('· 다시 시작해도 좋아요'), findsOneWidget);
+    // Never speaks the streak as a bare 0, in the accessible label either.
+    expect(find.bySemanticsLabel(RegExp(r'현재 연속 0일')), findsNothing);
+  });
+
   testWidgets('a banked past day keeps counting even after its routine is deleted',
       (tester) async {
     final repo = FakePlannerRepository();

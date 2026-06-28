@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:adhd_planner/app.dart';
+import 'package:adhd_planner/data/models/achieved_day.dart';
 import 'package:adhd_planner/data/models/app_settings.dart';
 import 'package:adhd_planner/data/models/micro_step_progress.dart';
 import 'package:adhd_planner/data/models/segment.dart';
@@ -146,5 +147,75 @@ void main() {
     // live (could fall back below the bar before midnight) so it must not be.
     expect(banked, contains(dayKeyFor(yesterday)));
     expect(banked, isNot(contains(dayKeyFor(now))));
+  });
+
+  testWidgets(
+      '_CompletionCelebrator shows the lighter halfway snackbar on first crossing 50%, '
+      'not the full-screen 100% celebration', (tester) async {
+    final repo = FakePlannerRepository();
+    await repo.saveSettings(const AppSettings.defaults().copyWith(onboardingComplete: true));
+    // 2 of 4 items checked today -- exactly the 50% bar, not 100%.
+    await repo.upsertSegment(_block(id: 's1', name: '약 먹기', microSteps: const ['a', 'b', 'c', 'd']));
+    await repo.saveMicroStepProgress(MicroStepProgress.today('s1', const [0, 1]));
+
+    await tester.pumpWidget(ProviderScope(
+      overrides: [plannerRepositoryProvider.overrideWithValue(repo)],
+      child: const App(),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.text('오늘 절반을 해냈어요 — 충분히 잘하고 있어요'), findsOneWidget);
+    // The full-screen celebration is for 100% only -- must not also appear.
+    expect(find.text('오늘 할 일을 다 끝냈어요!'), findsNothing);
+
+    final saved = await repo.watchSettings().first;
+    expect(saved.lastPartialCelebratedDate, dayKeyFor());
+  });
+
+  testWidgets(
+      "_CompletionCelebrator doesn't re-show the halfway snackbar once already marked today",
+      (tester) async {
+    final repo = FakePlannerRepository();
+    await repo.saveSettings(
+      AppSettings.defaults()
+          .copyWith(onboardingComplete: true, lastPartialCelebratedDate: dayKeyFor()),
+    );
+    await repo.upsertSegment(_block(id: 's1', name: '약 먹기', microSteps: const ['a', 'b', 'c', 'd']));
+    await repo.saveMicroStepProgress(MicroStepProgress.today('s1', const [0, 1]));
+
+    await tester.pumpWidget(ProviderScope(
+      overrides: [plannerRepositoryProvider.overrideWithValue(repo)],
+      child: const App(),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.text('오늘 절반을 해냈어요 — 충분히 잘하고 있어요'), findsNothing);
+  });
+
+  testWidgets(
+      'a 100% completion on a milestone-length streak (e.g. day 3) shows the streak '
+      'line in the full-screen celebration', (tester) async {
+    final repo = FakePlannerRepository();
+    // reduceMotion: true -- the celebration's confetti animation would
+    // otherwise keep pumpAndSettle from ever settling.
+    await repo.saveSettings(
+      const AppSettings.defaults().copyWith(onboardingComplete: true, reduceMotion: true),
+    );
+    final now = DateTime.now();
+    // Two consecutive banked days right before today, so today completing
+    // makes this the 3rd consecutive day -- a celebrationMilestones entry.
+    await repo.saveAchievedDay(AchievedDay.forDay(now.subtract(const Duration(days: 1))));
+    await repo.saveAchievedDay(AchievedDay.forDay(now.subtract(const Duration(days: 2))));
+    await repo.upsertSegment(_block(id: 's1', name: '약 먹기', microSteps: const ['a', 'b']));
+    await repo.saveMicroStepProgress(MicroStepProgress.today('s1', const [0, 1]));
+
+    await tester.pumpWidget(ProviderScope(
+      overrides: [plannerRepositoryProvider.overrideWithValue(repo)],
+      child: const App(),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.text('오늘 할 일을 다 끝냈어요!'), findsOneWidget);
+    expect(find.text('3일 연속, 정말 멋져요!'), findsOneWidget);
   });
 }

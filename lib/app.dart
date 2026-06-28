@@ -15,6 +15,7 @@ import 'features/onboarding/onboarding_page.dart';
 import 'features/planner/planner_page.dart';
 import 'features/rewards/completion_celebration.dart';
 import 'features/rewards/daily_achievement.dart';
+import 'features/rewards/streak.dart';
 import 'services/notification_service.dart';
 
 /// Root widget. Theme mode and font scale follow [AppSettings] live (see
@@ -376,13 +377,17 @@ class _AchievementRecorderState extends ConsumerState<_AchievementRecorder> {
   }
 }
 
-/// No visual presence — watches today's checklist progress and, the moment every
-/// one of today's "루틴" items is ticked, pops the full-screen completion
-/// celebration ([showCompletionCelebration]) exactly once per day. The day-key
-/// of the last celebration is persisted in [AppSettings.lastCelebratedDate], so
-/// it doesn't re-fire on rebuild, app restart, or un-checking and re-checking
-/// the same day. Lives here (not on the home screen) so it lands wherever the
-/// final item is checked — Focus, the catch-up checklist, anywhere.
+/// No visual presence — watches today's checklist progress for two milestones,
+/// each firing at most once a day (gated by its own [AppSettings] day-key, so
+/// neither re-fires on rebuild, app restart, or un-checking and re-checking):
+/// the moment every one of today's "루틴" items is ticked, the full-screen
+/// completion celebration ([showCompletionCelebration], gated by
+/// [AppSettings.lastCelebratedDate]); the moment today first crosses the
+/// achievement bar (>=50%) without yet reaching 100%, a lighter snackbar
+/// ([AppSettings.lastPartialCelebratedDate]) -- so a hard day that never
+/// reaches 100% still gets *something* warm rather than nothing at all.
+/// Lives here (not on the home screen) so either lands wherever the
+/// triggering item is checked — Focus, the catch-up checklist, anywhere.
 class _CompletionCelebrator extends ConsumerStatefulWidget {
   const _CompletionCelebrator();
 
@@ -394,6 +399,9 @@ class _CompletionCelebratorState extends ConsumerState<_CompletionCelebrator> {
   // Guards a double-pop in the window between deciding to celebrate and the
   // persisted lastCelebratedDate write round-tripping back through settings.
   bool _shownThisSession = false;
+  // Same guard, for the lighter 50% ("halfway there") feedback -- independent
+  // of [_shownThisSession] so the two milestones never block each other.
+  bool _partialShownThisSession = false;
 
   @override
   Widget build(BuildContext context) {
@@ -401,8 +409,13 @@ class _CompletionCelebratorState extends ConsumerState<_CompletionCelebrator> {
     final completions = ref.watch(completionsProvider).value;
     final progress = ref.watch(microStepProgressProvider).value;
     final settings = ref.watch(settingsProvider).value;
+    final achievedDays = ref.watch(achievedDaysProvider).value;
 
-    if (segments == null || completions == null || progress == null || settings == null) {
+    if (segments == null ||
+        completions == null ||
+        progress == null ||
+        settings == null ||
+        achievedDays == null) {
       return const SizedBox.shrink();
     }
 
@@ -417,10 +430,26 @@ class _CompletionCelebratorState extends ConsumerState<_CompletionCelebrator> {
     // Only blocks that actually use checklist items can be "all done" -- a day
     // with no items at all never triggers it (there's nothing to finish).
     final fullyDone = achievement.total > 0 && achievement.checked >= achievement.total;
+    // Crossed the achievement bar (>=50%) but not yet 100% -- the lighter
+    // "halfway there" moment. Gated on total > 0 so a day with no checklist
+    // items at all (which can only reach [DailyAchievement.isAchieved] via the
+    // whole-block fallback) never fires this -- there's no real "halfway"
+    // there to mark.
+    final partiallyDone = achievement.total > 0 && achievement.isAchieved && !fullyDone;
     final alreadyToday = settings.lastCelebratedDate == todayKey;
+    final alreadyPartialToday = settings.lastPartialCelebratedDate == todayKey;
 
     if (fullyDone && !alreadyToday && !_shownThisSession) {
       _shownThisSession = true;
+      // Current streak length (today included), so a milestone day (3/7/14/
+      // 30/60/100) gets a special line in the celebration -- see
+      // [celebrationMilestones]. Computed the same way StreakBadge does.
+      final streakDays = currentStreak(streakDateKeys(
+        achievedDays: achievedDays,
+        segments: segments,
+        completions: completions,
+        progress: progress,
+      ));
       // After this frame: persisting (and showing a dialog) mid-build would
       // re-enter the provider graph / Navigator.
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -432,13 +461,35 @@ class _CompletionCelebratorState extends ConsumerState<_CompletionCelebrator> {
             .catchError((Object e) => logSwallowed('완료 축하 표시일 저장', e));
         final ctx = appNavigatorKey.currentContext;
         if (ctx != null) {
-          showCompletionCelebration(ctx, reduceMotion: settings.reduceMotion);
+          showCompletionCelebration(
+            ctx,
+            reduceMotion: settings.reduceMotion,
+            streakDays: streakDays,
+          );
         }
       });
-    } else if (!fullyDone && _shownThisSession) {
-      // Fell back below 100% (un-checked an item) -- reset the session guard so a
-      // later day can celebrate again (lastCelebratedDate still gates today).
+    } else if (partiallyDone && !alreadyPartialToday && !_partialShownThisSession) {
+      _partialShownThisSession = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final repo = ref.read(plannerRepositoryProvider);
+        repo
+            ?.saveSettings(settings.copyWith(lastPartialCelebratedDate: todayKey))
+            .catchError((Object e) => logSwallowed('부분 달성 표시일 저장', e));
+        final ctx = appNavigatorKey.currentContext;
+        if (ctx != null) {
+          showAppSnackBar(ctx, const Text('오늘 절반을 해냈어요 — 충분히 잘하고 있어요'));
+        }
+      });
+    }
+
+    // Reset guards independently of the trigger above, so falling back below
+    // a bar (un-checking an item) always allows that milestone to fire again
+    // later -- lastCelebratedDate/lastPartialCelebratedDate still gate today.
+    if (!fullyDone && _shownThisSession) {
       _shownThisSession = false;
+    }
+    if (!partiallyDone && _partialShownThisSession) {
+      _partialShownThisSession = false;
     }
 
     return const SizedBox.shrink();

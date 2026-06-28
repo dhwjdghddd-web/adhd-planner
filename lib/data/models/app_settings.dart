@@ -36,6 +36,11 @@ class AppSettings {
   // Day-key (yyyy-MM-dd) of the last day the "all of today's checklist done"
   // celebration was shown, so it fires at most once per day. null = never.
   final String? lastCelebratedDate;
+  // Day-key of the last day the lighter "halfway there" (>=50% but not yet
+  // 100%) feedback was shown -- a separate marker from [lastCelebratedDate]
+  // so the two milestones (50%, 100%) each fire at most once per day,
+  // independently. null = never.
+  final String? lastPartialCelebratedDate;
 
   const AppSettings({
     this.themeMode = AppThemeMode.system,
@@ -47,6 +52,7 @@ class AppSettings {
     this.alarmSoundLabel,
     this.vibrationPattern = AlarmVibrationPattern.defaultPattern,
     this.lastCelebratedDate,
+    this.lastPartialCelebratedDate,
   });
 
   const AppSettings.defaults() : this();
@@ -64,6 +70,7 @@ class AppSettings {
     bool clearAlarmSound = false,
     AlarmVibrationPattern? vibrationPattern,
     String? lastCelebratedDate,
+    String? lastPartialCelebratedDate,
   }) {
     return AppSettings(
       themeMode: themeMode ?? this.themeMode,
@@ -75,6 +82,7 @@ class AppSettings {
       alarmSoundLabel: clearAlarmSound ? null : (alarmSoundLabel ?? this.alarmSoundLabel),
       vibrationPattern: vibrationPattern ?? this.vibrationPattern,
       lastCelebratedDate: lastCelebratedDate ?? this.lastCelebratedDate,
+      lastPartialCelebratedDate: lastPartialCelebratedDate ?? this.lastPartialCelebratedDate,
     );
   }
 
@@ -88,6 +96,7 @@ class AppSettings {
         'alarmSoundLabel': alarmSoundLabel,
         'vibrationPattern': vibrationPattern.name,
         'lastCelebratedDate': lastCelebratedDate,
+        'lastPartialCelebratedDate': lastPartialCelebratedDate,
       };
 
   factory AppSettings.fromMap(Map<String, dynamic> map) => AppSettings(
@@ -106,5 +115,6 @@ class AppSettings {
           orElse: () => AlarmVibrationPattern.defaultPattern,
         ),
         lastCelebratedDate: map['lastCelebratedDate'] as String?,
+        lastPartialCelebratedDate: map['lastPartialCelebratedDate'] as String?,
       );
 }
