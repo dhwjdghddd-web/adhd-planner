@@ -57,6 +57,9 @@ class _FocusPageState extends ConsumerState<FocusPage> {
   String? _hydratedFor;
   late final ConfettiController _confettiController;
   bool _celebrating = false;
+  // Picked once per screen entry so the routine-less rest screen shows a fresh
+  // line each time it's opened, without reshuffling on every rebuild.
+  final String _restQuote = restQuoteRandom();
 
   @override
   void initState() {
@@ -351,7 +354,7 @@ class _FocusPageState extends ConsumerState<FocusPage> {
             child: WaitingIllustration(
               reduceMotion: reduceMotion,
               size: 220,
-              message: restQuoteForToday(),
+              message: _restQuote,
               center: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [

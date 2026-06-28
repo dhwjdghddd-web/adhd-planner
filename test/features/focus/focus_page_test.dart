@@ -105,7 +105,8 @@ void main() {
     expect(find.text('회의'), findsOneWidget);
     expect(find.text('모두 완료'), findsNothing);
     expect(find.text('다음: 저녁'), findsNothing);
-    expect(find.text(restQuoteForToday()), findsOneWidget);
+    // The rest screen shows one (randomly chosen) rest quote.
+    expect(restQuotes.where((q) => find.text(q).evaluate().isNotEmpty).length, 1);
   });
 
   testWidgets('a pinned block with no items stays horizontally centered '
@@ -398,7 +399,8 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('퇴근'), findsOneWidget);
-      expect(find.text(restQuoteForToday()), findsOneWidget);
+      // The rest screen shows one (randomly chosen) rest quote.
+      expect(restQuotes.where((q) => find.text(q).evaluate().isNotEmpty).length, 1);
     });
   });
 
