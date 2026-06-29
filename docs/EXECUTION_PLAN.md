@@ -124,9 +124,9 @@
   - `AppSettings.leadMinutes`는 필드만 추가(전역 기본 10), 사양대로 설정화면 UI는 만들지 않음(스누즈 분만 UI 있음).
   - **실기기 검증 중 추가 버그 발견·수정 (커밋 f76fa51)**: 사용자가 Z Flip7 실기기에서 "스누즈로 미룬 알람이 다시 울릴 때 벨소리모드는 전혀 안 울리고 무음모드는 진동이 짧게 한 번만"이라고 보고. 원인은 `_snooze()`가 `cancelNotification`(취소)과 `scheduleSnooze`(재예약)을 `unawaited`로 순서 보장 없이 나란히 발사 — 둘 다 같은 네이티브 채널로 같은 `requestCode`의 AlarmManager 항목을 다루는데 각자 다른 await 체인을 타 실제 도착 순서가 뒤집힐 수 있었음(스케줄이 취소보다 먼저 도착하면 막 건 스누즈 알람이 바로 지워짐). `await cancel; await schedule;`로 순서 고정. 기기에서 알람 볼륨/DND/STREAM_ALARM 상태를 `adb dumpsys audio`로 확인해 기기 설정 쪽 원인은 배제. 가짜 NotificationService(취소를 인위적으로 지연)로 호출 완료 순서를 고정하는 회귀테스트 추가. test 189→190.
   - **실기기 재검증 후 두 번째 버그(설계 결함) 발견·수정 (커밋 e823dd3)**: f76fa51 적용 후에도 "잠금상태 본알람: 화면만 켜지고 벨 안 들리고 진동 한 번뿐, 잠금 풀면 이미 조용한 풀스크린만 남음" 보고. 원인은 `_handleResponse`(알림 탭/fullScreenIntent 자동실행 시 호출)가 그 즉시 `_silenceAlarm`을 불러 벨/진동을 껐던 기존 설계 — 폴더블 커버 화면이 알람 화면을 못 띄울 경우를 위한 안전장치였으나, 부작용으로 사용자가 반응하기 전에 화면 켜지는 신호만으로 알람이 무음 처리됨. **사용자에게 변경 여부를 직접 확인**(채팅으로, AskUserQuestion 도구가 이 시점 한글 인코딩 깨짐 — 직접 텍스트로 질문) 후 승인받아 `_handleResponse`의 자동-무음 호출 제거. 이제 끄는 경로는 AlarmScreen의 명시적 동작 3가지 + 전원버튼 가드뿐이며, 손이 안 닿는 경우의 안전장치는 기존 60초 타임아웃이 유지. 알림 채널 모킹 회귀테스트 추가. test 190→192.
-  - **부수적으로 발견된 두 가지 (T2 범위 밖, 기존부터 있던 결함) — 별도 커밋, 둘 다 미확정 보류**:
-    - ① 설정 화면 알람음 선택 행에서 `currentUri==null`(기본값 사용 중)일 때 네이티브 RingtoneManager 피커가 목록 어디에도 체크 표시를 안 보여줌. 1차 수정(1a1501e, `getDefaultUri` 간접 지시 URI 사용)은 효과 없었고, 2차 교정(09cc28f, `getActualDefaultRingtoneUri` 실제 파일 URI 사용)으로 이론상으론 맞게 고쳤으나 **사용자가 실기기에서 확신을 못 얻은 채 "일단 넘어가자, 나중에 확실히 잡겠다"고 보류**(2026-06-28). 다음 실행자/검토자는 이 항목을 "해결됨"으로 단정하지 말 것 — 실기기 재확인 필요.
-    - ② "알람이 실제로 울리는 도중에 설정의 알람음 행을 누르면 한 번 크래시"가 보고됐으나 재현이 알람 활성 상태를 요구해 로그를 못 잡음 — **사용자 요청으로 보류, 나중에 마주치면 그때 로그캡처로 진단**.
+  - **부수적으로 발견된 두 가지 (T2 범위 밖, 기존부터 있던 결함) — 별도 커밋, 둘 다 ✅ 실기기 검증 완료(2026-06-29, Opus 4.8 검토 세션)**:
+    - ① 설정 화면 알람음 선택 행에서 `currentUri==null`(기본값 사용 중)일 때 네이티브 RingtoneManager 피커가 목록 어디에도 체크 표시를 안 보여줌. 1차 수정(1a1501e, `getDefaultUri` 간접 지시 URI 사용)은 효과 없었고, 2차 교정(09cc28f, `getActualDefaultRingtoneUri` 실제 파일 URI 사용)으로 교정. **2026-06-29 실기기 재확인 결과 "기본 알람음"에 체크표시 정상 표시 — 해소 확인.**
+    - ② "알람이 실제로 울리는 도중에 설정의 알람음 행을 누르면 한 번 크래시"가 보고됐으나 재현이 알람 활성 상태를 요구해 로그를 못 잡음. **2026-06-29 실기기에서 알람 울리는 중 알람음 행 탭 → 크래시 재현 안 됨 — 해소 확인(현 빌드 기준).**
 - **확정 사양 (UI 결정 완료 — 추가 질문 불필요)**:
   - AlarmScreen 레이아웃: 기존 **슬라이드 해제(=시작)** 유지, 그 **아래에 텍스트버튼 2개 좌우** — 왼쪽 `10분 뒤 다시`, 오른쪽 `오늘은 건너뛰기`. (하단 콘텐츠가 슬라이드 트랙을 가리지 않게 간격 확보.)
   - **스누즈 기본 10분**, `AppSettings`에 `snoozeMinutes`(허용값 5/10/15, 기본 10) + 설정 화면 선택 UI.
@@ -138,7 +138,8 @@
 - **파일 (실제)**: `lib/data/models/alarm_skip.dart`(신규), `lib/features/focus/alarm_skip_controller.dart`(신규), `data/repositories/planner_repository.dart`/`firestore_planner_repository.dart`/`test/fakes/fake_planner_repository.dart`(alarmSkips 한 벌), `data/providers.dart`(`alarmSkipsProvider`), `data/today.dart`(`skippedBlockIdsOn`), `data/models/segment.dart`(`leadWarning`), `data/models/app_settings.dart`(`snoozeMinutes`/`leadMinutes`), `services/notification_schedule.dart`(`isLeadWarning`/`buildSchedule(leadMinutes)`), `services/notification_service.dart`(`scheduleSnooze`, lead 채널/분기), `features/focus/alarm_screen.dart`(버튼 UI+동작+pop 버그수정), `app.dart`(워처 skip 가드), `features/segments/segment_form_page.dart`(전환예고 토글), `features/settings/settings_page.dart`(스누즈 분 선택).
 - **검증 (실제)**: `notification_schedule`/`notification_service_test.dart`에 6개(예고 spec 생성·슬롯 비충돌·자정 wrap·payload 태그). `data/today_test.dart`에 `skippedBlockIdsOn` 2개. `segment_test.dart`/`app_settings_test.dart`에 round-trip 각 2개. `alarm_screen_test.dart`에 4개(버튼 표시·스누즈 동작·건너뛰기 동작, 기존 슬라이드 테스트 유지). `segment_form_page_test.dart`/`settings_page_test.dart`에 토글/칩 각 2개. 합계 172→**189개 통과**, analyze 무결, `flutter build apk --debug` 성공(네이티브 변경 없음 — 위 참고).
 - **커밋**: `d46a687` — `추가: 알람 스누즈 · 오늘 건너뛰기 · 구간 전환 예고 알림 (T2)` (단일 커밋, 사유는 위 실행 결과 참고).
-- 비고: 과거에 의도적으로 제거했던 기능의 재도입 — 커밋 본문에 명시함([[project_alarm_alert_postpone_design]] 계열 메모가 있다면 함께 갱신 권장). **[REVIEW] 남음**: 실기기에서 잠금화면/포그라운드 상태의 알람·스누즈·건너뛰기·전환예고 실제 동작 확인.
+- 비고: 과거에 의도적으로 제거했던 기능의 재도입 — 커밋 본문에 명시함([[project_alarm_alert_postpone_design]] 계열 메모가 있다면 함께 갱신 권장).
+- **[REVIEW] 해소 (2026-06-29, Opus 4.8 검토 세션, 실기기 검증)**: 풀스크린 알람 정상 표시, 스누즈("N분 뒤 다시")·"오늘은 건너뛰기" 버튼이 실제로 화면을 닫음(PopScope 버그 수정 확인), 알람 울리는 중 알람음 행 탭 크래시 없음, 기본 알람음 체크표시 정상. PopScope·알람음 관련 미검증 항목 모두 닫힘. (전환예고 헤드업의 잠금화면 동작은 별도 정밀 확인은 안 했으나 코드/테스트로 커버됨.)
 
 ### T3 — 빈 상태·계획 보조 (스타터 칩 + 브레인덤프→자동배치)  〔규모 M~L〕 [UI-CONFIRM 완료] ✅(8a47371)
 - **목표**: 빈 다이얼 콜드스타트 제거.
