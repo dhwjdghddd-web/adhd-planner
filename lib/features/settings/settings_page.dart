@@ -10,6 +10,7 @@ import '../../data/providers.dart';
 import '../../services/alarm_sound_picker.dart';
 import '../../services/auth_service.dart';
 import '../../services/notification_service.dart';
+import '../help/help_page.dart';
 import '../memos/quick_add_button.dart';
 import 'settings_controller.dart';
 
@@ -328,6 +329,15 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     return ListView(
       controller: _scrollController,
       children: [
+        ListTile(
+          leading: const Icon(Icons.help_outline),
+          title: const Text('도움말'),
+          subtitle: const Text('구간·메모·체크인 등 기능을 다시 찾아볼 수 있어요.'),
+          onTap: () => Navigator.of(
+            context,
+          ).push(MaterialPageRoute(builder: (_) => const HelpPage())),
+        ),
+        const Divider(),
         const _SectionHeader('권한'),
         _PermissionRow(
           icon: Icons.notifications_outlined,

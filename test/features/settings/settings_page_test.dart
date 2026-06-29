@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:adhd_planner/data/models/app_settings.dart';
 import 'package:adhd_planner/data/providers.dart';
+import 'package:adhd_planner/features/help/help_page.dart';
 import 'package:adhd_planner/features/settings/settings_page.dart';
 import 'package:adhd_planner/services/notification_service.dart';
 
@@ -67,6 +68,17 @@ void main() {
       expect(find.text('확인 중...'), findsWidgets);
     },
   );
+
+  testWidgets('the 도움말 row opens HelpPage', (tester) async {
+    await growSurface(tester);
+    await tester.pumpWidget(wrap(FakePlannerRepository()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('도움말'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(HelpPage), findsOneWidget);
+  });
 
   testWidgets(
     'shows the system default alarm sound and all vibration pattern choices',
