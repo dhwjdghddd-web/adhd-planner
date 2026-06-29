@@ -10,6 +10,7 @@ class WaitingIllustration extends StatefulWidget {
     this.center,
     this.size = 200,
     this.showOrbit = true,
+    this.progress,
   });
 
   final bool reduceMotion;
@@ -29,6 +30,14 @@ class WaitingIllustration extends StatefulWidget {
   /// Square edge of the ring graphic. Bigger when something sits at the centre
   /// (it needs room inside the inner ring) than for a plain waiting state.
   final double size;
+
+  /// 0.0~1.0: when set, the outermost ring (otherwise a plain faint ripple)
+  /// becomes a progress track+arc instead -- e.g. Focus's live header merging
+  /// "20분 남음" straight into the existing ring composition rather than as a
+  /// separate bar bolted on top of it. Null keeps the plain ripple ring (every
+  /// other call site -- rest screens, "다음" previews -- has no notion of
+  /// progress to show).
+  final double? progress;
 
   @override
   State<WaitingIllustration> createState() => _WaitingIllustrationState();
@@ -52,17 +61,14 @@ class _WaitingIllustrationState extends State<WaitingIllustration>
   @override
   void initState() {
     super.initState();
-    
+
     // Breathe animation: scale 1.0 -> 1.04 -> 1.0, 4 seconds duration
     _breatheController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 4),
     );
     _breatheAnimation = Tween<double>(begin: 1.0, end: 1.04).animate(
-      CurvedAnimation(
-        parent: _breatheController,
-        curve: Curves.easeInOut,
-      ),
+      CurvedAnimation(parent: _breatheController, curve: Curves.easeInOut),
     );
 
     // Orbit animation: 0.0 -> 1.0 (0 to 360 degrees), 12 seconds duration
@@ -117,7 +123,10 @@ class _WaitingIllustrationState extends State<WaitingIllustration>
               alignment: Alignment.center,
               children: [
                 AnimatedBuilder(
-                  animation: Listenable.merge([_breatheController, _orbitController]),
+                  animation: Listenable.merge([
+                    _breatheController,
+                    _orbitController,
+                  ]),
                   builder: (context, _) {
                     return CustomPaint(
                       size: Size(widget.size, widget.size),
@@ -128,6 +137,7 @@ class _WaitingIllustrationState extends State<WaitingIllustration>
                         outlineColor: theme.colorScheme.outline,
                         isDark: isDark,
                         showOrbit: widget.showOrbit,
+                        progress: widget.progress,
                       ),
                     );
                   },
@@ -144,7 +154,9 @@ class _WaitingIllustrationState extends State<WaitingIllustration>
                 return Text(
                   line,
                   style: theme.textTheme.bodyMedium?.copyWith(
-                    color: isDark ? const Color(0xFFA6B2BE) : const Color(0xFF525C68),
+                    color: isDark
+                        ? const Color(0xFFA6B2BE)
+                        : const Color(0xFF525C68),
                     height: 1.3,
                   ),
                   textAlign: TextAlign.center,
@@ -166,6 +178,7 @@ class _ConcentricRingsPainter extends CustomPainter {
     required this.outlineColor,
     required this.isDark,
     required this.showOrbit,
+    this.progress,
   });
 
   final double breatheScale;
@@ -174,6 +187,7 @@ class _ConcentricRingsPainter extends CustomPainter {
   final Color outlineColor;
   final bool isDark;
   final bool showOrbit;
+  final double? progress;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -203,6 +217,18 @@ class _ConcentricRingsPainter extends CustomPainter {
       ..strokeWidth = 1.0
       ..color = outlineColor.withValues(alpha: 0.06);
 
+    final progressTrackPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3.5
+      ..strokeCap = StrokeCap.round
+      ..color = outlineColor.withValues(alpha: 0.15);
+
+    final progressArcPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3.5
+      ..strokeCap = StrokeCap.round
+      ..color = primaryColor;
+
     final faintPaint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.0
@@ -222,8 +248,25 @@ class _ConcentricRingsPainter extends CustomPainter {
       ..style = PaintingStyle.fill
       ..color = primaryColor;
 
-    // Draw concentric rings, faintest and widest first
-    canvas.drawCircle(center, rippleRadius, ripplePaint);
+    // Draw concentric rings, faintest and widest first -- the outermost one
+    // is either the plain decorative ripple, or (when progress is given) a
+    // track+arc reading directly off it instead, merged into the same ring
+    // rather than added alongside it.
+    final p = progress;
+    if (p != null) {
+      final rect = Rect.fromCircle(center: center, radius: rippleRadius);
+      const startAngle = -math.pi / 2; // 12 o'clock
+      canvas.drawArc(rect, startAngle, 2 * math.pi, false, progressTrackPaint);
+      canvas.drawArc(
+        rect,
+        startAngle,
+        2 * math.pi * p.clamp(0.0, 1.0),
+        false,
+        progressArcPaint,
+      );
+    } else {
+      canvas.drawCircle(center, rippleRadius, ripplePaint);
+    }
     canvas.drawCircle(center, outerRadius, faintPaint);
     canvas.drawCircle(center, midRadius, midPaint);
     canvas.drawCircle(center, innerRadius, primaryInnerPaint);
@@ -243,6 +286,7 @@ class _ConcentricRingsPainter extends CustomPainter {
         oldDelegate.primaryColor != primaryColor ||
         oldDelegate.outlineColor != outlineColor ||
         oldDelegate.isDark != isDark ||
-        oldDelegate.showOrbit != showOrbit;
+        oldDelegate.showOrbit != showOrbit ||
+        oldDelegate.progress != progress;
   }
 }

@@ -37,6 +37,33 @@ const _alarmChannelName = '구간 알람';
 const _leadChannelId = 'lead_warning_v1';
 const _leadChannelName = '구간 전환 예고';
 
+// Focus screen's own optional timer (T5) -- a one-off "time's up" heads-up,
+// independent of any block alarm. Always exactly one of these armed at a
+// time (the timer is global, not per-block), so a fixed sentinel id is
+// enough; negative so it can never collide with notificationIdFor's
+// block-derived (always non-negative) ids.
+//
+// v2: enableVibration alone left this on Android's own default channel
+// vibration, which on at least one real device was a single short tick --
+// barely noticeable for "your timer's done". An explicit (longer, but still
+// one-shot rather than the main alarm's insistent loop) pattern fixes that --
+// bumped to v2 since a channel's vibration is immutable after creation, so
+// anyone with v1 already on their device would otherwise never see the fix.
+const _timerChannelId = 'focus_timer_v2';
+const _timerChannelName = '집중 타이머';
+const _timerNotificationId = -1;
+final AndroidNotificationDetails _timerAndroidDetails = AndroidNotificationDetails(
+  _timerChannelId,
+  _timerChannelName,
+  channelDescription: '집중 타이머/휴식이 끝나면 알려드려요',
+  importance: Importance.high,
+  priority: Priority.high,
+  enableVibration: true,
+  vibrationPattern: vibrationPatternFor(AlarmVibrationPattern.defaultPattern),
+  playSound: true,
+  category: AndroidNotificationCategory.reminder,
+);
+
 // USAGE_ALARM is what makes these ring/vibrate through the alarm stream
 // instead of the notification stream — the same reason a normal alarm clock
 // app still goes off when the phone's ringer is set to silent or vibrate.
@@ -313,6 +340,50 @@ class NotificationService {
   /// directly-triggered Vibrator call alongside it (see VibrationAlarmReceiver
   /// .kt) — that one keeps buzzing on its own timer independently.
   Future<void> cancelNotification(int id) => _silenceAlarm(id);
+
+  /// Schedules the Focus screen's own timer's one-off "time's up" alert for
+  /// [endAt] -- works even if the app is backgrounded or closed by then,
+  /// same `zonedSchedule` path the block alarm/snooze use, but on its own
+  /// quiet (non-insistent) channel: this is a Pomodoro-style nudge fired many
+  /// times a day, not an alarm clock, so its *sound* stays on the plain
+  /// notification stream (silent ringer mode = no sound, same as any other
+  /// notification). Vibration is a separate concern from that: a directly
+  /// -triggered Vibrator call rides alongside it (see VibrationAlarmReceiver
+  /// .kt's doc comment) since Samsung OneUI's "무음" ringer mode was found to
+  /// silence a Notification's own vibration even with this unrelated to sound
+  /// routing -- the same gap the main block alarm hit, fixed the same way.
+  /// No payload handling beyond the no-op default -- the in-app countdown
+  /// (FocusTimerController) is what actually reacts while the app is open;
+  /// this is purely the background fallback for when it isn't.
+  Future<void> scheduleTimerEnd({
+    required DateTime endAt,
+    required String title,
+    required String body,
+  }) async {
+    final triggerAt = tz.TZDateTime.from(endAt, tz.local);
+    await _plugin.zonedSchedule(
+      _timerNotificationId,
+      title,
+      body,
+      triggerAt,
+      NotificationDetails(android: _timerAndroidDetails),
+      uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
+      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      payload: 'timer:end',
+    );
+    await _scheduleVibrationAlarm(
+      requestCode: _timerNotificationId,
+      triggerAt: triggerAt,
+      pattern: vibrationPatternFor(AlarmVibrationPattern.defaultPattern),
+      durationMs: vibrationCycleMs(AlarmVibrationPattern.defaultPattern),
+      repeatInterval: Duration.zero,
+    );
+  }
+
+  /// Cancels a still-pending (not yet fired) timer-end alert -- pausing or
+  /// cancelling the timer before it runs out. Stops both the notification and
+  /// the native Vibrator alarm riding alongside it (see [scheduleTimerEnd]).
+  Future<void> cancelTimerEnd() => _silenceAlarm(_timerNotificationId);
 
   /// Schedules a ONE-TIME re-alert for [segment], [settings.snoozeMinutes] from
   /// now -- the "N분 뒤 다시" action on AlarmScreen. Reuses the block's normal

@@ -19,6 +19,11 @@ class FakeNotificationService extends NotificationService {
   /// alarms (and with which ids) without touching any plugin.
   final List<List<int>> cancelEverythingCalls = [];
 
+  /// Each call's (endAt, title, body), so a test can assert the Focus
+  /// timer's end notification was (re)scheduled without touching any plugin.
+  final List<({DateTime endAt, String title, String body})> timerEndCalls = [];
+  int timerEndCancelCount = 0;
+
   @override
   Future<void> rescheduleAll(List<Segment> segments, AppSettings settings) async {
     rescheduleCalls.add(segments);
@@ -27,5 +32,19 @@ class FakeNotificationService extends NotificationService {
   @override
   Future<void> cancelEverything({Iterable<int> knownIds = const []}) async {
     cancelEverythingCalls.add(knownIds.toList());
+  }
+
+  @override
+  Future<void> scheduleTimerEnd({
+    required DateTime endAt,
+    required String title,
+    required String body,
+  }) async {
+    timerEndCalls.add((endAt: endAt, title: title, body: body));
+  }
+
+  @override
+  Future<void> cancelTimerEnd() async {
+    timerEndCancelCount++;
   }
 }

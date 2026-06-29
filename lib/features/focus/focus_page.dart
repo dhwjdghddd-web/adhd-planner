@@ -12,10 +12,13 @@ import '../../data/models/micro_step_progress.dart';
 import '../../data/models/segment.dart';
 import '../../data/providers.dart';
 import '../../data/today.dart';
+import '../memos/quick_add_button.dart';
 import '../memos/quick_add_sheet.dart';
 import '../rewards/streak_badge.dart';
 import '../segments/segment_icons.dart';
+import 'block_remaining.dart';
 import 'completions_controller.dart';
+import 'focus_timer_section.dart';
 import 'micro_step_progress_controller.dart';
 import 'rest_quotes.dart';
 import 'waiting_illustration.dart';
@@ -31,10 +34,10 @@ import 'waiting_illustration.dart';
 /// items checked off.
 class FocusPage extends ConsumerStatefulWidget {
   const FocusPage({super.key, @visibleForTesting this.debugNowMinuteOfDay})
-      : pinnedBlock = null;
+    : pinnedBlock = null;
   const FocusPage.forBlock(Segment block, {super.key})
-      : pinnedBlock = block,
-        debugNowMinuteOfDay = null;
+    : pinnedBlock = block,
+      debugNowMinuteOfDay = null;
 
   final Segment? pinnedBlock;
 
@@ -83,6 +86,20 @@ class _FocusPageState extends ConsumerState<FocusPage> {
     return now.hour * 60 + now.minute;
   }
 
+  // Both null in FocusPage.forBlock's review mode -- isCurrent is hard-coded
+  // true there for whatever block was tapped on the dial, which could be well
+  // in the past or future, so "20분 남음" against the wall clock would be
+  // nonsense (see FocusPage.forBlock's own doc comment).
+  String? _remainingMessage(Segment segment) {
+    if (widget.pinnedBlock != null) return null;
+    return formatRemaining(blockRemainingMinutes(segment, _currentMinute));
+  }
+
+  double? _remainingProgress(Segment segment) {
+    if (widget.pinnedBlock != null) return null;
+    return blockProgressFraction(segment, _currentMinute);
+  }
+
   @override
   void dispose() {
     _ticker?.cancel();
@@ -94,7 +111,8 @@ class _FocusPageState extends ConsumerState<FocusPage> {
   Widget build(BuildContext context) {
     final segmentsAsync = ref.watch(segmentsProvider);
     final theme = Theme.of(context);
-    final reduceMotion = ref.watch(settingsProvider).value?.reduceMotion ?? false;
+    final reduceMotion =
+        ref.watch(settingsProvider).value?.reduceMotion ?? false;
 
     final pinned = widget.pinnedBlock;
     final segments = segmentsAsync.value;
@@ -106,75 +124,97 @@ class _FocusPageState extends ConsumerState<FocusPage> {
     final status = pinned != null
         ? BlockStatus(segment: pinned, isCurrent: true)
         : segments == null
-            ? null
-            : findBlockStatus(segments, _currentMinute);
+        ? null
+        : findBlockStatus(segments, _currentMinute);
 
     return Scaffold(
       body: SafeArea(
-        child: Stack(
+        child: Column(
           children: [
-            // Positioned.fill so the content always gets tight full-width
-            // constraints: a non-positioned Stack child is laid out loose and
-            // pinned top-start, so the body Column would otherwise shrink-wrap
-            // to its widest child and hug the left edge whenever nothing in it
-            // forces full width (e.g. a block with no checklist items).
-            Positioned.fill(
-              child: pinned != null
-                  ? _buildContent(context, status!)
-                  : segmentsAsync.when(
-                      data: (_) => _buildContent(context, status!),
-                      loading: () => const Center(child: CircularProgressIndicator()),
-                      error: (e, st) => Center(child: Text('오류: $e')),
+            IconButton(
+              icon: const Icon(Icons.arrow_back),
+              tooltip: '닫기',
+              onPressed: () => Navigator.of(context).pop(),
+            ),
+            Expanded(
+              // Bottom-padded so every branch below (checklist, rest
+              // composition, waiting message, loading/error) is constrained
+              // to actually clear _buildFabRow -- it floats on top of the
+              // body rather than reserving its own space, so without this a
+              // long-enough checklist would render its last item or two
+              // right underneath it, unreachable by scrolling past since
+              // there'd be nothing forcing a scroll offset to begin with.
+              child: Padding(
+                padding: EdgeInsets.only(
+                  bottom: fabAvoidingBottomInset(context),
+                ),
+                child: Stack(
+                  children: [
+                    // Positioned.fill so the content always gets tight
+                    // full-width constraints: a non-positioned Stack child is
+                    // laid out loose and pinned top-start, so the body Column
+                    // would otherwise shrink-wrap to its widest child and hug
+                    // the left edge whenever nothing in it forces full width
+                    // (e.g. a block with no checklist items).
+                    Positioned.fill(
+                      child: pinned != null
+                          ? _buildContent(context, status!)
+                          : segmentsAsync.when(
+                              data: (_) => _buildContent(context, status!),
+                              loading: () => const Center(
+                                child: CircularProgressIndicator(),
+                              ),
+                              error: (e, st) => Center(child: Text('오류: $e')),
+                            ),
                     ),
-            ),
-            Positioned(
-              top: 4,
-              left: 4,
-              child: IconButton(
-                icon: const Icon(Icons.arrow_back),
-                tooltip: '닫기',
-                onPressed: () => Navigator.of(context).pop(),
-              ),
-            ),
-            if (_celebrating)
-              Positioned.fill(
-                child: IgnorePointer(
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      if (!reduceMotion)
-                        Align(
-                          alignment: Alignment.topCenter,
-                          child: ConfettiWidget(
-                            confettiController: _confettiController,
-                            blastDirection: math.pi / 2,
-                            numberOfParticles: 24,
-                            gravity: 0.3,
-                            shouldLoop: false,
+                    if (_celebrating)
+                      Positioned.fill(
+                        child: IgnorePointer(
+                          child: Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              if (!reduceMotion)
+                                Align(
+                                  alignment: Alignment.topCenter,
+                                  child: ConfettiWidget(
+                                    confettiController: _confettiController,
+                                    blastDirection: math.pi / 2,
+                                    numberOfParticles: 24,
+                                    gravity: 0.3,
+                                    shouldLoop: false,
+                                  ),
+                                ),
+                              reduceMotion
+                                  ? Icon(
+                                      Icons.check_circle,
+                                      size: 96,
+                                      color: theme.colorScheme.primary,
+                                    )
+                                  : TweenAnimationBuilder<double>(
+                                      tween: Tween(begin: 0.4, end: 1.0),
+                                      duration: const Duration(
+                                        milliseconds: 350,
+                                      ),
+                                      curve: Curves.elasticOut,
+                                      builder: (context, scale, child) =>
+                                          Transform.scale(
+                                            scale: scale,
+                                            child: child,
+                                          ),
+                                      child: Icon(
+                                        Icons.check_circle,
+                                        size: 96,
+                                        color: theme.colorScheme.primary,
+                                      ),
+                                    ),
+                            ],
                           ),
                         ),
-                      reduceMotion
-                          ? Icon(
-                              Icons.check_circle,
-                              size: 96,
-                              color: theme.colorScheme.primary,
-                            )
-                          : TweenAnimationBuilder<double>(
-                              tween: Tween(begin: 0.4, end: 1.0),
-                              duration: const Duration(milliseconds: 350),
-                              curve: Curves.elasticOut,
-                              builder: (context, scale, child) =>
-                                  Transform.scale(scale: scale, child: child),
-                              child: Icon(
-                                Icons.check_circle,
-                                size: 96,
-                                color: theme.colorScheme.primary,
-                              ),
-                            ),
-                    ],
-                  ),
+                      ),
+                  ],
                 ),
               ),
+            ),
           ],
         ),
       ),
@@ -211,7 +251,8 @@ class _FocusPageState extends ConsumerState<FocusPage> {
             const SizedBox(width: 12),
             Expanded(
               child: FilledButton(
-                onPressed: () => _complete(segment.id, microSteps: segment.microSteps),
+                onPressed: () =>
+                    _complete(segment.id, microSteps: segment.microSteps),
                 child: const Text('모두 완료'),
               ),
             ),
@@ -245,7 +286,8 @@ class _FocusPageState extends ConsumerState<FocusPage> {
   Widget _buildContent(BuildContext context, BlockStatus status) {
     final theme = Theme.of(context);
     final segment = status.segment;
-    final reduceMotion = ref.watch(settingsProvider).value?.reduceMotion ?? false;
+    final reduceMotion =
+        ref.watch(settingsProvider).value?.reduceMotion ?? false;
 
     if (segment == null) {
       return WaitingIllustration(
@@ -290,7 +332,7 @@ class _FocusPageState extends ConsumerState<FocusPage> {
         // one without read as the same family instead of an alarm icon clashing
         // with the calm rings.
         Padding(
-          padding: const EdgeInsets.fromLTRB(24, 40, 24, 0),
+          padding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
           child: Semantics(
             label: '지금 집중: ${segment.name}',
             child: Column(
@@ -299,7 +341,8 @@ class _FocusPageState extends ConsumerState<FocusPage> {
                   reduceMotion: reduceMotion,
                   size: 220,
                   showOrbit: false,
-                  message: '',
+                  progress: _remainingProgress(segment),
+                  message: _remainingMessage(segment) ?? '',
                   center: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -322,17 +365,33 @@ class _FocusPageState extends ConsumerState<FocusPage> {
                     ],
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 10),
                 const StreakBadge(),
+                // Fixed alongside the header, not inside the checklist's own
+                // scroll view below -- only the checklist itself should
+                // scroll away; this is meant to stay reachable the whole time.
+                // Review mode (FocusPage.forBlock) has nothing to time-box --
+                // see showRemaining's comment in build() for why.
+                if (widget.pinnedBlock == null) ...[
+                  const SizedBox(height: 12),
+                  const FocusTimerSection(),
+                ],
               ],
             ),
           ),
         ),
         Expanded(
+          // top: 0 -- _microStepsChecklist already opens with its own 16px
+          // gap (kept there so review mode, with no fixed timer section
+          // above to separate from, still gets breathing room above the
+          // first item).
           child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
             child: Column(
-              children: _microStepsChecklist(segment, autoCompleteWhenAllChecked: true),
+              children: _microStepsChecklist(
+                segment,
+                autoCompleteWhenAllChecked: true,
+              ),
             ),
           ),
         ),
@@ -343,44 +402,66 @@ class _FocusPageState extends ConsumerState<FocusPage> {
   /// The checklist-less block's rest screen: the block's icon + name sit at the
   /// heart of the concentric rings, with the streak and a soft message as a
   /// single centred cluster below.
-  Widget _buildRestComposition(BuildContext context, Segment segment, bool reduceMotion) {
+  Widget _buildRestComposition(
+    BuildContext context,
+    Segment segment,
+    bool reduceMotion,
+  ) {
     final theme = Theme.of(context);
+    // SingleChildScrollView (not a bare Center) -- adding the timer section
+    // below made this taller than before, and a fixed Center risks the same
+    // RenderFlex overflow a too-tall empty-state column hit pre-T3.
     return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Semantics(
-            label: '${segment.name}, 체크할 항목 없음',
-            child: WaitingIllustration(
-              reduceMotion: reduceMotion,
-              size: 220,
-              message: _restQuote,
-              center: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    iconForKey(segment.iconKey),
-                    size: 34,
-                    color: theme.colorScheme.primary,
-                  ),
-                  const SizedBox(height: 6),
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 130),
-                    child: Text(
-                      segment.name,
-                      style: theme.textTheme.titleMedium,
-                      textAlign: TextAlign.center,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Semantics(
+              label: '${segment.name}, 체크할 항목 없음',
+              child: WaitingIllustration(
+                reduceMotion: reduceMotion,
+                size: 220,
+                progress: _remainingProgress(segment),
+                message: [
+                  if (_remainingMessage(segment) != null)
+                    _remainingMessage(segment)!,
+                  _restQuote,
+                ].join('\n'),
+                center: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      iconForKey(segment.iconKey),
+                      size: 34,
+                      color: theme.colorScheme.primary,
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 6),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 130),
+                      child: Text(
+                        segment.name,
+                        style: theme.textTheme.titleMedium,
+                        textAlign: TextAlign.center,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-          const SizedBox(height: 24),
-          const StreakBadge(),
-        ],
+            const SizedBox(height: 16),
+            const StreakBadge(),
+            if (widget.pinnedBlock == null) ...[
+              const SizedBox(height: 16),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 24),
+                child: FocusTimerSection(),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }
@@ -390,7 +471,10 @@ class _FocusPageState extends ConsumerState<FocusPage> {
   ///
   /// [autoCompleteWhenAllChecked]: checking off the last remaining item finishes
   /// the block the same way pressing 모두 완료 would.
-  List<Widget> _microStepsChecklist(Segment segment, {bool autoCompleteWhenAllChecked = false}) {
+  List<Widget> _microStepsChecklist(
+    Segment segment, {
+    bool autoCompleteWhenAllChecked = false,
+  }) {
     if (segment.microSteps.isEmpty) return const [];
     return [
       const SizedBox(height: 16),
@@ -399,13 +483,18 @@ class _FocusPageState extends ConsumerState<FocusPage> {
         return CheckboxListTile(
           value: checked,
           title: Text(segment.microSteps[i]),
-          onChanged: (_) => _toggleMicroStep(segment, i, autoCompleteWhenAllChecked),
+          onChanged: (_) =>
+              _toggleMicroStep(segment, i, autoCompleteWhenAllChecked),
         );
       }),
     ];
   }
 
-  void _toggleMicroStep(Segment segment, int index, bool autoCompleteWhenAllChecked) {
+  void _toggleMicroStep(
+    Segment segment,
+    int index,
+    bool autoCompleteWhenAllChecked,
+  ) {
     final wasChecked = _checked.contains(index);
     setState(() {
       if (wasChecked) {
@@ -414,9 +503,12 @@ class _FocusPageState extends ConsumerState<FocusPage> {
         _checked.add(index);
       }
     });
-    unawaited(ref.read(microStepProgressControllerProvider).save(segment.id, _checked));
+    unawaited(
+      ref.read(microStepProgressControllerProvider).save(segment.id, _checked),
+    );
 
-    final justCompletedAll = !wasChecked && _checked.length == segment.microSteps.length;
+    final justCompletedAll =
+        !wasChecked && _checked.length == segment.microSteps.length;
     if (autoCompleteWhenAllChecked && justCompletedAll) {
       _complete(segment.id);
     }
@@ -429,7 +521,9 @@ class _FocusPageState extends ConsumerState<FocusPage> {
       setState(() {
         _checked.addAll(List.generate(microSteps.length, (i) => i));
       });
-      unawaited(ref.read(microStepProgressControllerProvider).save(segmentId, _checked));
+      unawaited(
+        ref.read(microStepProgressControllerProvider).save(segmentId, _checked),
+      );
     }
 
     // Not awaited: Firestore's write Future only resolves once the backend
@@ -438,7 +532,8 @@ class _FocusPageState extends ConsumerState<FocusPage> {
     // cache (and the streak badge reads from it) regardless of connectivity.
     unawaited(ref.read(completionsControllerProvider).complete(segmentId));
 
-    final reduceMotion = ref.read(settingsProvider).value?.reduceMotion ?? false;
+    final reduceMotion =
+        ref.read(settingsProvider).value?.reduceMotion ?? false;
     HapticFeedback.mediumImpact();
     setState(() => _celebrating = true);
     // Captured before the delay below: by the time it elapses, the separate

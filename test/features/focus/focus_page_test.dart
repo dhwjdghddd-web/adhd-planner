@@ -9,7 +9,9 @@ import 'package:adhd_planner/data/models/segment.dart';
 import 'package:adhd_planner/data/providers.dart';
 import 'package:adhd_planner/features/focus/focus_page.dart';
 import 'package:adhd_planner/features/focus/rest_quotes.dart';
+import 'package:adhd_planner/services/notification_service.dart';
 
+import '../../fakes/fake_notification_service.dart';
 import '../../fakes/fake_planner_repository.dart';
 
 /// "Now" is pinned to noon for these tests (passed to FocusPage via
@@ -53,9 +55,33 @@ Segment _futureBlock({String id = 's1', String name = '나중 일', List<String>
 }
 
 void main() {
+  // FocusTimerSection (T5) added enough height above the checklist that a
+  // short 2-3-item list could already sit underneath _buildFabRow within the
+  // default 600px-tall test surface -- this floats over the body rather
+  // than reserving its own space, so on a cramped-enough viewport a tap on a
+  // checklist item could land on it instead. Real devices are comfortably
+  // taller than that; widen the test surface to match, the same approach
+  // segment_form_page_test.dart uses for the same class of issue.
+  setUp(() {
+    final view = TestWidgetsFlutterBinding.ensureInitialized().platformDispatcher.views.first;
+    view.physicalSize = const Size(1080, 2400);
+    view.devicePixelRatio = 1.0;
+  });
+  tearDown(() {
+    final view = TestWidgetsFlutterBinding.ensureInitialized().platformDispatcher.views.first;
+    view.resetPhysicalSize();
+    view.resetDevicePixelRatio();
+  });
+
   Widget wrap(FakePlannerRepository repo) {
     return ProviderScope(
-      overrides: [plannerRepositoryProvider.overrideWithValue(repo)],
+      overrides: [
+        plannerRepositoryProvider.overrideWithValue(repo),
+        // FocusTimerSection's start buttons reach this via
+        // FocusTimerController -- swap in the no-op service so that doesn't
+        // reach the (absent) platform channel.
+        notificationServiceProvider.overrideWithValue(FakeNotificationService()),
+      ],
       child: MaterialApp(
         home: Builder(
           builder: (context) => Scaffold(
@@ -89,6 +115,40 @@ void main() {
     await openFocusPage(tester, repo);
 
     expect(find.text('오전'), findsOneWidget);
+  });
+
+  testWidgets("shows the current block's remaining time at the top (T5)", (tester) async {
+    final repo = FakePlannerRepository();
+    // _currentBlock spans _kNowMinute-30 to _kNowMinute+30 -- 30분 left at
+    // the pinned "now".
+    await repo.upsertSegment(_currentBlock(name: '오전', microSteps: const ['아무거나']));
+
+    await openFocusPage(tester, repo);
+
+    expect(find.text('30분 남음'), findsOneWidget);
+  });
+
+  testWidgets('the Focus timer section offers 포모도로/15분/사용자 설정/2분만 시작, and '
+      'starting one shows a running countdown with pause/cancel (T5)', (tester) async {
+    final repo = FakePlannerRepository();
+    await repo.upsertSegment(_currentBlock(name: '오전', microSteps: const ['아무거나']));
+
+    await openFocusPage(tester, repo);
+
+    expect(find.text('포모도로 25+5'), findsOneWidget);
+    expect(find.text('15분'), findsOneWidget);
+    expect(find.text('사용자 설정'), findsOneWidget);
+    expect(find.text('2분만 시작'), findsOneWidget);
+
+    await tester.tap(find.text('2분만 시작'));
+    await tester.pump();
+
+    expect(find.text('집중 중'), findsOneWidget);
+    expect(find.text('일시정지'), findsOneWidget);
+    expect(find.text('취소'), findsOneWidget);
+    // Back to the picker -- no timer left running past this test.
+    await tester.tap(find.text('취소'));
+    await tester.pump();
   });
 
   testWidgets(
@@ -304,6 +364,31 @@ void main() {
       expect(find.text('아침'), findsOneWidget);
       expect(find.widgetWithText(CheckboxListTile, '물 마시기'), findsOneWidget);
       expect(find.text('모두 완료'), findsOneWidget);
+    });
+
+    testWidgets(
+        'review mode shows neither the remaining-time bar nor the timer '
+        'section (T5 -- isCurrent is hard-coded true here for whatever block '
+        'was tapped, which could be well in the past or future)', (tester) async {
+      final repo = FakePlannerRepository();
+      final block = Segment(
+        id: 's1',
+        name: '아침',
+        colorValue: 0xFF000000,
+        iconKey: 'wb_sunny',
+        startMinute: 0,
+        endMinute: 60,
+        order: 0,
+        microSteps: const ['물 마시기'],
+      );
+      await repo.upsertSegment(block);
+
+      await tester.pumpWidget(wrapForBlock(repo, block));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('남음'), findsNothing);
+      expect(find.text('포모도로 25+5'), findsNothing);
+      expect(find.text('2분만 시작'), findsNothing);
     });
 
     testWidgets('checking an item in review mode persists it', (tester) async {
