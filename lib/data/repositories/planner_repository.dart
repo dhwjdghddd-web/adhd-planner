@@ -1,6 +1,7 @@
 import '../models/achieved_day.dart';
 import '../models/alarm_skip.dart';
 import '../models/app_settings.dart';
+import '../models/checkin.dart';
 import '../models/completion.dart';
 import '../models/memo.dart';
 import '../models/micro_step_progress.dart';
@@ -45,6 +46,11 @@ abstract class PlannerRepository {
   Stream<List<Mit>> watchMits();
   Future<void> saveMit(Mit m);
   Future<void> removeMit(String dateKey, String segmentId);
+
+  // Check-ins (mood/energy, one per day -- not tied to any block)
+  Stream<List<Checkin>> watchCheckins();
+  Future<void> saveCheckin(Checkin c);
+  Future<void> removeCheckin(String dateKey);
 
   // Settings
   Stream<AppSettings> watchSettings();

@@ -52,17 +52,20 @@ const _leadChannelName = '구간 전환 예고';
 const _timerChannelId = 'focus_timer_v2';
 const _timerChannelName = '집중 타이머';
 const _timerNotificationId = -1;
-final AndroidNotificationDetails _timerAndroidDetails = AndroidNotificationDetails(
-  _timerChannelId,
-  _timerChannelName,
-  channelDescription: '집중 타이머/휴식이 끝나면 알려드려요',
-  importance: Importance.high,
-  priority: Priority.high,
-  enableVibration: true,
-  vibrationPattern: vibrationPatternFor(AlarmVibrationPattern.defaultPattern),
-  playSound: true,
-  category: AndroidNotificationCategory.reminder,
-);
+final AndroidNotificationDetails _timerAndroidDetails =
+    AndroidNotificationDetails(
+      _timerChannelId,
+      _timerChannelName,
+      channelDescription: '집중 타이머/휴식이 끝나면 알려드려요',
+      importance: Importance.high,
+      priority: Priority.high,
+      enableVibration: true,
+      vibrationPattern: vibrationPatternFor(
+        AlarmVibrationPattern.defaultPattern,
+      ),
+      playSound: true,
+      category: AndroidNotificationCategory.reminder,
+    );
 
 // USAGE_ALARM is what makes these ring/vibrate through the alarm stream
 // instead of the notification stream — the same reason a normal alarm clock
@@ -89,7 +92,9 @@ final notificationServiceProvider = Provider<NotificationService>((ref) {
 AndroidNotificationSound _soundFor(AppSettings settings) {
   final uri = settings.alarmSoundUri;
   if (uri == null) {
-    return const UriAndroidNotificationSound('content://settings/system/alarm_alert');
+    return const UriAndroidNotificationSound(
+      'content://settings/system/alarm_alert',
+    );
   }
   return UriAndroidNotificationSound(uri);
 }
@@ -100,11 +105,14 @@ AndroidNotificationSound _soundFor(AppSettings settings) {
 // constant. Stable for a given (sound, pattern) pair, so switching back to a
 // combination tried before reuses that channel instead of piling up new ones.
 String _channelSuffix(AppSettings settings) {
-  final soundKey = (settings.alarmSoundUri ?? 'default').hashCode.toUnsigned(20).toRadixString(36);
+  final soundKey = (settings.alarmSoundUri ?? 'default').hashCode
+      .toUnsigned(20)
+      .toRadixString(36);
   return '${soundKey}_${settings.vibrationPattern.name}';
 }
 
-String _alarmChannelId(AppSettings settings) => '${_alarmChannelBase}_${_channelSuffix(settings)}';
+String _alarmChannelId(AppSettings settings) =>
+    '${_alarmChannelBase}_${_channelSuffix(settings)}';
 
 AndroidNotificationDetails _androidDetailsFor(AppSettings settings) {
   final sound = _soundFor(settings);
@@ -142,15 +150,36 @@ AndroidNotificationDetails _androidDetailsFor(AppSettings settings) {
 // takeover, autoCancel left at its default (a tap just dismisses it -- see
 // _handleResponse's 'lead:' no-op). Importance.high is still needed for it to
 // actually pop as a heads-up banner rather than sitting silently in the shade.
-const AndroidNotificationDetails _leadAndroidDetails = AndroidNotificationDetails(
-  _leadChannelId,
-  _leadChannelName,
-  channelDescription: '구간이 시작되기 전에 미리 조용히 알려드려요',
-  importance: Importance.high,
-  priority: Priority.high,
-  category: AndroidNotificationCategory.reminder,
-  fullScreenIntent: false,
-);
+const AndroidNotificationDetails _leadAndroidDetails =
+    AndroidNotificationDetails(
+      _leadChannelId,
+      _leadChannelName,
+      channelDescription: '구간이 시작되기 전에 미리 조용히 알려드려요',
+      importance: Importance.high,
+      priority: Priority.high,
+      category: AndroidNotificationCategory.reminder,
+      fullScreenIntent: false,
+    );
+
+// T8 daily mood/energy check-in reminder -- same gentle treatment as the
+// lead-warning above (no insistent loop, no alarm-clock urgency, no
+// full-screen takeover): this is a once-a-day nudge to self-reflect, not
+// something that needs to wake you up.
+const _checkinChannelId = 'checkin_v1';
+const _checkinChannelName = '체크인 알림';
+// Negative and distinct from _timerNotificationId (-1) so it can never
+// collide with a block's id (notificationIdFor is always non-negative).
+const _checkinNotificationId = -2;
+const AndroidNotificationDetails _checkinAndroidDetails =
+    AndroidNotificationDetails(
+      _checkinChannelId,
+      _checkinChannelName,
+      channelDescription: '하루에 한 번, 기분/에너지 체크인을 기록할 시간을 알려드려요',
+      importance: Importance.high,
+      priority: Priority.high,
+      category: AndroidNotificationCategory.reminder,
+      fullScreenIntent: false,
+    );
 
 // Talks to MainActivity.kt's "ensureAlarmChannel" handler — see the long
 // comment there for why this can't just be
@@ -159,14 +188,17 @@ const AndroidNotificationDetails _leadAndroidDetails = AndroidNotificationDetail
 // Android then defaults to muting the haptic (vibration) channel on it,
 // which silently kills vibration on an otherwise-correct USAGE_ALARM
 // channel. Building the channel natively is the only way to clear that.
-const _alarmChannelChannel = MethodChannel('com.adhdplanner.adhd_planner/alarm_sound');
+const _alarmChannelChannel = MethodChannel(
+  'com.adhdplanner.adhd_planner/alarm_sound',
+);
 
 /// Creates (or, for a combination already seen before, reuses) the alarm
 /// channel for [settings]'s current sound+vibration choice. Safe to call every
 /// time alarms are rescheduled — creating a channel that already exists with
 /// that exact id is a no-op.
 Future<void> _ensureChannels(AppSettings settings) async {
-  final soundUri = settings.alarmSoundUri ?? 'content://settings/system/alarm_alert';
+  final soundUri =
+      settings.alarmSoundUri ?? 'content://settings/system/alarm_alert';
   final vibrationPattern = vibrationPatternFor(settings.vibrationPattern);
   try {
     await _alarmChannelChannel.invokeMethod('ensureAlarmChannel', {
@@ -219,7 +251,8 @@ class NotificationService {
     await _plugin.initialize(
       const InitializationSettings(android: androidInit),
       onDidReceiveNotificationResponse: handleNotificationResponse,
-      onDidReceiveBackgroundNotificationResponse: handleNotificationResponseBackground,
+      onDidReceiveBackgroundNotificationResponse:
+          handleNotificationResponseBackground,
     );
 
     await _ensureLocalTimezone();
@@ -234,8 +267,10 @@ class NotificationService {
   /// by default) — not folded into the return value since the alarm still
   /// works as an ordinary notification without it, just without the takeover.
   Future<bool> requestPermissions() async {
-    final android =
-        _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+    final android = _plugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
     final notifications = await android?.requestNotificationsPermission();
     final exactAlarms = await android?.requestExactAlarmsPermission();
     await android?.requestFullScreenIntentPermission();
@@ -246,7 +281,10 @@ class NotificationService {
   /// ones [segments] now call for (one start-of-block alarm per alarm-enabled
   /// block), using [settings]'s current sound and vibration choice. Call this
   /// again whenever blocks or that choice change so it takes effect immediately.
-  Future<void> rescheduleAll(List<Segment> segments, AppSettings settings) async {
+  Future<void> rescheduleAll(
+    List<Segment> segments,
+    AppSettings settings,
+  ) async {
     final repo = _repository;
     if (repo == null) return; // auth 전환 중 — 알람 재스케줄 건너뜀
     await _ensureChannels(settings);
@@ -277,7 +315,8 @@ class NotificationService {
           spec.body,
           triggerAt,
           const NotificationDetails(android: _leadAndroidDetails),
-          uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
+          uiLocalNotificationDateInterpretation:
+              UILocalNotificationDateInterpretation.absoluteTime,
           androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
           matchDateTimeComponents: DateTimeComponents.time,
           payload: spec.payload,
@@ -290,7 +329,8 @@ class NotificationService {
         spec.body,
         triggerAt,
         NotificationDetails(android: _androidDetailsFor(settings)),
-        uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
+        uiLocalNotificationDateInterpretation:
+            UILocalNotificationDateInterpretation.absoluteTime,
         // alarmClock (AlarmManager.setAlarmClock under the hood), not just
         // exactAllowWhileIdle: Samsung OneUI's "무음" ringer mode appears to
         // suppress vibration on a plain notification even with USAGE_ALARM set
@@ -314,6 +354,13 @@ class NotificationService {
         durationMs: _alarmRepeatMs,
         repeatInterval: const Duration(days: 1),
       );
+    }
+
+    // The cancelAll above already wiped any previously-scheduled checkin
+    // reminder along with the block alarms -- re-arm it here under the
+    // current setting, same as every block alarm just was.
+    if (settings.checkinAlarmEnabled) {
+      await scheduleCheckinAlarm(settings.checkinAlarmMinuteOfDay);
     }
 
     final idsBySegment = <String, List<int>>{};
@@ -367,7 +414,8 @@ class NotificationService {
       body,
       triggerAt,
       NotificationDetails(android: _timerAndroidDetails),
-      uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
+      uiLocalNotificationDateInterpretation:
+          UILocalNotificationDateInterpretation.absoluteTime,
       androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
       payload: 'timer:end',
     );
@@ -385,6 +433,46 @@ class NotificationService {
   /// the native Vibrator alarm riding alongside it (see [scheduleTimerEnd]).
   Future<void> cancelTimerEnd() => _silenceAlarm(_timerNotificationId);
 
+  /// Arms (or re-arms) the daily mood/energy check-in reminder for
+  /// [minuteOfDay] -- recurring like a block alarm (`matchDateTimeComponents:
+  /// time`), on the gentle non-alarm-clock channel (see
+  /// _checkinAndroidDetails: no fullScreenIntent, no insistent loop). Still
+  /// rides a directly-triggered native Vibrator call alongside it though --
+  /// Samsung OneUI's "무음" ringer mode was found to silence a Notification's
+  /// own vibration even on an unrelated (non-sound) channel, the same gap the
+  /// main block alarm hit (see VibrationAlarmReceiver.kt), and a check-in
+  /// reminder that silently never buzzes in silent mode defeats the point of
+  /// having one. `repeatInterval: 1 day` re-arms it on the native side daily,
+  /// same as the block alarm, so it stays in sync without Dart needing to run.
+  /// Tapping it (handled in [_handleResponse]) opens CheckinPage straight
+  /// into the mood/energy dialog.
+  Future<void> scheduleCheckinAlarm(int minuteOfDay) async {
+    final triggerAt = nextInstanceOf(minuteOfDay);
+    await _plugin.zonedSchedule(
+      _checkinNotificationId,
+      '체크인',
+      '오늘의 기분을 기록할 시간이에요',
+      triggerAt,
+      const NotificationDetails(android: _checkinAndroidDetails),
+      uiLocalNotificationDateInterpretation:
+          UILocalNotificationDateInterpretation.absoluteTime,
+      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      matchDateTimeComponents: DateTimeComponents.time,
+      payload: 'checkin',
+    );
+    await _scheduleVibrationAlarm(
+      requestCode: _checkinNotificationId,
+      triggerAt: triggerAt,
+      pattern: vibrationPatternFor(AlarmVibrationPattern.defaultPattern),
+      durationMs: vibrationCycleMs(AlarmVibrationPattern.defaultPattern),
+      repeatInterval: const Duration(days: 1),
+    );
+  }
+
+  /// Disarms the daily check-in reminder (the toggle in 설정 turned off) --
+  /// both the notification and the native Vibrator alarm riding alongside it.
+  Future<void> cancelCheckinAlarm() => _silenceAlarm(_checkinNotificationId);
+
   /// Schedules a ONE-TIME re-alert for [segment], [settings.snoozeMinutes] from
   /// now -- the "N분 뒤 다시" action on AlarmScreen. Reuses the block's normal
   /// slot-0 notification id, so tomorrow's regular [rescheduleAll] naturally
@@ -400,15 +488,17 @@ class NotificationService {
   }) async {
     await _ensureChannels(settings);
     final id = notificationIdFor(segment.id, 0);
-    final triggerAt =
-        tz.TZDateTime.now(tz.local).add(Duration(minutes: settings.snoozeMinutes));
+    final triggerAt = tz.TZDateTime.now(
+      tz.local,
+    ).add(Duration(minutes: settings.snoozeMinutes));
     await _plugin.zonedSchedule(
       id,
       segment.name,
       '지금 시작할 시간이에요',
       triggerAt,
       NotificationDetails(android: _androidDetailsFor(settings)),
-      uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
+      uiLocalNotificationDateInterpretation:
+          UILocalNotificationDateInterpretation.absoluteTime,
       androidScheduleMode: AndroidScheduleMode.alarmClock,
       payload: 'block:${segment.id}',
     );
@@ -458,8 +548,11 @@ class NotificationService {
   /// (== notification ids). Empty when there's no platform channel (tests).
   Future<List<int>> _cancelAllVibrationAlarms() async {
     try {
-      final result = await _alarmChannelChannel.invokeMethod('cancelAllVibrationAlarms');
-      return (result as List?)?.map((e) => (e as num).toInt()).toList() ?? const [];
+      final result = await _alarmChannelChannel.invokeMethod(
+        'cancelAllVibrationAlarms',
+      );
+      return (result as List?)?.map((e) => (e as num).toInt()).toList() ??
+          const [];
     } catch (e) {
       // No platform channel available (e.g. under flutter test).
       logSwallowed('cancelAllVibrationAlarms', e);
@@ -491,7 +584,6 @@ class NotificationService {
       logSwallowed('scheduleVibrationAlarm', e);
     }
   }
-
 }
 
 /// Stops [id]'s alarm notification and the native Vibrator alarm riding
@@ -530,6 +622,12 @@ class PendingAlarmAlert {
 
 final ValueNotifier<PendingAlarmAlert?> pendingAlarmAlert = ValueNotifier(null);
 
+/// Set (true) when the daily check-in reminder is tapped -- picked up by
+/// [App]'s checkin-alert launcher (app.dart) once the Navigator is ready, the
+/// same cold-start-safe handoff [pendingAlarmAlert] uses. No payload data
+/// needed beyond "open it": unlike a block alarm there's nothing to look up.
+final ValueNotifier<bool> pendingCheckinAlert = ValueNotifier(false);
+
 /// Foreground (or background-but-alive) notification tap handler.
 void handleNotificationResponse(NotificationResponse response) {
   _handleResponse(response);
@@ -561,6 +659,10 @@ void handleNotificationResponseBackground(NotificationResponse response) {
 void _handleResponse(NotificationResponse response) {
   final payload = response.payload;
   if (payload == null) return;
+  if (payload == 'checkin') {
+    pendingCheckinAlert.value = true;
+    return;
+  }
   final parts = payload.split(':');
   if (parts.length != 2 || parts[0] != 'block') return;
   final id = response.id;

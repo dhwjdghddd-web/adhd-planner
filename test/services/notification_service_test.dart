@@ -76,41 +76,51 @@ void main() {
       expect(specs.single.isLeadWarning, isFalse);
     });
 
-    test('leadWarning on adds a second, lead-warning spec for the same block', () {
-      final specs = buildSchedule([_block(id: 's1', leadWarning: true)]);
-      expect(specs.length, 2);
-      expect(specs.where((s) => s.isLeadWarning).length, 1);
-    });
+    test(
+      'leadWarning on adds a second, lead-warning spec for the same block',
+      () {
+        final specs = buildSchedule([_block(id: 's1', leadWarning: true)]);
+        expect(specs.length, 2);
+        expect(specs.where((s) => s.isLeadWarning).length, 1);
+      },
+    );
 
     test('the lead-warning fires leadMinutes before the block start', () {
-      final specs = buildSchedule(
-        [_block(id: 's1', startMinute: 9 * 60, leadWarning: true)],
-        leadMinutes: 10,
-      );
+      final specs = buildSchedule([
+        _block(id: 's1', startMinute: 9 * 60, leadWarning: true),
+      ], leadMinutes: 10);
       final lead = specs.firstWhere((s) => s.isLeadWarning);
       expect(lead.minuteOfDay, 9 * 60 - 10);
     });
 
-    test('the lead-warning wraps past midnight for a very early block start', () {
-      final specs = buildSchedule(
-        [_block(id: 's1', startMinute: 5, leadWarning: true)],
-        leadMinutes: 10,
-      );
-      final lead = specs.firstWhere((s) => s.isLeadWarning);
-      expect(lead.minuteOfDay, 1435); // 23:55 the previous night
-    });
+    test(
+      'the lead-warning wraps past midnight for a very early block start',
+      () {
+        final specs = buildSchedule([
+          _block(id: 's1', startMinute: 5, leadWarning: true),
+        ], leadMinutes: 10);
+        final lead = specs.firstWhere((s) => s.isLeadWarning);
+        expect(lead.minuteOfDay, 1435); // 23:55 the previous night
+      },
+    );
 
-    test('the lead-warning payload is tagged lead, not block, so a tap is a no-op', () {
-      final specs = buildSchedule([_block(id: 's1', leadWarning: true)]);
-      final lead = specs.firstWhere((s) => s.isLeadWarning);
-      expect(lead.payload, 'lead:s1');
-    });
+    test(
+      'the lead-warning payload is tagged lead, not block, so a tap is a no-op',
+      () {
+        final specs = buildSchedule([_block(id: 's1', leadWarning: true)]);
+        final lead = specs.firstWhere((s) => s.isLeadWarning);
+        expect(lead.payload, 'lead:s1');
+      },
+    );
 
-    test('the main alarm and its lead-warning never share a notification id', () {
-      final specs = buildSchedule([_block(id: 's1', leadWarning: true)]);
-      final ids = specs.map((s) => s.id).toSet();
-      expect(ids.length, specs.length);
-    });
+    test(
+      'the main alarm and its lead-warning never share a notification id',
+      () {
+        final specs = buildSchedule([_block(id: 's1', leadWarning: true)]);
+        final ids = specs.map((s) => s.id).toSet();
+        expect(ids.length, specs.length);
+      },
+    );
   });
 
   group('notificationIdFor', () {
@@ -146,14 +156,19 @@ void main() {
       }
     });
 
-    test('presets differ from each other (picking one actually changes something)', () {
-      final patterns = AlarmVibrationPattern.values.map(vibrationPatternFor).toList();
-      for (var i = 0; i < patterns.length; i++) {
-        for (var j = i + 1; j < patterns.length; j++) {
-          expect(patterns[i], isNot(patterns[j]), reason: '$i vs $j');
+    test(
+      'presets differ from each other (picking one actually changes something)',
+      () {
+        final patterns = AlarmVibrationPattern.values
+            .map(vibrationPatternFor)
+            .toList();
+        for (var i = 0; i < patterns.length; i++) {
+          for (var j = i + 1; j < patterns.length; j++) {
+            expect(patterns[i], isNot(patterns[j]), reason: '$i vs $j');
+          }
         }
-      }
-    });
+      },
+    );
   });
 
   group('handleNotificationResponse', () {
@@ -169,42 +184,69 @@ void main() {
     });
 
     test(
-        'opening the alarm screen (a real tap or the system auto-launching it) '
-        "queues the pending alert WITHOUT silencing the ring/vibration -- only "
-        "AlarmScreen's own actions (or the power-button guard, or the 60s "
-        'timeout) do that (regression: a past version silenced it the instant '
-        'the screen turned on, before the user had any chance to notice or '
-        'respond)', () async {
-      final calls = <MethodCall>[];
-      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(channel, (call) async {
-        calls.add(call);
-        return null;
-      });
+      'opening the alarm screen (a real tap or the system auto-launching it) '
+      "queues the pending alert WITHOUT silencing the ring/vibration -- only "
+      "AlarmScreen's own actions (or the power-button guard, or the 60s "
+      'timeout) do that (regression: a past version silenced it the instant '
+      'the screen turned on, before the user had any chance to notice or '
+      'respond)',
+      () async {
+        final calls = <MethodCall>[];
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, (call) async {
+              calls.add(call);
+              return null;
+            });
 
-      handleNotificationResponse(const NotificationResponse(
-        notificationResponseType: NotificationResponseType.selectedNotification,
-        id: 123,
-        payload: 'block:s1',
-      ));
-      // Let the (intentionally absent) silencing have a chance to run if it
-      // existed -- nothing here is awaited inside the handler, so a microtask
-      // pump is enough to surface a regression.
-      await Future<void>.delayed(Duration.zero);
+        handleNotificationResponse(
+          const NotificationResponse(
+            notificationResponseType:
+                NotificationResponseType.selectedNotification,
+            id: 123,
+            payload: 'block:s1',
+          ),
+        );
+        // Let the (intentionally absent) silencing have a chance to run if it
+        // existed -- nothing here is awaited inside the handler, so a microtask
+        // pump is enough to surface a regression.
+        await Future<void>.delayed(Duration.zero);
 
-      expect(pendingAlarmAlert.value?.notificationId, 123);
-      expect(pendingAlarmAlert.value?.segmentId, 's1');
-      expect(calls.where((c) => c.method == 'cancelVibrationAlarm'), isEmpty);
-    });
+        expect(pendingAlarmAlert.value?.notificationId, 123);
+        expect(pendingAlarmAlert.value?.segmentId, 's1');
+        expect(calls.where((c) => c.method == 'cancelVibrationAlarm'), isEmpty);
+      },
+    );
 
-    test('a non-block payload (e.g. the lead-warning notification) is ignored',
-        () async {
-      handleNotificationResponse(const NotificationResponse(
-        notificationResponseType: NotificationResponseType.selectedNotification,
-        id: 999,
-        payload: 'lead:s1',
-      ));
+    test(
+      'a non-block payload (e.g. the lead-warning notification) is ignored',
+      () async {
+        handleNotificationResponse(
+          const NotificationResponse(
+            notificationResponseType:
+                NotificationResponseType.selectedNotification,
+            id: 999,
+            payload: 'lead:s1',
+          ),
+        );
 
+        expect(pendingAlarmAlert.value, isNull);
+      },
+    );
+
+    test('tapping the daily check-in reminder queues pendingCheckinAlert', () {
+      addTearDown(() => pendingCheckinAlert.value = false);
+
+      handleNotificationResponse(
+        const NotificationResponse(
+          notificationResponseType:
+              NotificationResponseType.selectedNotification,
+          id: -2,
+          payload: 'checkin',
+        ),
+      );
+
+      expect(pendingCheckinAlert.value, true);
+      // Distinct from the block-alarm path -- a checkin tap never sets this.
       expect(pendingAlarmAlert.value, isNull);
     });
   });

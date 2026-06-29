@@ -9,6 +9,7 @@ import 'data/models/achieved_day.dart';
 import 'data/models/app_settings.dart';
 import 'data/providers.dart';
 import 'data/today.dart';
+import 'features/checkin/checkin_page.dart';
 import 'features/focus/alarm_screen.dart';
 import 'features/memos/quick_add_button.dart';
 import 'features/onboarding/onboarding_page.dart';
@@ -29,7 +30,8 @@ class App extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final settings = ref.watch(settingsProvider).value ?? const AppSettings.defaults();
+    final settings =
+        ref.watch(settingsProvider).value ?? const AppSettings.defaults();
 
     return MaterialApp(
       title: 'ADHD Planner',
@@ -41,12 +43,15 @@ class App extends ConsumerWidget {
       builder: (context, child) {
         final mediaQuery = MediaQuery.of(context);
         return MediaQuery(
-          data: mediaQuery.copyWith(textScaler: TextScaler.linear(settings.fontScale)),
+          data: mediaQuery.copyWith(
+            textScaler: TextScaler.linear(settings.fontScale),
+          ),
           child: Stack(
             children: [
               child!,
               const _AlarmAlertLauncher(),
               const _ForegroundAlarmWatcher(),
+              const _CheckinAlertLauncher(),
               const _AccountAlarmSync(),
               const _AchievementRecorder(),
               const _CompletionCelebrator(),
@@ -77,21 +82,21 @@ void _showAlarmScreen({
   // A full-screen route, not a dialog: it takes the whole screen (and, with the
   // activity's showWhenLocked/turnScreenOn, the lock screen) like a real alarm.
   navigator
-      .push(MaterialPageRoute<void>(
-        fullscreenDialog: true,
-        builder: (_) => AlarmScreen(
-          segmentId: segmentId,
-          notificationId: notificationId,
+      .push(
+        MaterialPageRoute<void>(
+          fullscreenDialog: true,
+          builder: (_) =>
+              AlarmScreen(segmentId: segmentId, notificationId: notificationId),
         ),
-      ))
+      )
       .whenComplete(() => alarmScreenOpen.value = false);
 }
 
 ThemeMode _toThemeMode(AppThemeMode mode) => switch (mode) {
-      AppThemeMode.system => ThemeMode.system,
-      AppThemeMode.light => ThemeMode.light,
-      AppThemeMode.dark => ThemeMode.dark,
-    };
+  AppThemeMode.system => ThemeMode.system,
+  AppThemeMode.light => ThemeMode.light,
+  AppThemeMode.dark => ThemeMode.dark,
+};
 
 /// Shows the onboarding guide once, then the circular planner home — as a
 /// plain reactive widget swap rather than a Navigator push, so it keeps
@@ -133,8 +138,10 @@ class _RootRouterState extends ConsumerState<_RootRouter> {
 
     // 케시 없음 = 앱 최초 로딩.
     return settingsAsync.when(
-      data: (s) => s.onboardingComplete ? const PlannerPage() : const OnboardingPage(),
-      loading: () => const Scaffold(body: Center(child: CircularProgressIndicator())),
+      data: (s) =>
+          s.onboardingComplete ? const PlannerPage() : const OnboardingPage(),
+      loading: () =>
+          const Scaffold(body: Center(child: CircularProgressIndicator())),
       error: (e, st) => Scaffold(body: Center(child: Text('오류: $e'))),
     );
   }
@@ -186,6 +193,48 @@ class _AlarmAlertLauncherState extends State<_AlarmAlertLauncher> {
   Widget build(BuildContext context) => const SizedBox.shrink();
 }
 
+/// No visual presence — watches [pendingCheckinAlert] (set by
+/// notification_service.dart when the daily check-in reminder is tapped) and
+/// pushes [CheckinPage] straight into its mood/energy dialog once the
+/// Navigator is ready. Same cold-start handoff problem and fix as
+/// [_AlarmAlertLauncher] above.
+class _CheckinAlertLauncher extends StatefulWidget {
+  const _CheckinAlertLauncher();
+
+  @override
+  State<_CheckinAlertLauncher> createState() => _CheckinAlertLauncherState();
+}
+
+class _CheckinAlertLauncherState extends State<_CheckinAlertLauncher> {
+  @override
+  void initState() {
+    super.initState();
+    pendingCheckinAlert.addListener(_openIfPending);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _openIfPending());
+  }
+
+  void _openIfPending() {
+    if (!pendingCheckinAlert.value) return;
+    final navigator = appNavigatorKey.currentState;
+    if (navigator == null) return;
+    pendingCheckinAlert.value = false;
+    navigator.push(
+      MaterialPageRoute<void>(
+        builder: (_) => const CheckinPage(autoOpenMoodDialog: true),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    pendingCheckinAlert.removeListener(_openIfPending);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => const SizedBox.shrink();
+}
+
 /// Pushes [AlarmScreen] on its own, without waiting for a notification
 /// tap, whenever a block's start alarm time arrives while this app is already
 /// the one on screen — checked once a second (cheap: just a minute-of-day
@@ -198,10 +247,12 @@ class _ForegroundAlarmWatcher extends ConsumerStatefulWidget {
   const _ForegroundAlarmWatcher();
 
   @override
-  ConsumerState<_ForegroundAlarmWatcher> createState() => _ForegroundAlarmWatcherState();
+  ConsumerState<_ForegroundAlarmWatcher> createState() =>
+      _ForegroundAlarmWatcherState();
 }
 
-class _ForegroundAlarmWatcherState extends ConsumerState<_ForegroundAlarmWatcher> {
+class _ForegroundAlarmWatcherState
+    extends ConsumerState<_ForegroundAlarmWatcher> {
   Timer? _ticker;
   int? _lastCheckedMinuteOfDay;
 
@@ -287,7 +338,9 @@ class _AccountAlarmSync extends ConsumerWidget {
       final segments = await next.watchSegments().first;
       final settings = await next.watchSettings().first;
       try {
-        await ref.read(notificationServiceProvider).rescheduleAll(segments, settings);
+        await ref
+            .read(notificationServiceProvider)
+            .rescheduleAll(segments, settings);
       } catch (e) {
         // 플랫폼 채널 부재(테스트 등) — 무시.
         logSwallowed('계정 전환 후 알람 재스케줄', e);
@@ -314,7 +367,8 @@ class _AchievementRecorder extends ConsumerStatefulWidget {
   const _AchievementRecorder();
 
   @override
-  ConsumerState<_AchievementRecorder> createState() => _AchievementRecorderState();
+  ConsumerState<_AchievementRecorder> createState() =>
+      _AchievementRecorderState();
 }
 
 class _AchievementRecorderState extends ConsumerState<_AchievementRecorder> {
@@ -422,7 +476,8 @@ class _CompletionCelebrator extends ConsumerStatefulWidget {
   const _CompletionCelebrator();
 
   @override
-  ConsumerState<_CompletionCelebrator> createState() => _CompletionCelebratorState();
+  ConsumerState<_CompletionCelebrator> createState() =>
+      _CompletionCelebratorState();
 }
 
 class _CompletionCelebratorState extends ConsumerState<_CompletionCelebrator> {
@@ -491,13 +546,15 @@ class _CompletionCelebratorState extends ConsumerState<_CompletionCelebrator> {
 
     // Only blocks that actually use checklist items can be "all done" -- a day
     // with no items at all never triggers it (there's nothing to finish).
-    final fullyDone = achievement.total > 0 && achievement.checked >= achievement.total;
+    final fullyDone =
+        achievement.total > 0 && achievement.checked >= achievement.total;
     // Crossed the achievement bar (>=50%) but not yet 100% -- the lighter
     // "halfway there" moment. Gated on total > 0 so a day with no checklist
     // items at all (which can only reach [DailyAchievement.isAchieved] via the
     // whole-block fallback) never fires this -- there's no real "halfway"
     // there to mark.
-    final partiallyDone = achievement.total > 0 && achievement.isAchieved && !fullyDone;
+    final partiallyDone =
+        achievement.total > 0 && achievement.isAchieved && !fullyDone;
     final alreadyToday = settings.lastCelebratedDate == todayKey;
     final alreadyPartialToday = settings.lastPartialCelebratedDate == todayKey;
 
@@ -506,12 +563,14 @@ class _CompletionCelebratorState extends ConsumerState<_CompletionCelebrator> {
       // Current streak length (today included), so a milestone day (3/7/14/
       // 30/60/100) gets a special line in the celebration -- see
       // [celebrationMilestones]. Computed the same way StreakBadge does.
-      final streakDays = currentStreak(streakDateKeys(
-        achievedDays: achievedDays,
-        segments: segments,
-        completions: completions,
-        progress: progress,
-      ));
+      final streakDays = currentStreak(
+        streakDateKeys(
+          achievedDays: achievedDays,
+          segments: segments,
+          completions: completions,
+          progress: progress,
+        ),
+      );
       // After this frame: persisting (and showing a dialog) mid-build would
       // re-enter the provider graph / Navigator.
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -530,7 +589,10 @@ class _CompletionCelebratorState extends ConsumerState<_CompletionCelebrator> {
           );
         }
       });
-    } else if (partiallyDone && !alreadyPartialToday && !alreadyToday && !_partialShownThisSession) {
+    } else if (partiallyDone &&
+        !alreadyPartialToday &&
+        !alreadyToday &&
+        !_partialShownThisSession) {
       // !alreadyToday: if today's full 100% celebration already happened (e.g.
       // pressed "모두 완료" then un-checked back below 100%), don't follow it
       // with the lighter "오늘 절반을 해냈어요" -- that would read as a downgrade.
@@ -538,7 +600,9 @@ class _CompletionCelebratorState extends ConsumerState<_CompletionCelebrator> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         final repo = ref.read(plannerRepositoryProvider);
         repo
-            ?.saveSettings(settings.copyWith(lastPartialCelebratedDate: todayKey))
+            ?.saveSettings(
+              settings.copyWith(lastPartialCelebratedDate: todayKey),
+            )
             .catchError((Object e) => logSwallowed('부분 달성 표시일 저장', e));
         final ctx = appNavigatorKey.currentContext;
         if (ctx != null) {

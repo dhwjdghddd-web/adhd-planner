@@ -62,6 +62,11 @@ class AppSettings {
   // toggle button remembers it across launches instead of always starting
   // back on the dial.
   final HomeViewMode homeViewMode;
+  // T8: daily mood/energy check-in reminder -- a gentle (non-alarm-clock)
+  // notification at [checkinAlarmMinuteOfDay], off by default since this is
+  // an opt-in nudge, not something every user wants pinging them daily.
+  final bool checkinAlarmEnabled;
+  final int checkinAlarmMinuteOfDay;
 
   const AppSettings({
     this.themeMode = AppThemeMode.system,
@@ -78,6 +83,8 @@ class AppSettings {
     this.leadMinutes = 10,
     this.lastMemoNudgeDate,
     this.homeViewMode = HomeViewMode.dial,
+    this.checkinAlarmEnabled = false,
+    this.checkinAlarmMinuteOfDay = 21 * 60,
   });
 
   const AppSettings.defaults() : this();
@@ -100,6 +107,8 @@ class AppSettings {
     int? leadMinutes,
     String? lastMemoNudgeDate,
     HomeViewMode? homeViewMode,
+    bool? checkinAlarmEnabled,
+    int? checkinAlarmMinuteOfDay,
   }) {
     return AppSettings(
       themeMode: themeMode ?? this.themeMode,
@@ -121,6 +130,9 @@ class AppSettings {
       leadMinutes: leadMinutes ?? this.leadMinutes,
       lastMemoNudgeDate: lastMemoNudgeDate ?? this.lastMemoNudgeDate,
       homeViewMode: homeViewMode ?? this.homeViewMode,
+      checkinAlarmEnabled: checkinAlarmEnabled ?? this.checkinAlarmEnabled,
+      checkinAlarmMinuteOfDay:
+          checkinAlarmMinuteOfDay ?? this.checkinAlarmMinuteOfDay,
     );
   }
 
@@ -139,6 +151,8 @@ class AppSettings {
     'leadMinutes': leadMinutes,
     'lastMemoNudgeDate': lastMemoNudgeDate,
     'homeViewMode': homeViewMode.name,
+    'checkinAlarmEnabled': checkinAlarmEnabled,
+    'checkinAlarmMinuteOfDay': checkinAlarmMinuteOfDay,
   };
 
   factory AppSettings.fromMap(Map<String, dynamic> map) => AppSettings(
@@ -165,5 +179,8 @@ class AppSettings {
       (v) => v.name == map['homeViewMode'],
       orElse: () => HomeViewMode.dial,
     ),
+    checkinAlarmEnabled: (map['checkinAlarmEnabled'] as bool?) ?? false,
+    checkinAlarmMinuteOfDay:
+        (map['checkinAlarmMinuteOfDay'] as num?)?.toInt() ?? 21 * 60,
   );
 }

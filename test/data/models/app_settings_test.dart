@@ -18,28 +18,34 @@ void main() {
       expect(settings.leadMinutes, 10);
     });
 
-    test('toMap/fromMap round-trips every field including onboardingComplete', () {
-      const settings = AppSettings(
-        themeMode: AppThemeMode.dark,
-        fontScale: 1.5,
-        reduceMotion: true,
-        exactAlarmGranted: true,
-        onboardingComplete: true,
-      );
+    test(
+      'toMap/fromMap round-trips every field including onboardingComplete',
+      () {
+        const settings = AppSettings(
+          themeMode: AppThemeMode.dark,
+          fontScale: 1.5,
+          reduceMotion: true,
+          exactAlarmGranted: true,
+          onboardingComplete: true,
+        );
 
-      final restored = AppSettings.fromMap(settings.toMap());
+        final restored = AppSettings.fromMap(settings.toMap());
 
-      expect(restored.themeMode, AppThemeMode.dark);
-      expect(restored.fontScale, 1.5);
-      expect(restored.reduceMotion, true);
-      expect(restored.exactAlarmGranted, true);
-      expect(restored.onboardingComplete, true);
-    });
+        expect(restored.themeMode, AppThemeMode.dark);
+        expect(restored.fontScale, 1.5);
+        expect(restored.reduceMotion, true);
+        expect(restored.exactAlarmGranted, true);
+        expect(restored.onboardingComplete, true);
+      },
+    );
 
-    test('fromMap defaults onboardingComplete to false when missing (pre-STEP-12 documents)', () {
-      final restored = AppSettings.fromMap(const {'themeMode': 'dark'});
-      expect(restored.onboardingComplete, false);
-    });
+    test(
+      'fromMap defaults onboardingComplete to false when missing (pre-STEP-12 documents)',
+      () {
+        final restored = AppSettings.fromMap(const {'themeMode': 'dark'});
+        expect(restored.onboardingComplete, false);
+      },
+    );
 
     test('copyWith only changes the given fields', () {
       const settings = AppSettings.defaults();
@@ -50,25 +56,31 @@ void main() {
       expect(updated.fontScale, settings.fontScale);
     });
 
-    test('toMap/fromMap round-trips a custom alarm sound and vibration pattern', () {
-      const settings = AppSettings(
-        alarmSoundUri: 'content://media/some/sound',
-        alarmSoundLabel: '신나는 알람',
-        vibrationPattern: AlarmVibrationPattern.long,
-      );
+    test(
+      'toMap/fromMap round-trips a custom alarm sound and vibration pattern',
+      () {
+        const settings = AppSettings(
+          alarmSoundUri: 'content://media/some/sound',
+          alarmSoundLabel: '신나는 알람',
+          vibrationPattern: AlarmVibrationPattern.long,
+        );
 
-      final restored = AppSettings.fromMap(settings.toMap());
+        final restored = AppSettings.fromMap(settings.toMap());
 
-      expect(restored.alarmSoundUri, 'content://media/some/sound');
-      expect(restored.alarmSoundLabel, '신나는 알람');
-      expect(restored.vibrationPattern, AlarmVibrationPattern.long);
-    });
+        expect(restored.alarmSoundUri, 'content://media/some/sound');
+        expect(restored.alarmSoundLabel, '신나는 알람');
+        expect(restored.vibrationPattern, AlarmVibrationPattern.long);
+      },
+    );
 
-    test('fromMap defaults to the system sound and defaultPattern when missing', () {
-      final restored = AppSettings.fromMap(const {'themeMode': 'dark'});
-      expect(restored.alarmSoundUri, isNull);
-      expect(restored.vibrationPattern, AlarmVibrationPattern.defaultPattern);
-    });
+    test(
+      'fromMap defaults to the system sound and defaultPattern when missing',
+      () {
+        final restored = AppSettings.fromMap(const {'themeMode': 'dark'});
+        expect(restored.alarmSoundUri, isNull);
+        expect(restored.vibrationPattern, AlarmVibrationPattern.defaultPattern);
+      },
+    );
 
     test('toMap/fromMap round-trips snoozeMinutes and leadMinutes', () {
       const settings = AppSettings(snoozeMinutes: 15, leadMinutes: 5);
@@ -77,11 +89,14 @@ void main() {
       expect(restored.leadMinutes, 5);
     });
 
-    test('fromMap defaults snoozeMinutes/leadMinutes to 10 on a legacy doc missing them', () {
-      final restored = AppSettings.fromMap(const {'themeMode': 'dark'});
-      expect(restored.snoozeMinutes, 10);
-      expect(restored.leadMinutes, 10);
-    });
+    test(
+      'fromMap defaults snoozeMinutes/leadMinutes to 10 on a legacy doc missing them',
+      () {
+        final restored = AppSettings.fromMap(const {'themeMode': 'dark'});
+        expect(restored.snoozeMinutes, 10);
+        expect(restored.leadMinutes, 10);
+      },
+    );
 
     test('toMap/fromMap round-trips lastMemoNudgeDate', () {
       const settings = AppSettings(lastMemoNudgeDate: '2026-06-20');
@@ -89,10 +104,13 @@ void main() {
       expect(restored.lastMemoNudgeDate, '2026-06-20');
     });
 
-    test('fromMap defaults lastMemoNudgeDate to null on a legacy doc missing it', () {
-      final restored = AppSettings.fromMap(const {'themeMode': 'dark'});
-      expect(restored.lastMemoNudgeDate, isNull);
-    });
+    test(
+      'fromMap defaults lastMemoNudgeDate to null on a legacy doc missing it',
+      () {
+        final restored = AppSettings.fromMap(const {'themeMode': 'dark'});
+        expect(restored.lastMemoNudgeDate, isNull);
+      },
+    );
 
     test('toMap/fromMap round-trips homeViewMode', () {
       const settings = AppSettings(homeViewMode: HomeViewMode.nextAction);
@@ -100,22 +118,53 @@ void main() {
       expect(restored.homeViewMode, HomeViewMode.nextAction);
     });
 
-    test('fromMap defaults homeViewMode to dial on a legacy doc missing it', () {
-      final restored = AppSettings.fromMap(const {'themeMode': 'dark'});
-      expect(restored.homeViewMode, HomeViewMode.dial);
+    test(
+      'fromMap defaults homeViewMode to dial on a legacy doc missing it',
+      () {
+        final restored = AppSettings.fromMap(const {'themeMode': 'dark'});
+        expect(restored.homeViewMode, HomeViewMode.dial);
+      },
+    );
+
+    test('checkin alarm defaults to off, at 21:00', () {
+      const settings = AppSettings.defaults();
+      expect(settings.checkinAlarmEnabled, false);
+      expect(settings.checkinAlarmMinuteOfDay, 21 * 60);
     });
 
-    test('clearAlarmSound resets to the system default even with a uri/label passed', () {
+    test('toMap/fromMap round-trips the checkin alarm toggle and time', () {
       const settings = AppSettings(
-        alarmSoundUri: 'content://media/some/sound',
-        alarmSoundLabel: '신나는 알람',
+        checkinAlarmEnabled: true,
+        checkinAlarmMinuteOfDay: 8 * 60 + 30,
       );
-
-      final cleared = settings.copyWith(clearAlarmSound: true);
-
-      expect(cleared.alarmSoundUri, isNull);
-      expect(cleared.alarmSoundLabel, isNull);
+      final restored = AppSettings.fromMap(settings.toMap());
+      expect(restored.checkinAlarmEnabled, true);
+      expect(restored.checkinAlarmMinuteOfDay, 8 * 60 + 30);
     });
+
+    test(
+      'fromMap defaults the checkin alarm to off/21:00 on a legacy doc missing it',
+      () {
+        final restored = AppSettings.fromMap(const {'themeMode': 'dark'});
+        expect(restored.checkinAlarmEnabled, false);
+        expect(restored.checkinAlarmMinuteOfDay, 21 * 60);
+      },
+    );
+
+    test(
+      'clearAlarmSound resets to the system default even with a uri/label passed',
+      () {
+        const settings = AppSettings(
+          alarmSoundUri: 'content://media/some/sound',
+          alarmSoundLabel: '신나는 알람',
+        );
+
+        final cleared = settings.copyWith(clearAlarmSound: true);
+
+        expect(cleared.alarmSoundUri, isNull);
+        expect(cleared.alarmSoundLabel, isNull);
+      },
+    );
 
     test('copyWith without clearAlarmSound keeps the existing sound', () {
       const settings = AppSettings(

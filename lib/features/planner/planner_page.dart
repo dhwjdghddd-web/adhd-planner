@@ -14,6 +14,7 @@ import '../../data/models/app_settings.dart';
 import '../../data/models/segment.dart';
 import '../../data/providers.dart';
 import '../../data/today.dart';
+import '../checkin/checkin_page.dart';
 import '../focus/focus_page.dart';
 import '../memos/memo_inbox_page.dart';
 import '../rewards/daily_checklist_badge.dart';
@@ -135,6 +136,13 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
             onPressed: () => Navigator.of(
               context,
             ).push(MaterialPageRoute(builder: (_) => const MemoInboxPage())),
+          ),
+          IconButton(
+            icon: const Icon(Icons.mood_outlined),
+            tooltip: '체크인',
+            onPressed: () => Navigator.of(
+              context,
+            ).push(MaterialPageRoute(builder: (_) => const CheckinPage())),
           ),
           IconButton(
             icon: const Icon(Icons.settings_outlined),

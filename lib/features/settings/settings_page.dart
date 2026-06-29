@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -146,6 +147,69 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         .save(settings.copyWith(snoozeMinutes: minutes));
   }
 
+  Future<void> _setCheckinAlarmEnabled(
+    AppSettings settings,
+    bool enabled,
+  ) async {
+    final updated = settings.copyWith(checkinAlarmEnabled: enabled);
+    await ref.read(settingsControllerProvider).save(updated);
+    await _rescheduleAlarms(updated);
+  }
+
+  // A scrollable 24h wheel (no AM/PM, no separate keyboard-entry mode)
+  // instead of the standard dial/keyboard showTimePicker -- same picker
+  // segment_form_page.dart's block start/end time uses, for the same time-
+  // of-day input everywhere in this app.
+  Future<int?> _pickWheelMinute(int initialMinute) async {
+    var pickedMinute = initialMinute;
+    final confirmed = await showModalBottomSheet<bool>(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              height: 216,
+              child: CupertinoDatePicker(
+                mode: CupertinoDatePickerMode.time,
+                use24hFormat: true,
+                initialDateTime: DateTime(
+                  2000,
+                  1,
+                  1,
+                  initialMinute ~/ 60,
+                  initialMinute % 60,
+                ),
+                onDateTimeChanged: (dt) =>
+                    pickedMinute = dt.hour * 60 + dt.minute,
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: () => Navigator.pop(sheetContext, true),
+                  child: const Text('확인'),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    return confirmed == true ? pickedMinute : null;
+  }
+
+  Future<void> _pickCheckinAlarmTime(AppSettings settings) async {
+    final picked = await _pickWheelMinute(settings.checkinAlarmMinuteOfDay);
+    if (picked == null || !mounted) return;
+    final updated = settings.copyWith(checkinAlarmMinuteOfDay: picked);
+    await ref.read(settingsControllerProvider).save(updated);
+    await _rescheduleAlarms(updated);
+  }
+
   @override
   Widget build(BuildContext context) {
     final settingsAsync = ref.watch(settingsProvider);
@@ -178,12 +242,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               )
             // 캐시가 있으면 에러가 아닌 한 항상 본문을 표시
             : settingsAsync.hasError
-                ? Center(child: Text('오류: ${settingsAsync.error}'))
-                : _buildBody(settings),
+            ? Center(child: Text('오류: ${settingsAsync.error}'))
+            : _buildBody(settings),
       ),
-      floatingActionButton: const MultiFabRow(
-        left: GlobalQuickAddButton(),
-      ),
+      floatingActionButton: const MultiFabRow(left: GlobalQuickAddButton()),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
     );
   }
@@ -195,8 +257,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       case AuthOutcome.linked:
         showAppSnackBar(context, const Text('구글 계정이 연결됐어요.'));
       case AuthOutcome.signedIn:
-        showAppSnackBar(context,
-            const Text('기존 구글 계정으로 로그인했어요. 그 계정의 데이터를 불러옵니다.'));
+        showAppSnackBar(
+          context,
+          const Text('기존 구글 계정으로 로그인했어요. 그 계정의 데이터를 불러옵니다.'),
+        );
       case AuthOutcome.cancelled:
         break; // 조용히 무시
       case AuthOutcome.failed:
@@ -211,8 +275,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('로그아웃'),
-        content: const Text('로그아웃하면 이 기기는 빈 익명 계정으로 시작해요.\n'
-            '같은 구글 계정으로 다시 연결하면 데이터가 복구돼요.'),
+        content: const Text(
+          '로그아웃하면 이 기기는 빈 익명 계정으로 시작해요.\n'
+          '같은 구글 계정으로 다시 연결하면 데이터가 복구돼요.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -234,10 +300,13 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     // left to cancel the previous account's still-armed native Vibrator alarms
     // from -- which is how a logged-out device could still ring a block the old
     // account had set.
-    final knownIds =
-        (ref.read(segmentsProvider).value ?? const []).expand((s) => s.notificationIds).toList();
+    final knownIds = (ref.read(segmentsProvider).value ?? const [])
+        .expand((s) => s.notificationIds)
+        .toList();
     try {
-      await ref.read(notificationServiceProvider).cancelEverything(knownIds: knownIds);
+      await ref
+          .read(notificationServiceProvider)
+          .cancelEverything(knownIds: knownIds);
     } catch (_) {
       // No platform channel (e.g. flutter test) — nothing scheduled to clear.
     }
@@ -335,6 +404,28 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           ),
         ),
         const Divider(),
+        const _SectionHeader('체크인 알림'),
+        SwitchListTile(
+          title: const Text('하루 체크인 알림'),
+          subtitle: const Text('지정한 시간에 기분/에너지를 기록하라고 알려드려요.'),
+          value: settings.checkinAlarmEnabled,
+          onChanged: (value) => _setCheckinAlarmEnabled(settings, value),
+        ),
+        ListTile(
+          enabled: settings.checkinAlarmEnabled,
+          leading: const Icon(Icons.access_time),
+          title: const Text('알림 시간'),
+          subtitle: Text(
+            TimeOfDay(
+              hour: settings.checkinAlarmMinuteOfDay ~/ 60,
+              minute: settings.checkinAlarmMinuteOfDay % 60,
+            ).format(context),
+          ),
+          onTap: settings.checkinAlarmEnabled
+              ? () => _pickCheckinAlarmTime(settings)
+              : null,
+        ),
+        const Divider(),
         const _SectionHeader('화면'),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -389,14 +480,13 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             key: ValueKey(isSignedIn),
             leading: const Icon(Icons.person_outline),
             title: Text(isSignedIn ? (user.email ?? '로그인됨') : '익명으로 사용 중'),
-            subtitle: Text(isSignedIn
-                ? '다른 기기에서 같은 구글 계정으로 로그인하면 이 데이터가 따라와요.'
-                : 'Google 계정을 연결하면 기기를 바꿔도 데이터가 유지돼요.'),
+            subtitle: Text(
+              isSignedIn
+                  ? '다른 기기에서 같은 구글 계정으로 로그인하면 이 데이터가 따라와요.'
+                  : 'Google 계정을 연결하면 기기를 바꿔도 데이터가 유지돼요.',
+            ),
             trailing: isSignedIn
-                ? OutlinedButton(
-                    onPressed: _signOut,
-                    child: const Text('로그아웃'),
-                  )
+                ? OutlinedButton(onPressed: _signOut, child: const Text('로그아웃'))
                 : OutlinedButton(
                     onPressed: _linkGoogle,
                     child: const Text('Google 연결'),

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:adhd_planner/data/models/achieved_day.dart';
 import 'package:adhd_planner/data/models/alarm_skip.dart';
 import 'package:adhd_planner/data/models/app_settings.dart';
+import 'package:adhd_planner/data/models/checkin.dart';
 import 'package:adhd_planner/data/models/completion.dart';
 import 'package:adhd_planner/data/models/memo.dart';
 import 'package:adhd_planner/data/models/micro_step_progress.dart';
@@ -21,6 +22,7 @@ class FakePlannerRepository implements PlannerRepository {
   final Map<String, AchievedDay> _achievedDays = {};
   final Map<String, AlarmSkip> _alarmSkips = {};
   final Map<String, Mit> _mits = {};
+  final Map<String, Checkin> _checkins = {};
   AppSettings _settings = const AppSettings.defaults();
 
   final _segmentsStream = _ReplayStream<List<Segment>>();
@@ -30,6 +32,7 @@ class FakePlannerRepository implements PlannerRepository {
   final _achievedDaysStream = _ReplayStream<List<AchievedDay>>();
   final _alarmSkipsStream = _ReplayStream<List<AlarmSkip>>();
   final _mitsStream = _ReplayStream<List<Mit>>();
+  final _checkinsStream = _ReplayStream<List<Checkin>>();
   final _settingsStream = _ReplayStream<AppSettings>();
 
   FakePlannerRepository() {
@@ -40,6 +43,7 @@ class FakePlannerRepository implements PlannerRepository {
     _achievedDaysStream.add(const []);
     _alarmSkipsStream.add(const []);
     _mitsStream.add(const []);
+    _checkinsStream.add(const []);
     _settingsStream.add(_settings);
   }
 
@@ -135,6 +139,21 @@ class FakePlannerRepository implements PlannerRepository {
   Future<void> removeMit(String dateKey, String segmentId) async {
     _mits.remove(Mit.keyFor(dateKey, segmentId));
     _mitsStream.add(_mits.values.toList());
+  }
+
+  @override
+  Stream<List<Checkin>> watchCheckins() => _checkinsStream.stream;
+
+  @override
+  Future<void> saveCheckin(Checkin c) async {
+    _checkins[c.id] = c;
+    _checkinsStream.add(_checkins.values.toList());
+  }
+
+  @override
+  Future<void> removeCheckin(String dateKey) async {
+    _checkins.remove(dateKey);
+    _checkinsStream.add(_checkins.values.toList());
   }
 
   @override

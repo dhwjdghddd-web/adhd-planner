@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../../models/achieved_day.dart';
 import '../../models/alarm_skip.dart';
 import '../../models/app_settings.dart';
+import '../../models/checkin.dart';
 import '../../models/completion.dart';
 import '../../models/memo.dart';
 import '../../models/micro_step_progress.dart';
@@ -126,6 +127,20 @@ class FirestorePlannerRepository implements PlannerRepository {
   @override
   Future<void> removeMit(String dateKey, String segmentId) =>
       _collection('mits').doc(Mit.keyFor(dateKey, segmentId)).delete();
+
+  // Check-ins -- not block-keyed (one per day, not per segment), but still
+  // unbounded over time, so the same recent-window reasoning applies.
+  @override
+  Stream<List<Checkin>> watchCheckins() =>
+      _watchSince('checkins', Checkin.fromMap, _historyWindowDays);
+
+  @override
+  Future<void> saveCheckin(Checkin c) =>
+      _collection('checkins').doc(c.id).set(c.toMap());
+
+  @override
+  Future<void> removeCheckin(String dateKey) =>
+      _collection('checkins').doc(dateKey).delete();
 
   // Settings
   @override
