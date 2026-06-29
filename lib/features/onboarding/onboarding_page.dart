@@ -208,25 +208,35 @@ class _SlideView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.all(32),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(slide.icon, size: 96, color: theme.colorScheme.primary),
-          const SizedBox(height: 24),
-          Text(
-            slide.title,
-            style: theme.textTheme.headlineSmall,
-            textAlign: TextAlign.center,
+    // A PageView page doesn't scroll vertically, so on a short screen (foldable
+    // cover) the centred icon+title+body would overflow. Centre when it fits,
+    // scroll when it doesn't.
+    return LayoutBuilder(
+      builder: (context, constraints) => SingleChildScrollView(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(minHeight: constraints.maxHeight),
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(slide.icon, size: 96, color: theme.colorScheme.primary),
+                const SizedBox(height: 24),
+                Text(
+                  slide.title,
+                  style: theme.textTheme.headlineSmall,
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  slide.body,
+                  style: theme.textTheme.bodyLarge,
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: 12),
-          Text(
-            slide.body,
-            style: theme.textTheme.bodyLarge,
-            textAlign: TextAlign.center,
-          ),
-        ],
+        ),
       ),
     );
   }

@@ -35,13 +35,18 @@ Future<void> showCompletionCelebration(
     barrierLabel: '오늘 완료 축하',
     barrierColor: Colors.black.withValues(alpha: 0.55),
     transitionDuration: const Duration(milliseconds: 250),
-    pageBuilder: (context, _, _) =>
-        _CompletionCelebration(reduceMotion: reduceMotion, streakDays: streakDays),
+    pageBuilder: (context, _, _) => _CompletionCelebration(
+      reduceMotion: reduceMotion,
+      streakDays: streakDays,
+    ),
   );
 }
 
 class _CompletionCelebration extends StatefulWidget {
-  const _CompletionCelebration({required this.reduceMotion, this.streakDays = 0});
+  const _CompletionCelebration({
+    required this.reduceMotion,
+    this.streakDays = 0,
+  });
 
   final bool reduceMotion;
   final int streakDays;
@@ -93,59 +98,77 @@ class _CompletionCelebrationState extends State<_CompletionCelebration> {
                   shouldLoop: false,
                 ),
               ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 32),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  widget.reduceMotion
-                      ? Icon(Icons.celebration, size: 96, color: theme.colorScheme.primary)
-                      : TweenAnimationBuilder<double>(
-                          tween: Tween(begin: 0.4, end: 1.0),
-                          duration: const Duration(milliseconds: 400),
-                          curve: Curves.elasticOut,
-                          builder: (context, scale, child) =>
-                              Transform.scale(scale: scale, child: child),
-                          child: Icon(
-                            Icons.celebration,
-                            size: 96,
-                            color: theme.colorScheme.primary,
+            LayoutBuilder(
+              builder: (context, constraints) => SingleChildScrollView(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                  child: Center(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 32),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          widget.reduceMotion
+                              ? Icon(
+                                  Icons.celebration,
+                                  size: 96,
+                                  color: theme.colorScheme.primary,
+                                )
+                              : TweenAnimationBuilder<double>(
+                                  tween: Tween(begin: 0.4, end: 1.0),
+                                  duration: const Duration(milliseconds: 400),
+                                  curve: Curves.elasticOut,
+                                  builder: (context, scale, child) =>
+                                      Transform.scale(
+                                        scale: scale,
+                                        child: child,
+                                      ),
+                                  child: Icon(
+                                    Icons.celebration,
+                                    size: 96,
+                                    color: theme.colorScheme.primary,
+                                  ),
+                                ),
+                          const SizedBox(height: 24),
+                          Text(
+                            '오늘 할 일을 다 끝냈어요!',
+                            style: theme.textTheme.headlineSmall?.copyWith(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                            ),
+                            textAlign: TextAlign.center,
                           ),
-                        ),
-                  const SizedBox(height: 24),
-                  Text(
-                    '오늘 할 일을 다 끝냈어요!',
-                    style: theme.textTheme.headlineSmall?.copyWith(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  if (celebrationMilestones.contains(widget.streakDays)) ...[
-                    const SizedBox(height: 8),
-                    Text(
-                      '${widget.streakDays}일 연속, 정말 멋져요!',
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        color: theme.colorScheme.primary,
-                        fontWeight: FontWeight.w700,
+                          if (celebrationMilestones.contains(
+                            widget.streakDays,
+                          )) ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              '${widget.streakDays}일 연속, 정말 멋져요!',
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                color: theme.colorScheme.primary,
+                                fontWeight: FontWeight.w700,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                          const SizedBox(height: 12),
+                          Text(
+                            restQuoteForToday(),
+                            style: theme.textTheme.bodyLarge?.copyWith(
+                              color: Colors.white.withValues(alpha: 0.85),
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 32),
+                          FilledButton(
+                            onPressed: () => Navigator.of(context).maybePop(),
+                            child: const Text('고마워요'),
+                          ),
+                        ],
                       ),
-                      textAlign: TextAlign.center,
                     ),
-                  ],
-                  const SizedBox(height: 12),
-                  Text(
-                    restQuoteForToday(),
-                    style: theme.textTheme.bodyLarge?.copyWith(
-                      color: Colors.white.withValues(alpha: 0.85),
-                    ),
-                    textAlign: TextAlign.center,
                   ),
-                  const SizedBox(height: 32),
-                  FilledButton(
-                    onPressed: () => Navigator.of(context).maybePop(),
-                    child: const Text('고마워요'),
-                  ),
-                ],
+                ),
               ),
             ),
           ],

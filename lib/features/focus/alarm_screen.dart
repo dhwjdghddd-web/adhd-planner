@@ -17,7 +17,9 @@ import 'focus_page.dart';
 // Used here only for the screen-off (power-button) dismissal guard: Dart asks
 // native to start/stop watching for ACTION_SCREEN_OFF, and native calls back
 // 'onAlarmDismissedByPower' once it fires (having already silenced the alarm).
-const _alarmGuardChannel = MethodChannel('com.adhdplanner.adhd_planner/alarm_sound');
+const _alarmGuardChannel = MethodChannel(
+  'com.adhdplanner.adhd_planner/alarm_sound',
+);
 
 /// Full-screen alarm takeover — pushed as a route (not a small dialog) by
 /// app.dart's `_showAlarmScreen` when a block's start alarm fires, including the
@@ -62,11 +64,13 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
     // sound/vibration and calls back so we can close this screen.
     _alarmGuardChannel.setMethodCallHandler(_onNativeCall);
     _alarmGuardChannel
-        .invokeMethod('startScreenOffGuard', {'notificationId': widget.notificationId})
+        .invokeMethod('startScreenOffGuard', {
+          'notificationId': widget.notificationId,
+        })
         .catchError((Object e) {
-      // No platform channel (e.g. under flutter test).
-      logSwallowed('알람 화면 끄기 가드 시작', e);
-    });
+          // No platform channel (e.g. under flutter test).
+          logSwallowed('알람 화면 끄기 가드 시작', e);
+        });
   }
 
   Future<dynamic> _onNativeCall(MethodCall call) async {
@@ -81,7 +85,9 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
   @override
   void dispose() {
     _alarmGuardChannel.setMethodCallHandler(null);
-    _alarmGuardChannel.invokeMethod('stopScreenOffGuard').catchError((Object e) {
+    _alarmGuardChannel.invokeMethod('stopScreenOffGuard').catchError((
+      Object e,
+    ) {
       logSwallowed('알람 화면 끄기 가드 정지', e);
     });
     super.dispose();
@@ -98,7 +104,8 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
       }
     }
 
-    final settings = ref.watch(settingsProvider).value ?? const AppSettings.defaults();
+    final settings =
+        ref.watch(settingsProvider).value ?? const AppSettings.defaults();
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
 
@@ -120,7 +127,9 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
       );
     }
 
-    final mutedColor = isDark ? const Color(0xFFA6B2BE) : const Color(0xFF525C68);
+    final mutedColor = isDark
+        ? const Color(0xFFA6B2BE)
+        : const Color(0xFF525C68);
 
     // No back button / pop scope: the slide is the only way out, so a stray
     // system-back can't dismiss the alarm without the deliberate gesture.
@@ -128,62 +137,88 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
       canPop: false,
       child: Scaffold(
         body: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: Column(
-              children: [
-                const Spacer(flex: 2),
-                Icon(Icons.alarm, size: 72, color: theme.colorScheme.primary),
-                const SizedBox(height: 28),
-                Text(
-                  TimeGeometry.formatMinute(segment.startMinute),
-                  style: theme.textTheme.displayMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
+          // Centred when it fits, scrolls when it doesn't (foldable cover
+          // screen): the fixed content (icon+time+name+slide+buttons ≈ 400px)
+          // is taller than a very short viewport, so a ConstrainedBox with
+          // minHeight=viewport + Center vertically-centres it on tall screens
+          // while the SingleChildScrollView lets it scroll instead of
+          // overflowing on short ones. (No IntrinsicHeight/Spacer here -- the
+          // slide-to-dismiss child doesn't support intrinsic-height queries.)
+          child: LayoutBuilder(
+            builder: (context, constraints) => SingleChildScrollView(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 24,
+                      vertical: 24,
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.alarm,
+                          size: 72,
+                          color: theme.colorScheme.primary,
+                        ),
+                        const SizedBox(height: 28),
+                        Text(
+                          TimeGeometry.formatMinute(segment!.startMinute),
+                          style: theme.textTheme.displayMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          segment.name,
+                          style: theme.textTheme.headlineSmall,
+                          textAlign: TextAlign.center,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          '지금 시작할 시간이에요',
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            color: mutedColor,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 48),
+                        _SlideToDismiss(
+                          label: '밀어서 끄기',
+                          onDismiss: () => _dismiss(segment!),
+                        ),
+                        const SizedBox(height: 20),
+                        // Two lighter exits below the slide track (never
+                        // overlapping it) -- "지금은 못 함"의 출구. A bare 해제 was
+                        // the only response before; these turn the alarm into
+                        // something you can actually answer instead of just
+                        // silencing and ignoring.
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextButton(
+                                onPressed: () =>
+                                    _snooze(segment!, settings.snoozeMinutes),
+                                child: Text('${settings.snoozeMinutes}분 뒤 다시'),
+                              ),
+                            ),
+                            Expanded(
+                              child: TextButton(
+                                onPressed: () => _skipToday(segment!),
+                                child: const Text('오늘은 건너뛰기'),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
-                  textAlign: TextAlign.center,
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  segment.name,
-                  style: theme.textTheme.headlineSmall,
-                  textAlign: TextAlign.center,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  '지금 시작할 시간이에요',
-                  style: theme.textTheme.titleMedium?.copyWith(color: mutedColor),
-                  textAlign: TextAlign.center,
-                ),
-                const Spacer(flex: 3),
-                _SlideToDismiss(
-                  label: '밀어서 끄기',
-                  onDismiss: () => _dismiss(segment!),
-                ),
-                const SizedBox(height: 20),
-                // Two lighter exits below the slide track (never overlapping
-                // it) -- "지금은 못 함"의 출구. A bare 해제 was the only
-                // response before; these turn the alarm into something you can
-                // actually answer instead of just silencing and ignoring.
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextButton(
-                        onPressed: () => _snooze(segment!, settings.snoozeMinutes),
-                        child: Text('${settings.snoozeMinutes}분 뒤 다시'),
-                      ),
-                    ),
-                    Expanded(
-                      child: TextButton(
-                        onPressed: () => _skipToday(segment!),
-                        child: const Text('오늘은 건너뛰기'),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-              ],
+              ),
             ),
           ),
         ),
@@ -211,7 +246,9 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
 
   Future<void> _tryCancelNotification() async {
     try {
-      await ref.read(notificationServiceProvider).cancelNotification(widget.notificationId);
+      await ref
+          .read(notificationServiceProvider)
+          .cancelNotification(widget.notificationId);
     } catch (e) {
       // No platform channel available (e.g. under flutter test).
       logSwallowed('알람 끄기-알림취소', e);
@@ -250,7 +287,8 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
 
   Future<void> _tryScheduleSnooze(Segment segment) async {
     try {
-      final settings = ref.read(settingsProvider).value ?? const AppSettings.defaults();
+      final settings =
+          ref.read(settingsProvider).value ?? const AppSettings.defaults();
       await ref
           .read(notificationServiceProvider)
           .scheduleSnooze(segment: segment, settings: settings);
@@ -298,7 +336,9 @@ class _SlideToDismissState extends State<_SlideToDismiss> {
       builder: (context, constraints) {
         final trackWidth = constraints.maxWidth;
         final maxDrag = (trackWidth - _thumb - 8).clamp(0.0, double.infinity);
-        final progress = maxDrag == 0 ? 0.0 : (_dragX / maxDrag).clamp(0.0, 1.0);
+        final progress = maxDrag == 0
+            ? 0.0
+            : (_dragX / maxDrag).clamp(0.0, 1.0);
 
         return SizedBox(
           height: _trackHeight,
@@ -336,7 +376,10 @@ class _SlideToDismissState extends State<_SlideToDismiss> {
                     key: const Key('alarm-dismiss-thumb'),
                     onHorizontalDragUpdate: (details) {
                       setState(() {
-                        _dragX = (_dragX + details.delta.dx).clamp(0.0, maxDrag);
+                        _dragX = (_dragX + details.delta.dx).clamp(
+                          0.0,
+                          maxDrag,
+                        );
                       });
                     },
                     onHorizontalDragEnd: (_) {

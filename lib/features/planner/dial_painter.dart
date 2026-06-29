@@ -6,6 +6,10 @@ import '../../core/constants.dart';
 import '../../core/time_geometry.dart';
 import '../../data/models/segment.dart';
 
+/// Font size of the MIT star pin (T7) -- shared so the arc painter can place
+/// the star's centre a full radius past the band rim (see _paintSegmentArcs).
+const double _mitStarSize = 18.0;
+
 /// Geometry constants shared between [DialPainter] and the page that hosts
 /// it (so tap handling and drawing never disagree on where the ring is).
 class DialGeometry {
@@ -75,9 +79,10 @@ class DialPainter extends CustomPainter {
   // badge at their arc's midpoint so "did I do this today" is visible at a
   // glance.
   final Set<String> completedSegmentIds;
-  // Blocks marked "오늘의 MIT" (T7) -- drawn with a small star badge a quarter
-  // of the way along their arc (not the midpoint, which the completed
-  // checkmark already owns -- a block can be both at once).
+  // Blocks marked "오늘의 MIT" (T7) -- drawn with a small amber star pinned
+  // just outside the arc's outer rim at the segment midpoint (the completed
+  // checkmark sits ON the band at the midpoint, so the two don't collide even
+  // when a block is both).
   final Set<String> mitSegmentIds;
 
   final Map<String, int> _lanes;
@@ -218,10 +223,17 @@ class DialPainter extends CustomPainter {
   }
 
   void _paintSegmentArcs(Canvas canvas, Offset center, double outerR) {
+    // Butt cap (flat ends), NOT round caps, and NO gap: adjacent segments meet
+    // flush, their different colours abutting cleanly at the shared boundary.
+    // Round caps bulged ~ringThickness/2 (≈5°+) past each end and overlapped a
+    // neighbour, so whichever arc drew last overpainted the other — an arc read
+    // convex on both ends or concave on both purely by draw order. Flat ends
+    // butting exactly at the boundary minute render every segment identically
+    // regardless of length or adjacency, with no choppy inter-segment spacing.
     final paint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = DialGeometry.ringThickness
-      ..strokeCap = StrokeCap.round; // Round-cap spec
+      ..strokeCap = StrokeCap.butt;
 
     for (final segment in segments) {
       if (segment.lengthMinutes <= 0) continue;
@@ -248,11 +260,18 @@ class DialPainter extends CustomPainter {
         );
       }
       if (mitSegmentIds.contains(segment.id)) {
-        final quarterMinute = (segment.startMinute + segment.lengthMinutes / 4)
+        // A star "pinned" fully clear of the arc's outer rim at the segment
+        // midpoint -- not a disc badge on the band (that clashed with the
+        // completed checkmark's identical disc) and not half-overlapping the
+        // edge (that read as awkward). Its inner edge clears the band: place
+        // the centre a full star-radius (plus a small gap) past the rim.
+        final midMinute = (segment.startMinute + segment.lengthMinutes / 2)
             .round();
+        final pinRadius =
+            radius + DialGeometry.ringThickness / 2 + _mitStarSize / 2 + 2;
         _paintMitBadge(
           canvas,
-          TimeGeometry.pointOnCircle(center, radius, quarterMinute),
+          TimeGeometry.pointOnCircle(center, pinRadius, midMinute),
         );
       }
     }
@@ -327,33 +346,36 @@ class DialPainter extends CustomPainter {
     tp.paint(canvas, badgeCenter - Offset(tp.width / 2, tp.height / 2));
   }
 
-  /// Small star badge for a block marked "오늘의 MIT" (T7).
+  /// A refined amber star "pinned" at [markerPoint] for a block marked
+  /// "오늘의 MIT" (T7) -- no disc background (that read as a duplicate of the
+  /// completed checkmark's badge), just the star itself with a soft shadow so
+  /// it stays legible over the dial backdrop.
   void _paintMitBadge(Canvas canvas, Offset markerPoint) {
-    const badgeRadius = 9.0;
-    canvas.drawCircle(
-      markerPoint,
-      badgeRadius + 1.5,
-      Paint()..color = Colors.white,
-    );
-    canvas.drawCircle(
-      markerPoint,
-      badgeRadius,
-      Paint()..color = Colors.amber[700]!,
-    );
+    final glyph = String.fromCharCode(Icons.star_rounded.codePoint);
 
-    final tp = TextPainter(
+    TextPainter starPainter(Color color) => TextPainter(
       text: TextSpan(
-        text: String.fromCharCode(Icons.star.codePoint),
+        text: glyph,
         style: TextStyle(
-          fontSize: badgeRadius * 1.3,
-          fontFamily: Icons.star.fontFamily,
-          package: Icons.star.fontPackage,
-          color: Colors.white,
+          fontSize: _mitStarSize,
+          fontFamily: Icons.star_rounded.fontFamily,
+          package: Icons.star_rounded.fontPackage,
+          color: color,
         ),
       ),
       textDirection: TextDirection.ltr,
     )..layout();
-    tp.paint(canvas, markerPoint - Offset(tp.width / 2, tp.height / 2));
+
+    // Soft dark shadow first (offset down a touch), then the amber star on top.
+    final shadow = starPainter(Colors.black.withValues(alpha: 0.35));
+    shadow.paint(
+      canvas,
+      markerPoint -
+          Offset(shadow.width / 2, shadow.height / 2) +
+          const Offset(0, 1),
+    );
+    final star = starPainter(Colors.amber[600]!);
+    star.paint(canvas, markerPoint - Offset(star.width / 2, star.height / 2));
   }
 
   void _paintHand(Canvas canvas, Offset center, double outerR) {

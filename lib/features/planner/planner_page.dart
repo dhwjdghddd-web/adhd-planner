@@ -91,6 +91,10 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
     final homeViewMode = settings?.homeViewMode ?? HomeViewMode.dial;
 
     return Scaffold(
+      // 빠른메모 시트(모달, 별도 라우트)가 키보드와 함께 올라올 때 그 viewInsets가
+      // 이 홈 Scaffold 본문까지 줄여 LayoutBuilder의 maxHeight가 작아지고 다이얼이
+      // 축소되던 문제 방지 -- 홈엔 인라인 입력창이 없어 키보드 회피가 불필요하다.
+      resizeToAvoidBottomInset: false,
       appBar: AppBar(
         title: const Text('오늘'),
         actions: [
@@ -227,51 +231,67 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
                 }
 
                 // Dial is kept a little narrower than the full width (so it
-                // doesn't run edge-to-edge and crowd the texts), with generous
-                // gaps above/below so the header and countdown read as clearly
-                // separated from it. Reserve covers header+badges+countdown+gaps.
+                // doesn't run edge-to-edge and crowd the texts). The gaps
+                // above/below it scale with the screen height — generous on a
+                // tall phone, tight on a short cover screen.
+                final vGap = (constraints.maxHeight * 0.09).clamp(16.0, 56.0);
                 final dialSize = math
                     .min(
                       constraints.maxWidth * 0.9,
-                      constraints.maxHeight - 260,
+                      constraints.maxHeight - 200,
                     )
-                    .clamp(180.0, constraints.maxWidth);
-                return Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _HomeHeader(minuteOfDay: _currentMinute),
-                      const SizedBox(height: 12),
-                      const Wrap(
-                        spacing: 12,
-                        alignment: WrapAlignment.center,
-                        children: [StreakBadge(), DailyChecklistBadge()],
-                      ),
-                      const SizedBox(height: 56),
-                      SizedBox(
-                        width: dialSize,
-                        height: dialSize,
-                        child: segmentsAsync.when(
-                          data: (segments) => _Dial(
-                            segments: segments,
-                            currentMinute: _currentMinute,
-                            completedSegmentIds: completedSegmentIds,
-                            mitSegmentIds: mitSegmentIds,
-                          ),
-                          loading: () =>
-                              const Center(child: CircularProgressIndicator()),
-                          error: (e, st) => Center(child: Text('오류: $e')),
-                        ),
-                      ),
-                      const SizedBox(height: 56),
-                      segmentsAsync.maybeWhen(
-                        data: (segments) => _NextBlockCountdown(
+                    .clamp(140.0, constraints.maxWidth);
+                final content = Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _HomeHeader(minuteOfDay: _currentMinute),
+                    const SizedBox(height: 12),
+                    const Wrap(
+                      spacing: 12,
+                      alignment: WrapAlignment.center,
+                      children: [StreakBadge(), DailyChecklistBadge()],
+                    ),
+                    SizedBox(height: vGap),
+                    SizedBox(
+                      width: dialSize,
+                      height: dialSize,
+                      child: segmentsAsync.when(
+                        data: (segments) => _Dial(
                           segments: segments,
                           currentMinute: _currentMinute,
+                          completedSegmentIds: completedSegmentIds,
+                          mitSegmentIds: mitSegmentIds,
                         ),
-                        orElse: () => const SizedBox.shrink(),
+                        loading: () =>
+                            const Center(child: CircularProgressIndicator()),
+                        error: (e, st) => Center(child: Text('오류: $e')),
                       ),
-                    ],
+                    ),
+                    SizedBox(height: vGap),
+                    segmentsAsync.maybeWhen(
+                      data: (segments) => _NextBlockCountdown(
+                        segments: segments,
+                        currentMinute: _currentMinute,
+                      ),
+                      orElse: () => const SizedBox.shrink(),
+                    ),
+                  ],
+                );
+
+                // On a normal phone the cluster fits, so it's a plain static
+                // Center -- no scroll view, so it reads as a fixed backdrop
+                // (no scroll bounce/jank). Only on a short screen (foldable
+                // cover) does it fall back to scrolling to avoid overflow.
+                const fitsThreshold = 560.0;
+                if (constraints.maxHeight >= fitsThreshold) {
+                  return Center(child: content);
+                }
+                return SingleChildScrollView(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      minHeight: constraints.maxHeight,
+                    ),
+                    child: Center(child: content),
                   ),
                 );
               },
@@ -384,6 +404,19 @@ class _NextActionView extends StatelessWidget {
   final int currentMinute;
   final Set<String> mitSegmentIds;
 
+  // Centres when it fits, scrolls when it doesn't (e.g. a foldable cover
+  // screen, or a two-line block name) instead of overflowing.
+  Widget _scrollSafe(Widget child) {
+    return LayoutBuilder(
+      builder: (context, constraints) => SingleChildScrollView(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(minHeight: constraints.maxHeight),
+          child: Center(child: child),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -391,8 +424,8 @@ class _NextActionView extends StatelessWidget {
     final segment = status.segment;
 
     if (segment == null) {
-      return Center(
-        child: Padding(
+      return _scrollSafe(
+        Padding(
           padding: const EdgeInsets.all(24),
           child: Text(
             '지금이나 다음 일정이 없어요\n편히 쉬어도 좋아요',
@@ -404,8 +437,8 @@ class _NextActionView extends StatelessWidget {
     }
 
     final avatarColor = segment.themeColor(context);
-    return Center(
-      child: Padding(
+    return _scrollSafe(
+      Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -565,14 +598,24 @@ class _Dial extends StatelessWidget {
     final outerR = DialGeometry.outerRadius(side);
     final lanes = DialGeometry.assignLanes(segments);
 
-    // Tapping a block's arc opens it in Focus (review mode) -- not its editor --
-    // so a block whose time has already passed can still have its "루틴" items
-    // ticked off late. Editing a block (time/alarm/items) is done from the
-    // 구간 관리 list instead. Mirrors the old dial-marker → Focus review flow.
+    // Tapping a block's arc opens it in Focus -- not its editor -- so a block
+    // whose time has already passed can still have its "루틴" items ticked off
+    // late. Editing a block (time/alarm/items) is done from the 구간 관리 list
+    // instead. The CURRENT block opens the live Focus (const FocusPage(), with
+    // remaining-time ring + timer) -- identical to the centre "지금" button --
+    // rather than the pinned review mode, so both entry points to the block
+    // that's happening right now land on the same screen. Past/future blocks
+    // still open in review mode (forBlock), where "20분 남음" against the wall
+    // clock would be meaningless.
     final tappedSegment = _segmentAtPoint(center, local, outerR, lanes);
     if (tappedSegment != null) {
+      final currentId = findBlockStatus(segments, currentMinute).segment?.id;
+      final isCurrent = tappedSegment.id == currentId;
       Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => FocusPage.forBlock(tappedSegment)),
+        MaterialPageRoute(
+          builder: (_) =>
+              isCurrent ? const FocusPage() : FocusPage.forBlock(tappedSegment),
+        ),
       );
     }
   }

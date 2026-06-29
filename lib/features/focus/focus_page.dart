@@ -342,81 +342,105 @@ class _FocusPageState extends ConsumerState<FocusPage> {
       return _buildRestComposition(context, segment, reduceMotion);
     }
 
-    return Column(
-      children: [
-        // Title/streak stay put rather than scrolling away with a long item
-        // list — only the checklist below scrolls. The header echoes the
-        // checklist-less rest screen exactly — the same concentric orbital with
-        // the block's icon + name at its heart — so a block with a checklist and
-        // one without read as the same family instead of an alarm icon clashing
-        // with the calm rings.
-        Padding(
-          padding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
-          child: Semantics(
-            label: '지금 집중: ${segment.name}',
-            child: Column(
-              children: [
-                WaitingIllustration(
-                  reduceMotion: reduceMotion,
-                  size: 220,
-                  showOrbit: false,
-                  progress: _remainingProgress(segment),
-                  message: _remainingMessage(segment) ?? '',
-                  center: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        iconForKey(segment.iconKey),
-                        size: 34,
-                        color: theme.colorScheme.primary,
-                      ),
-                      const SizedBox(height: 6),
-                      if (_isMitToday(segment))
-                        Icon(Icons.star, size: 16, color: Colors.amber[700]),
-                      ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 130),
-                        child: Text(
-                          segment.name,
-                          style: theme.textTheme.titleMedium,
-                          textAlign: TextAlign.center,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
+    // Title/streak stay put rather than scrolling away with a long item
+    // list — only the checklist below scrolls. The header echoes the
+    // checklist-less rest screen exactly — the same concentric orbital with
+    // the block's icon + name at its heart — so a block with a checklist and
+    // one without read as the same family instead of an alarm icon clashing
+    // with the calm rings.
+    final header = Padding(
+      padding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
+      child: Semantics(
+        label: '지금 집중: ${segment.name}',
+        child: Column(
+          children: [
+            WaitingIllustration(
+              reduceMotion: reduceMotion,
+              size: 220,
+              showOrbit: false,
+              progress: _remainingProgress(segment),
+              message: _remainingMessage(segment) ?? '',
+              center: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    iconForKey(segment.iconKey),
+                    size: 34,
+                    color: theme.colorScheme.primary,
                   ),
-                ),
-                const SizedBox(height: 10),
-                const StreakBadge(),
-                // Fixed alongside the header, not inside the checklist's own
-                // scroll view below -- only the checklist itself should
-                // scroll away; this is meant to stay reachable the whole time.
-                // Review mode (FocusPage.forBlock) has nothing to time-box --
-                // see showRemaining's comment in build() for why.
-                if (widget.pinnedBlock == null) ...[
-                  const SizedBox(height: 12),
-                  const FocusTimerSection(),
+                  const SizedBox(height: 6),
+                  if (_isMitToday(segment))
+                    Icon(Icons.star, size: 16, color: Colors.amber[700]),
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 130),
+                    child: Text(
+                      segment.name,
+                      style: theme.textTheme.titleMedium,
+                      textAlign: TextAlign.center,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
                 ],
-              ],
-            ),
-          ),
-        ),
-        Expanded(
-          // top: 0 -- _microStepsChecklist already opens with its own 16px
-          // gap (kept there so review mode, with no fixed timer section
-          // above to separate from, still gets breathing room above the
-          // first item).
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-            child: Column(
-              children: _microStepsChecklist(
-                segment,
-                autoCompleteWhenAllChecked: true,
               ),
             ),
-          ),
+            const SizedBox(height: 10),
+            const StreakBadge(),
+            // Fixed alongside the header, not inside the checklist's own
+            // scroll view below -- only the checklist itself should
+            // scroll away; this is meant to stay reachable the whole time.
+            // Review mode (FocusPage.forBlock) has nothing to time-box --
+            // see showRemaining's comment in build() for why.
+            if (widget.pinnedBlock == null) ...[
+              const SizedBox(height: 12),
+              const FocusTimerSection(),
+            ],
+          ],
         ),
-      ],
+      ),
+    );
+
+    final checklist = Column(
+      children: _microStepsChecklist(segment, autoCompleteWhenAllChecked: true),
+    );
+
+    // T5 keeps the header fixed while only the checklist scrolls. But the
+    // header alone (~220px ring + streak + timer ≈ 410px) doesn't fit a very
+    // short screen (foldable cover), so below a height threshold fall back to
+    // scrolling header + checklist together rather than overflowing. Normal
+    // phones stay well above the threshold and keep the fixed-header layout.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const fixedHeaderMinHeight = 560.0;
+        if (constraints.maxHeight >= fixedHeaderMinHeight) {
+          return Column(
+            children: [
+              header,
+              Expanded(
+                // top: 0 -- _microStepsChecklist already opens with its own
+                // 16px gap (kept there so review mode, with no fixed timer
+                // section above to separate from, still gets breathing room
+                // above the first item).
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+                  child: checklist,
+                ),
+              ),
+            ],
+          );
+        }
+        return SingleChildScrollView(
+          child: Column(
+            children: [
+              header,
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+                child: checklist,
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 

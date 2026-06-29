@@ -13,8 +13,14 @@ final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 /// [SafeArea] — so on top of that 88px, the screen also needs to clear
 /// whatever the device's own bottom system inset is (gesture nav bar,
 /// etc), or this undershoots on exactly the devices where it matters most.
+///
+/// Uses `viewPadding` (not `padding`): `padding` collapses to 0 at the bottom
+/// when the keyboard opens (viewInsets subsumes it), which would shrink this
+/// reservation mid-keyboard and visibly shift a height-centred body (the home
+/// dial "흔들림" when the quick-add sheet rose). `viewPadding` is the raw
+/// system inset, constant whether or not the keyboard is up.
 double fabAvoidingBottomInset(BuildContext context) =>
-    88 + MediaQuery.of(context).padding.bottom;
+    88 + MediaQuery.viewPaddingOf(context).bottom;
 
 /// 앱 전역 스낵바 표시 헬퍼.
 ///
@@ -98,4 +104,3 @@ class GlobalQuickAddButton extends StatelessWidget {
     );
   }
 }
-
