@@ -7,6 +7,7 @@ import '../../models/app_settings.dart';
 import '../../models/completion.dart';
 import '../../models/memo.dart';
 import '../../models/micro_step_progress.dart';
+import '../../models/mit.dart';
 import '../../models/segment.dart';
 import '../planner_repository.dart';
 
@@ -18,7 +19,7 @@ import '../planner_repository.dart';
 /// since there's only ever one per user.
 class FirestorePlannerRepository implements PlannerRepository {
   FirestorePlannerRepository(this.uid, {FirebaseFirestore? firestore})
-      : _firestore = firestore ?? FirebaseFirestore.instance;
+    : _firestore = firestore ?? FirebaseFirestore.instance;
 
   final String uid;
   final FirebaseFirestore _firestore;
@@ -26,17 +27,21 @@ class FirestorePlannerRepository implements PlannerRepository {
   DocumentReference<Map<String, dynamic>> get _userDoc =>
       _firestore.collection('users').doc(uid);
 
-  CollectionReference<Map<String, dynamic>> _collection(String name) => _userDoc.collection(name);
+  CollectionReference<Map<String, dynamic>> _collection(String name) =>
+      _userDoc.collection(name);
 
   // Segments
   @override
-  Stream<List<Segment>> watchSegments() => _watchAll('segments', Segment.fromMap);
+  Stream<List<Segment>> watchSegments() =>
+      _watchAll('segments', Segment.fromMap);
 
   @override
-  Future<void> upsertSegment(Segment s) => _collection('segments').doc(s.id).set(s.toMap());
+  Future<void> upsertSegment(Segment s) =>
+      _collection('segments').doc(s.id).set(s.toMap());
 
   @override
-  Future<void> deleteSegment(String id) => _collection('segments').doc(id).delete();
+  Future<void> deleteSegment(String id) =>
+      _collection('segments').doc(id).delete();
 
   // Memos
   @override
@@ -46,7 +51,8 @@ class FirestorePlannerRepository implements PlannerRepository {
   Future<void> addMemo(Memo m) => _collection('memos').doc(m.id).set(m.toMap());
 
   @override
-  Future<void> updateMemo(Memo m) => _collection('memos').doc(m.id).set(m.toMap());
+  Future<void> updateMemo(Memo m) =>
+      _collection('memos').doc(m.id).set(m.toMap());
 
   @override
   Future<void> deleteMemo(String id) => _collection('memos').doc(id).delete();
@@ -66,17 +72,23 @@ class FirestorePlannerRepository implements PlannerRepository {
       _watchSince('completions', Completion.fromMap, _historyWindowDays);
 
   @override
-  Future<void> setCompletion(Completion c) => _collection('completions').doc(c.id).set(c.toMap());
+  Future<void> setCompletion(Completion c) =>
+      _collection('completions').doc(c.id).set(c.toMap());
 
   @override
   Future<void> removeCompletion(String dateKey, String segmentId) =>
-      _collection('completions').doc(Completion.keyFor(dateKey, segmentId)).delete();
+      _collection(
+        'completions',
+      ).doc(Completion.keyFor(dateKey, segmentId)).delete();
 
   // Micro-step progress -- same unbounded-growth/recent-window reasoning as
   // completions above.
   @override
-  Stream<List<MicroStepProgress>> watchMicroStepProgress() =>
-      _watchSince('microStepProgress', MicroStepProgress.fromMap, _historyWindowDays);
+  Stream<List<MicroStepProgress>> watchMicroStepProgress() => _watchSince(
+    'microStepProgress',
+    MicroStepProgress.fromMap,
+    _historyWindowDays,
+  );
 
   @override
   Future<void> saveMicroStepProgress(MicroStepProgress p) =>
@@ -102,21 +114,38 @@ class FirestorePlannerRepository implements PlannerRepository {
   Future<void> saveAlarmSkip(AlarmSkip s) =>
       _collection('alarmSkips').doc(s.id).set(s.toMap());
 
+  // MITs -- same unbounded-growth/recent-window reasoning as
+  // completions/microStepProgress/alarmSkips above.
+  @override
+  Stream<List<Mit>> watchMits() =>
+      _watchSince('mits', Mit.fromMap, _historyWindowDays);
+
+  @override
+  Future<void> saveMit(Mit m) => _collection('mits').doc(m.id).set(m.toMap());
+
+  @override
+  Future<void> removeMit(String dateKey, String segmentId) =>
+      _collection('mits').doc(Mit.keyFor(dateKey, segmentId)).delete();
+
   // Settings
   @override
   Stream<AppSettings> watchSettings() => _userDoc.snapshots().map((snap) {
-        final data = snap.data();
-        if (data == null) return const AppSettings.defaults();
-        return AppSettings.fromMap(data);
-      });
+    final data = snap.data();
+    if (data == null) return const AppSettings.defaults();
+    return AppSettings.fromMap(data);
+  });
 
   @override
-  Future<void> saveSettings(AppSettings s) => _userDoc.set(s.toMap(), SetOptions(merge: true));
+  Future<void> saveSettings(AppSettings s) =>
+      _userDoc.set(s.toMap(), SetOptions(merge: true));
 
-  Stream<List<T>> _watchAll<T>(String collection, T Function(Map<String, dynamic>) fromMap) {
-    return _collection(collection)
-        .snapshots()
-        .map((snap) => snap.docs.map((d) => fromMap(d.data())).toList());
+  Stream<List<T>> _watchAll<T>(
+    String collection,
+    T Function(Map<String, dynamic>) fromMap,
+  ) {
+    return _collection(collection).snapshots().map(
+      (snap) => snap.docs.map((d) => fromMap(d.data())).toList(),
+    );
   }
 
   /// [_watchAll], but only documents whose "yyyy-MM-dd" `dateKey` is within
@@ -129,8 +158,9 @@ class FirestorePlannerRepository implements PlannerRepository {
     T Function(Map<String, dynamic>) fromMap,
     int windowDays,
   ) {
-    final cutoff = DateFormat('yyyy-MM-dd')
-        .format(DateTime.now().subtract(Duration(days: windowDays)));
+    final cutoff = DateFormat(
+      'yyyy-MM-dd',
+    ).format(DateTime.now().subtract(Duration(days: windowDays)));
     return _collection(collection)
         .where('dateKey', isGreaterThanOrEqualTo: cutoff)
         .snapshots()

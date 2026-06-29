@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:adhd_planner/core/time_geometry.dart';
 import 'package:adhd_planner/data/models/app_settings.dart';
 import 'package:adhd_planner/data/models/completion.dart';
+import 'package:adhd_planner/data/models/mit.dart';
 import 'package:adhd_planner/data/models/segment.dart';
 import 'package:adhd_planner/data/providers.dart';
 import 'package:adhd_planner/features/focus/focus_page.dart';
@@ -115,6 +116,25 @@ void main() {
         .painter as DialPainter;
 
     expect(painter.completedSegmentIds, {'done'});
+  });
+
+  testWidgets("a block marked 오늘의 MIT is passed to DialPainter's mit set, "
+      'an unmarked one is not (T7)', (tester) async {
+    final repo = FakePlannerRepository();
+    await repo.upsertSegment(_block(id: 'mit', name: '중요한 구간', startMinute: 60, endMinute: 120));
+    await repo.upsertSegment(_block(id: 'plain', name: '평범한 구간', startMinute: 120, endMinute: 180));
+    await repo.saveMit(Mit.today('mit'));
+
+    await tester.pumpWidget(wrap(repo));
+    await tester.pumpAndSettle();
+
+    final painter = tester
+        .widget<CustomPaint>(
+          find.byWidgetPredicate((w) => w is CustomPaint && w.painter is DialPainter),
+        )
+        .painter as DialPainter;
+
+    expect(painter.mitSegmentIds, {'mit'});
   });
 
   testWidgets('app bar action opens the segment editor', (tester) async {
@@ -277,6 +297,39 @@ void main() {
 
       expect(find.byType(FocusPage), findsOneWidget);
       expect(find.widgetWithText(CheckboxListTile, '물 마시기'), findsOneWidget);
+    });
+
+    testWidgets('shows a 오늘의 MIT label when the shown block is marked (T7)',
+        (tester) async {
+      final repo = FakePlannerRepository();
+      await repo.saveSettings(
+        const AppSettings.defaults().copyWith(homeViewMode: HomeViewMode.nextAction),
+      );
+      await repo.upsertSegment(
+        _block(name: '아침', startMinute: dayMinute - 60, endMinute: dayMinute + 60),
+      );
+      await repo.saveMit(Mit.today('s1'));
+
+      await tester.pumpWidget(wrap(repo, debugNowMinuteOfDay: dayMinute));
+      await tester.pumpAndSettle();
+
+      expect(find.text('오늘의 MIT'), findsOneWidget);
+    });
+
+    testWidgets('shows no 오늘의 MIT label when the shown block is not marked (T7)',
+        (tester) async {
+      final repo = FakePlannerRepository();
+      await repo.saveSettings(
+        const AppSettings.defaults().copyWith(homeViewMode: HomeViewMode.nextAction),
+      );
+      await repo.upsertSegment(
+        _block(name: '아침', startMinute: dayMinute - 60, endMinute: dayMinute + 60),
+      );
+
+      await tester.pumpWidget(wrap(repo, debugNowMinuteOfDay: dayMinute));
+      await tester.pumpAndSettle();
+
+      expect(find.text('오늘의 MIT'), findsNothing);
     });
   });
 }

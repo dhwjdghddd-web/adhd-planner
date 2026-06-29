@@ -7,7 +7,9 @@ import '../../core/constants.dart';
 import '../../core/time_geometry.dart';
 import '../../data/models/segment.dart';
 import '../../data/providers.dart';
+import '../../data/today.dart';
 import '../memos/quick_add_button.dart';
+import 'mit_controller.dart';
 import 'segment_form_page.dart';
 import 'segment_icons.dart';
 import 'segments_controller.dart';
@@ -59,6 +61,9 @@ class _SegmentList extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final mits = ref.watch(mitsProvider).value ?? const [];
+    final mitIds = mitBlockIdsOn(mits);
+
     if (segments.isEmpty) {
       return Center(
         child: Padding(
@@ -95,12 +100,17 @@ class _SegmentList extends ConsumerWidget {
       },
       itemBuilder: (context, index) {
         final segment = sorted[index];
+        final isMit = mitIds.contains(segment.id);
         return _SegmentTile(
           key: ValueKey(segment.id),
           segment: segment,
           index: index,
+          isMit: isMit,
           onTap: () => _openForm(context, existing: segment),
           onDelete: () => _confirmDelete(context, ref, segment),
+          onToggleMit: () => ref
+              .read(mitControllerProvider)
+              .toggle(segment.id, isMitToday: isMit),
         );
       },
     );
@@ -139,14 +149,18 @@ class _SegmentTile extends StatelessWidget {
     super.key,
     required this.segment,
     required this.index,
+    required this.isMit,
     required this.onTap,
     required this.onDelete,
+    required this.onToggleMit,
   });
 
   final Segment segment;
   final int index;
+  final bool isMit;
   final VoidCallback onTap;
   final VoidCallback onDelete;
+  final VoidCallback onToggleMit;
 
   @override
   Widget build(BuildContext context) {
@@ -155,23 +169,36 @@ class _SegmentTile extends StatelessWidget {
         '${TimeGeometry.formatMinute(segment.endMinute)} · ${segment.lengthMinutes}분';
 
     return Semantics(
-      label: '${segment.name} 구간, $range',
+      label: '${segment.name} 구간, $range${isMit ? ', 오늘의 MIT' : ''}',
       child: Card(
         margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
         child: ListTile(
           onTap: onTap,
-          leading: Builder(builder: (context) {
-            final avatarColor = segment.themeColor(context);
-            return CircleAvatar(
-              backgroundColor: avatarColor,
-              child: Icon(iconForKey(segment.iconKey), color: onSegmentColor(avatarColor)),
-            );
-          }),
+          leading: Builder(
+            builder: (context) {
+              final avatarColor = segment.themeColor(context);
+              return CircleAvatar(
+                backgroundColor: avatarColor,
+                child: Icon(
+                  iconForKey(segment.iconKey),
+                  color: onSegmentColor(avatarColor),
+                ),
+              );
+            },
+          ),
           title: Text(segment.name),
           subtitle: Text(range),
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
+              // T7: today-only "오늘의 MIT" pick -- no cap on how many, by
+              // design (see mit_controller.dart's class doc).
+              IconButton(
+                icon: Icon(isMit ? Icons.star : Icons.star_border),
+                color: isMit ? Colors.amber[700] : null,
+                tooltip: isMit ? '오늘의 MIT 해제' : '오늘의 MIT로 표시',
+                onPressed: onToggleMit,
+              ),
               IconButton(
                 icon: const Icon(Icons.delete_outline),
                 tooltip: '삭제',

@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:adhd_planner/core/time_geometry.dart';
 import 'package:adhd_planner/data/models/completion.dart';
 import 'package:adhd_planner/data/models/micro_step_progress.dart';
+import 'package:adhd_planner/data/models/mit.dart';
 import 'package:adhd_planner/data/models/segment.dart';
 import 'package:adhd_planner/data/providers.dart';
 import 'package:adhd_planner/features/focus/focus_page.dart';
@@ -115,6 +116,26 @@ void main() {
     await openFocusPage(tester, repo);
 
     expect(find.text('오전'), findsOneWidget);
+  });
+
+  testWidgets('shows a star next to the name when the block is marked 오늘의 MIT (T7)',
+      (tester) async {
+    final repo = FakePlannerRepository();
+    await repo.upsertSegment(_currentBlock(id: 's1', name: '오전', microSteps: const ['아무거나']));
+    await repo.saveMit(Mit.today('s1'));
+
+    await openFocusPage(tester, repo);
+
+    expect(find.byIcon(Icons.star), findsOneWidget);
+  });
+
+  testWidgets('shows no star when the block is not marked 오늘의 MIT (T7)', (tester) async {
+    final repo = FakePlannerRepository();
+    await repo.upsertSegment(_currentBlock(name: '오전', microSteps: const ['아무거나']));
+
+    await openFocusPage(tester, repo);
+
+    expect(find.byIcon(Icons.star), findsNothing);
   });
 
   testWidgets("shows the current block's remaining time at the top (T5)", (tester) async {

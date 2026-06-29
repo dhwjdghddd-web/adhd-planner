@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:adhd_planner/data/models/mit.dart';
+import 'package:adhd_planner/data/models/segment.dart';
 import 'package:adhd_planner/data/providers.dart';
 import 'package:adhd_planner/features/segments/segment_editor_page.dart';
 import 'package:adhd_planner/services/notification_service.dart';
@@ -90,5 +92,78 @@ void main() {
 
     expect(find.text('오후'), findsNothing);
     expect(find.textContaining('아직 구간이 없어요'), findsOneWidget);
+  });
+
+  group('T7 -- 오늘의 MIT star toggle', () {
+    Segment block({String id = 's1', String name = '오전'}) {
+      return Segment(
+        id: id,
+        name: name,
+        colorValue: 0xFF000000,
+        iconKey: 'wb_sunny',
+        startMinute: 9 * 60,
+        endMinute: 10 * 60,
+        order: 0,
+      );
+    }
+
+    testWidgets('starts unmarked, and tapping the star marks it as today\'s MIT',
+        (tester) async {
+      final repo = FakePlannerRepository();
+      await repo.upsertSegment(block());
+
+      await tester.pumpWidget(wrap(repo));
+      await tester.pumpAndSettle();
+
+      expect(find.widgetWithIcon(IconButton, Icons.star_border), findsOneWidget);
+      expect(find.widgetWithIcon(IconButton, Icons.star), findsNothing);
+
+      await tester.tap(find.widgetWithIcon(IconButton, Icons.star_border));
+      await tester.pumpAndSettle();
+
+      expect(find.widgetWithIcon(IconButton, Icons.star), findsOneWidget);
+      expect(find.widgetWithIcon(IconButton, Icons.star_border), findsNothing);
+
+      final mits = await repo.watchMits().first;
+      expect(mits.single.segmentId, 's1');
+    });
+
+    testWidgets('tapping an already-marked star unmarks it', (tester) async {
+      final repo = FakePlannerRepository();
+      await repo.upsertSegment(block());
+      await repo.saveMit(Mit.today('s1'));
+
+      await tester.pumpWidget(wrap(repo));
+      await tester.pumpAndSettle();
+
+      expect(find.widgetWithIcon(IconButton, Icons.star), findsOneWidget);
+
+      await tester.tap(find.widgetWithIcon(IconButton, Icons.star));
+      await tester.pumpAndSettle();
+
+      expect(find.widgetWithIcon(IconButton, Icons.star), findsNothing);
+      expect(find.widgetWithIcon(IconButton, Icons.star_border), findsOneWidget);
+
+      final mits = await repo.watchMits().first;
+      expect(mits, isEmpty);
+    });
+
+    testWidgets('no cap -- multiple blocks can all be marked at once', (tester) async {
+      final repo = FakePlannerRepository();
+      await repo.upsertSegment(block(id: 's1', name: '오전'));
+      await repo.upsertSegment(block(id: 's2', name: '오후'));
+      await repo.upsertSegment(block(id: 's3', name: '저녁'));
+
+      await tester.pumpWidget(wrap(repo));
+      await tester.pumpAndSettle();
+
+      for (final _ in [0, 1, 2]) {
+        await tester.tap(find.widgetWithIcon(IconButton, Icons.star_border).first);
+        await tester.pumpAndSettle();
+      }
+
+      final mits = await repo.watchMits().first;
+      expect(mits.map((m) => m.segmentId).toSet(), {'s1', 's2', 's3'});
+    });
   });
 }

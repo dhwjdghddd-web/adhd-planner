@@ -6,6 +6,7 @@ import 'package:adhd_planner/data/models/app_settings.dart';
 import 'package:adhd_planner/data/models/completion.dart';
 import 'package:adhd_planner/data/models/memo.dart';
 import 'package:adhd_planner/data/models/micro_step_progress.dart';
+import 'package:adhd_planner/data/models/mit.dart';
 import 'package:adhd_planner/data/models/segment.dart';
 import 'package:adhd_planner/data/repositories/planner_repository.dart';
 
@@ -19,6 +20,7 @@ class FakePlannerRepository implements PlannerRepository {
   final Map<String, MicroStepProgress> _microStepProgress = {};
   final Map<String, AchievedDay> _achievedDays = {};
   final Map<String, AlarmSkip> _alarmSkips = {};
+  final Map<String, Mit> _mits = {};
   AppSettings _settings = const AppSettings.defaults();
 
   final _segmentsStream = _ReplayStream<List<Segment>>();
@@ -27,6 +29,7 @@ class FakePlannerRepository implements PlannerRepository {
   final _microStepProgressStream = _ReplayStream<List<MicroStepProgress>>();
   final _achievedDaysStream = _ReplayStream<List<AchievedDay>>();
   final _alarmSkipsStream = _ReplayStream<List<AlarmSkip>>();
+  final _mitsStream = _ReplayStream<List<Mit>>();
   final _settingsStream = _ReplayStream<AppSettings>();
 
   FakePlannerRepository() {
@@ -36,6 +39,7 @@ class FakePlannerRepository implements PlannerRepository {
     _microStepProgressStream.add(const []);
     _achievedDaysStream.add(const []);
     _alarmSkipsStream.add(const []);
+    _mitsStream.add(const []);
     _settingsStream.add(_settings);
   }
 
@@ -91,7 +95,8 @@ class FakePlannerRepository implements PlannerRepository {
   }
 
   @override
-  Stream<List<MicroStepProgress>> watchMicroStepProgress() => _microStepProgressStream.stream;
+  Stream<List<MicroStepProgress>> watchMicroStepProgress() =>
+      _microStepProgressStream.stream;
 
   @override
   Future<void> saveMicroStepProgress(MicroStepProgress p) async {
@@ -115,6 +120,21 @@ class FakePlannerRepository implements PlannerRepository {
   Future<void> saveAlarmSkip(AlarmSkip s) async {
     _alarmSkips[s.id] = s;
     _alarmSkipsStream.add(_alarmSkips.values.toList());
+  }
+
+  @override
+  Stream<List<Mit>> watchMits() => _mitsStream.stream;
+
+  @override
+  Future<void> saveMit(Mit m) async {
+    _mits[m.id] = m;
+    _mitsStream.add(_mits.values.toList());
+  }
+
+  @override
+  Future<void> removeMit(String dateKey, String segmentId) async {
+    _mits.remove(Mit.keyFor(dateKey, segmentId));
+    _mitsStream.add(_mits.values.toList());
   }
 
   @override

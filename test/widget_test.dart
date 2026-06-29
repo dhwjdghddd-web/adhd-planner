@@ -9,6 +9,7 @@ import 'package:adhd_planner/data/models/app_settings.dart';
 import 'package:adhd_planner/data/models/completion.dart';
 import 'package:adhd_planner/data/models/memo.dart';
 import 'package:adhd_planner/data/models/micro_step_progress.dart';
+import 'package:adhd_planner/data/models/mit.dart';
 import 'package:adhd_planner/data/models/segment.dart';
 import 'package:adhd_planner/data/providers.dart';
 import 'package:adhd_planner/data/repositories/planner_repository.dart';
@@ -70,6 +71,8 @@ class _DelayedDataRepository implements PlannerRepository {
   @override
   Stream<List<AlarmSkip>> watchAlarmSkips() => _inner.watchAlarmSkips();
   @override
+  Stream<List<Mit>> watchMits() => _inner.watchMits();
+  @override
   Stream<AppSettings> watchSettings() => _inner.watchSettings();
 
   @override
@@ -93,6 +96,11 @@ class _DelayedDataRepository implements PlannerRepository {
   Future<void> saveAchievedDay(AchievedDay d) => _inner.saveAchievedDay(d);
   @override
   Future<void> saveAlarmSkip(AlarmSkip s) => _inner.saveAlarmSkip(s);
+  @override
+  Future<void> saveMit(Mit m) => _inner.saveMit(m);
+  @override
+  Future<void> removeMit(String dateKey, String segmentId) =>
+      _inner.removeMit(dateKey, segmentId);
   @override
   Future<void> saveSettings(AppSettings s) => _inner.saveSettings(s);
 }

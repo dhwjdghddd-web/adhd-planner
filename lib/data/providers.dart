@@ -7,6 +7,7 @@ import 'models/app_settings.dart';
 import 'models/completion.dart';
 import 'models/memo.dart';
 import 'models/micro_step_progress.dart';
+import 'models/mit.dart';
 import 'models/segment.dart';
 import 'repositories/firestore/firestore_planner_repository.dart';
 import 'repositories/planner_repository.dart';
@@ -37,7 +38,8 @@ final currentUidProvider = Provider<String?>(
 /// 테스트가 FakePlannerRepository로 override할 수 있게 한다. override하면 위
 /// auth provider들은 빌드되지 않으므로(=Firebase 접근 없음) 테스트에서 안전하다.
 final plannerRepositoryProvider = Provider<PlannerRepository?>((ref) {
-  final uid = ref.watch(currentUidProvider) ?? FirebaseAuth.instance.currentUser?.uid;
+  final uid =
+      ref.watch(currentUidProvider) ?? FirebaseAuth.instance.currentUser?.uid;
   if (uid == null) return null;
   return FirestorePlannerRepository(uid);
 });
@@ -53,28 +55,52 @@ Stream<List<T>> _guardedStream<T>(
 }
 
 final segmentsProvider = StreamProvider<List<Segment>>(
-  (ref) => _guardedStream(ref.watch(plannerRepositoryProvider), (r) => r.watchSegments()),
+  (ref) => _guardedStream(
+    ref.watch(plannerRepositoryProvider),
+    (r) => r.watchSegments(),
+  ),
 );
 
 final memosProvider = StreamProvider<List<Memo>>(
-  (ref) => _guardedStream(ref.watch(plannerRepositoryProvider), (r) => r.watchMemos()),
+  (ref) => _guardedStream(
+    ref.watch(plannerRepositoryProvider),
+    (r) => r.watchMemos(),
+  ),
 );
 
 final completionsProvider = StreamProvider<List<Completion>>(
-  (ref) => _guardedStream(ref.watch(plannerRepositoryProvider), (r) => r.watchCompletions()),
+  (ref) => _guardedStream(
+    ref.watch(plannerRepositoryProvider),
+    (r) => r.watchCompletions(),
+  ),
 );
 
 final microStepProgressProvider = StreamProvider<List<MicroStepProgress>>(
   (ref) => _guardedStream(
-      ref.watch(plannerRepositoryProvider), (r) => r.watchMicroStepProgress()),
+    ref.watch(plannerRepositoryProvider),
+    (r) => r.watchMicroStepProgress(),
+  ),
 );
 
 final achievedDaysProvider = StreamProvider<List<AchievedDay>>(
-  (ref) => _guardedStream(ref.watch(plannerRepositoryProvider), (r) => r.watchAchievedDays()),
+  (ref) => _guardedStream(
+    ref.watch(plannerRepositoryProvider),
+    (r) => r.watchAchievedDays(),
+  ),
 );
 
 final alarmSkipsProvider = StreamProvider<List<AlarmSkip>>(
-  (ref) => _guardedStream(ref.watch(plannerRepositoryProvider), (r) => r.watchAlarmSkips()),
+  (ref) => _guardedStream(
+    ref.watch(plannerRepositoryProvider),
+    (r) => r.watchAlarmSkips(),
+  ),
+);
+
+final mitsProvider = StreamProvider<List<Mit>>(
+  (ref) => _guardedStream(
+    ref.watch(plannerRepositoryProvider),
+    (r) => r.watchMits(),
+  ),
 );
 
 /// Settings는 null uid 구간에 기본값을 유지한다(앱이 깜빡이지 않게).
@@ -90,7 +116,9 @@ final settingsProvider = StreamProvider<AppSettings>((ref) {
 /// null이면 Firestore에 접근하지 않고 skip한다.
 extension PlannerRepoX on PlannerRepository? {
   /// null이면 Future.value(null)을 반환하는 guard 헬퍼.
-  Future<T?> guardedFirst<T>(Stream<T> Function(PlannerRepository) watch) async {
+  Future<T?> guardedFirst<T>(
+    Stream<T> Function(PlannerRepository) watch,
+  ) async {
     final repo = this;
     if (repo == null) return null;
     return watch(repo).first;

@@ -100,6 +100,12 @@ class _FocusPageState extends ConsumerState<FocusPage> {
     return blockProgressFraction(segment, _currentMinute);
   }
 
+  // T7: read-only here -- the star is toggled from 구간 관리, not Focus.
+  bool _isMitToday(Segment segment) {
+    final mits = ref.watch(mitsProvider).value ?? const [];
+    return mitBlockIdsOn(mits).contains(segment.id);
+  }
+
   @override
   void dispose() {
     _ticker?.cancel();
@@ -352,6 +358,8 @@ class _FocusPageState extends ConsumerState<FocusPage> {
                         color: theme.colorScheme.primary,
                       ),
                       const SizedBox(height: 6),
+                      if (_isMitToday(segment))
+                        Icon(Icons.star, size: 16, color: Colors.amber[700]),
                       ConstrainedBox(
                         constraints: const BoxConstraints(maxWidth: 130),
                         child: Text(
@@ -437,6 +445,8 @@ class _FocusPageState extends ConsumerState<FocusPage> {
                       color: theme.colorScheme.primary,
                     ),
                     const SizedBox(height: 6),
+                    if (_isMitToday(segment))
+                      Icon(Icons.star, size: 16, color: Colors.amber[700]),
                     ConstrainedBox(
                       constraints: const BoxConstraints(maxWidth: 130),
                       child: Text(

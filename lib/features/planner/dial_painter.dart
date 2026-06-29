@@ -62,6 +62,7 @@ class DialPainter extends CustomPainter {
     required this.handColor,
     required this.brightness,
     this.completedSegmentIds = const {},
+    this.mitSegmentIds = const {},
   }) : _lanes = DialGeometry.assignLanes(segments);
 
   final List<Segment> segments;
@@ -74,6 +75,10 @@ class DialPainter extends CustomPainter {
   // badge at their arc's midpoint so "did I do this today" is visible at a
   // glance.
   final Set<String> completedSegmentIds;
+  // Blocks marked "오늘의 MIT" (T7) -- drawn with a small star badge a quarter
+  // of the way along their arc (not the midpoint, which the completed
+  // checkmark already owns -- a block can be both at once).
+  final Set<String> mitSegmentIds;
 
   final Map<String, int> _lanes;
 
@@ -100,15 +105,25 @@ class DialPainter extends CustomPainter {
       ..strokeWidth = 1.0
       ..color = tickColor.withValues(alpha: 0.12);
 
-    final lanesCount = _lanes.values.isEmpty ? 1 : _lanes.values.reduce(math.max) + 1;
+    final lanesCount = _lanes.values.isEmpty
+        ? 1
+        : _lanes.values.reduce(math.max) + 1;
     for (var lane = 0; lane < lanesCount; lane++) {
       final radius = DialGeometry.laneRadius(outerR, lane);
       // Main track body
       canvas.drawCircle(center, radius, trackPaint);
       // Inner outline
-      canvas.drawCircle(center, radius - DialGeometry.ringThickness / 2, outlinePaint);
+      canvas.drawCircle(
+        center,
+        radius - DialGeometry.ringThickness / 2,
+        outlinePaint,
+      );
       // Outer outline
-      canvas.drawCircle(center, radius + DialGeometry.ringThickness / 2, outlinePaint);
+      canvas.drawCircle(
+        center,
+        radius + DialGeometry.ringThickness / 2,
+        outlinePaint,
+      );
     }
   }
 
@@ -117,7 +132,11 @@ class DialPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.0
       ..color = tickColor.withValues(alpha: 0.15);
-    canvas.drawCircle(center, outerR + DialGeometry.ringThickness / 2 + 4, rimPaint);
+    canvas.drawCircle(
+      center,
+      outerR + DialGeometry.ringThickness / 2 + 4,
+      rimPaint,
+    );
   }
 
   void _paintTicks(Canvas canvas, Offset center, double outerR) {
@@ -147,7 +166,11 @@ class DialPainter extends CustomPainter {
       if (majorHours.contains(hour)) continue;
       final minute = hour * 60;
       final inner = TimeGeometry.pointOnCircle(center, tickRadius - 5, minute);
-      final outer = TimeGeometry.pointOnCircle(center, tickRadius + 1.5, minute);
+      final outer = TimeGeometry.pointOnCircle(
+        center,
+        tickRadius + 1.5,
+        minute,
+      );
       canvas.drawLine(inner, outer, hourPaint);
     }
 
@@ -160,7 +183,10 @@ class DialPainter extends CustomPainter {
     for (final hour in majorHours) {
       final minute = hour * 60;
       final inner = TimeGeometry.pointOnCircle(
-          center, tickRadius - DialGeometry.tickLength, minute);
+        center,
+        tickRadius - DialGeometry.tickLength,
+        minute,
+      );
       final outer = TimeGeometry.pointOnCircle(center, tickRadius, minute);
       canvas.drawLine(inner, outer, majorPaint);
 
@@ -182,7 +208,11 @@ class DialPainter extends CustomPainter {
       final halfExtent = isHorizontal ? tp.width / 2 : tp.height / 2;
       const clearanceGap = 3.0;
       final labelRadius = tickRadius + 1.5 + clearanceGap + halfExtent;
-      final labelPoint = TimeGeometry.pointOnCircle(center, labelRadius, minute);
+      final labelPoint = TimeGeometry.pointOnCircle(
+        center,
+        labelRadius,
+        minute,
+      );
       tp.paint(canvas, labelPoint - Offset(tp.width / 2, tp.height / 2));
     }
   }
@@ -198,38 +228,66 @@ class DialPainter extends CustomPainter {
       final lane = _lanes[segment.id] ?? 0;
       final radius = DialGeometry.laneRadius(outerR, lane);
       final rect = Rect.fromCircle(center: center, radius: radius);
-      
+
       // Calculate start angle and sweep in radians
       final startAngle = TimeGeometry.minuteToRadians(segment.startMinute);
-      final sweep = segment.lengthMinutes / TimeGeometry.minutesPerDay * 2 * math.pi;
-      
+      final sweep =
+          segment.lengthMinutes / TimeGeometry.minutesPerDay * 2 * math.pi;
+
       paint.color = getEffectiveSegmentColor(segment.color, brightness);
       canvas.drawArc(rect, startAngle, sweep, false, paint);
       _paintSegmentLabel(canvas, center, radius, segment);
 
-      if (segment.microSteps.isNotEmpty && completedSegmentIds.contains(segment.id)) {
-        final midMinute = (segment.startMinute + segment.lengthMinutes / 2).round();
-        _paintCompletedBadge(canvas, TimeGeometry.pointOnCircle(center, radius, midMinute));
+      if (segment.microSteps.isNotEmpty &&
+          completedSegmentIds.contains(segment.id)) {
+        final midMinute = (segment.startMinute + segment.lengthMinutes / 2)
+            .round();
+        _paintCompletedBadge(
+          canvas,
+          TimeGeometry.pointOnCircle(center, radius, midMinute),
+        );
+      }
+      if (mitSegmentIds.contains(segment.id)) {
+        final quarterMinute = (segment.startMinute + segment.lengthMinutes / 4)
+            .round();
+        _paintMitBadge(
+          canvas,
+          TimeGeometry.pointOnCircle(center, radius, quarterMinute),
+        );
       }
     }
   }
 
   /// A short, horizontal (not curved) label at the midpoint of the
   /// segment's own arc.
-  void _paintSegmentLabel(Canvas canvas, Offset center, double radius, Segment segment) {
-    final arcLength = radius * (segment.lengthMinutes / TimeGeometry.minutesPerDay) * 2 * math.pi;
+  void _paintSegmentLabel(
+    Canvas canvas,
+    Offset center,
+    double radius,
+    Segment segment,
+  ) {
+    final arcLength =
+        radius *
+        (segment.lengthMinutes / TimeGeometry.minutesPerDay) *
+        2 *
+        math.pi;
     const minArcLength = 34.0; // Increased due to larger font & padding
     if (arcLength < minArcLength) return;
 
     final midMinute = (segment.startMinute + segment.lengthMinutes / 2).round();
     final point = TimeGeometry.pointOnCircle(center, radius, midMinute);
-    
+
     final themeColor = getEffectiveSegmentColor(segment.color, brightness);
     final textColor = onSegmentColor(themeColor);
     final tp = TextPainter(
       text: TextSpan(
         text: segment.name,
-        style: TextStyle(fontSize: 10, color: textColor, fontWeight: FontWeight.w600, fontFamily: 'Pretendard'),
+        style: TextStyle(
+          fontSize: 10,
+          color: textColor,
+          fontWeight: FontWeight.w600,
+          fontFamily: 'Pretendard',
+        ),
       ),
       textDirection: TextDirection.ltr,
       maxLines: 1,
@@ -242,10 +300,16 @@ class DialPainter extends CustomPainter {
   void _paintCompletedBadge(Canvas canvas, Offset markerPoint) {
     final badgeCenter = markerPoint;
     const badgeRadius = 9.0;
-    canvas.drawCircle(badgeCenter, badgeRadius + 1.5, Paint()..color = Colors.white);
-    
+    canvas.drawCircle(
+      badgeCenter,
+      badgeRadius + 1.5,
+      Paint()..color = Colors.white,
+    );
+
     // Use the theme's success color if available, or a fallback green
-    final greenColor = brightness == Brightness.dark ? const Color(0xFF8FD0A6) : const Color(0xFF3F9D6A);
+    final greenColor = brightness == Brightness.dark
+        ? const Color(0xFF8FD0A6)
+        : const Color(0xFF3F9D6A);
     canvas.drawCircle(badgeCenter, badgeRadius, Paint()..color = greenColor);
 
     final tp = TextPainter(
@@ -263,14 +327,47 @@ class DialPainter extends CustomPainter {
     tp.paint(canvas, badgeCenter - Offset(tp.width / 2, tp.height / 2));
   }
 
+  /// Small star badge for a block marked "오늘의 MIT" (T7).
+  void _paintMitBadge(Canvas canvas, Offset markerPoint) {
+    const badgeRadius = 9.0;
+    canvas.drawCircle(
+      markerPoint,
+      badgeRadius + 1.5,
+      Paint()..color = Colors.white,
+    );
+    canvas.drawCircle(
+      markerPoint,
+      badgeRadius,
+      Paint()..color = Colors.amber[700]!,
+    );
+
+    final tp = TextPainter(
+      text: TextSpan(
+        text: String.fromCharCode(Icons.star.codePoint),
+        style: TextStyle(
+          fontSize: badgeRadius * 1.3,
+          fontFamily: Icons.star.fontFamily,
+          package: Icons.star.fontPackage,
+          color: Colors.white,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    tp.paint(canvas, markerPoint - Offset(tp.width / 2, tp.height / 2));
+  }
+
   void _paintHand(Canvas canvas, Offset center, double outerR) {
     final handPaint = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 3.0 // 3px hand spec
+      ..strokeWidth =
+          3.0 // 3px hand spec
       ..color = handColor;
-    
+
     final tip = TimeGeometry.pointOnCircle(
-        center, outerR + DialGeometry.ringThickness / 2 + 4, currentMinute);
+      center,
+      outerR + DialGeometry.ringThickness / 2 + 4,
+      currentMinute,
+    );
     canvas.drawLine(center, tip, handPaint);
     canvas.drawCircle(center, 6, Paint()..color = handColor);
   }
@@ -283,7 +380,9 @@ class DialPainter extends CustomPainter {
         oldDelegate.tickColor != tickColor ||
         oldDelegate.handColor != handColor ||
         !oldDelegate.completedSegmentIds.containsAll(completedSegmentIds) ||
-        !completedSegmentIds.containsAll(oldDelegate.completedSegmentIds);
+        !completedSegmentIds.containsAll(oldDelegate.completedSegmentIds) ||
+        !oldDelegate.mitSegmentIds.containsAll(mitSegmentIds) ||
+        !mitSegmentIds.containsAll(oldDelegate.mitSegmentIds);
   }
 
   static bool _sameSegments(List<Segment> a, List<Segment> b) {

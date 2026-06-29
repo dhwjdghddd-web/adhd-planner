@@ -4,6 +4,7 @@ import '../models/app_settings.dart';
 import '../models/completion.dart';
 import '../models/memo.dart';
 import '../models/micro_step_progress.dart';
+import '../models/mit.dart';
 import '../models/segment.dart';
 
 /// Storage abstraction for the whole app. Screens and controllers depend
@@ -39,6 +40,11 @@ abstract class PlannerRepository {
   // Alarm skips (per block, per day -- "오늘은 건너뛰기" on the alarm screen)
   Stream<List<AlarmSkip>> watchAlarmSkips();
   Future<void> saveAlarmSkip(AlarmSkip s);
+
+  // MITs (per block, per day -- "오늘의 MIT" star toggle in 구간 관리)
+  Stream<List<Mit>> watchMits();
+  Future<void> saveMit(Mit m);
+  Future<void> removeMit(String dateKey, String segmentId);
 
   // Settings
   Stream<AppSettings> watchSettings();

@@ -84,6 +84,8 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
     final segmentsAsync = ref.watch(segmentsProvider);
     final completions = ref.watch(completionsProvider).value ?? const [];
     final completedSegmentIds = completedBlockIdsOn(completions);
+    final mits = ref.watch(mitsProvider).value ?? const [];
+    final mitSegmentIds = mitBlockIdsOn(mits);
     final settings = ref.watch(settingsProvider).value;
     final homeViewMode = settings?.homeViewMode ?? HomeViewMode.dial;
 
@@ -169,6 +171,7 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
                     data: (segments) => _NextActionView(
                       segments: segments,
                       currentMinute: _currentMinute,
+                      mitSegmentIds: mitSegmentIds,
                     ),
                     orElse: () =>
                         const Center(child: CircularProgressIndicator()),
@@ -245,6 +248,7 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
                             segments: segments,
                             currentMinute: _currentMinute,
                             completedSegmentIds: completedSegmentIds,
+                            mitSegmentIds: mitSegmentIds,
                           ),
                           loading: () =>
                               const Center(child: CircularProgressIndicator()),
@@ -362,10 +366,15 @@ class _EmptyHomeStarter extends ConsumerWidget {
 /// press. For someone too overwhelmed by the whole day to look at the dial
 /// at all.
 class _NextActionView extends StatelessWidget {
-  const _NextActionView({required this.segments, required this.currentMinute});
+  const _NextActionView({
+    required this.segments,
+    required this.currentMinute,
+    required this.mitSegmentIds,
+  });
 
   final List<Segment> segments;
   final int currentMinute;
+  final Set<String> mitSegmentIds;
 
   @override
   Widget build(BuildContext context) {
@@ -403,6 +412,17 @@ class _NextActionView extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 20),
+            if (mitSegmentIds.contains(segment.id)) ...[
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.star, size: 16, color: Colors.amber[700]),
+                  const SizedBox(width: 4),
+                  Text('오늘의 MIT', style: theme.textTheme.labelMedium),
+                ],
+              ),
+              const SizedBox(height: 4),
+            ],
             Text(
               segment.name,
               style: theme.textTheme.headlineSmall,
@@ -442,11 +462,13 @@ class _Dial extends StatelessWidget {
     required this.segments,
     required this.currentMinute,
     required this.completedSegmentIds,
+    required this.mitSegmentIds,
   });
 
   final List<Segment> segments;
   final int currentMinute;
   final Set<String> completedSegmentIds;
+  final Set<String> mitSegmentIds;
 
   @override
   Widget build(BuildContext context) {
@@ -491,6 +513,7 @@ class _Dial extends StatelessWidget {
                         handColor: theme.colorScheme.primary,
                         brightness: Theme.of(context).brightness,
                         completedSegmentIds: completedSegmentIds,
+                        mitSegmentIds: mitSegmentIds,
                       ),
                     ),
                     _CenterSummary(
