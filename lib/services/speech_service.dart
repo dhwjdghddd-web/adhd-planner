@@ -9,9 +9,22 @@ import 'package:speech_to_text/speech_to_text.dart';
 class SpeechService {
   final SpeechToText _speech = SpeechToText();
 
-  Future<bool> init() async {
+  /// [onDone] fires whenever the recognizer stops listening for ANY reason --
+  /// the user stopping it, the final result, OR the plugin auto-cancelling
+  /// after a silence timeout (saying nothing). Without it the mic button's
+  /// "listening" state would stay stuck on after a no-speech timeout, since
+  /// `onResult` is never called with a final result in that case.
+  Future<bool> init({void Function()? onDone}) async {
     try {
-      return await _speech.initialize();
+      return await _speech.initialize(
+        onStatus: (status) {
+          if (status == SpeechToText.notListeningStatus ||
+              status == SpeechToText.doneStatus) {
+            onDone?.call();
+          }
+        },
+        onError: (_) => onDone?.call(),
+      );
     } catch (_) {
       return false;
     }
@@ -21,9 +34,12 @@ class SpeechService {
 
   /// Starts a listen session, invoking [onResult] with the current best
   /// transcription each time it updates and whether it's the final result.
-  Future<void> startListening(void Function(String text, bool isFinal) onResult) {
+  Future<void> startListening(
+    void Function(String text, bool isFinal) onResult,
+  ) {
     return _speech.listen(
-      onResult: (result) => onResult(result.recognizedWords, result.finalResult),
+      onResult: (result) =>
+          onResult(result.recognizedWords, result.finalResult),
       listenOptions: SpeechListenOptions(partialResults: true),
     );
   }

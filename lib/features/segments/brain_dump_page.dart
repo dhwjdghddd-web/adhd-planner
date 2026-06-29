@@ -49,9 +49,17 @@ class _BrainDumpPageState extends ConsumerState<BrainDumpPage> {
   @override
   void initState() {
     super.initState();
-    _speech.init().then((available) {
-      if (mounted) setState(() => _speechAvailable = available);
-    });
+    _speech
+        .init(
+          // Reset the mic button when the recognizer stops on its own (e.g.
+          // a no-speech silence timeout), not just on an explicit final result.
+          onDone: () {
+            if (mounted && _listening) setState(() => _listening = false);
+          },
+        )
+        .then((available) {
+          if (mounted) setState(() => _speechAvailable = available);
+        });
   }
 
   @override
@@ -114,12 +122,18 @@ class _BrainDumpPageState extends ConsumerState<BrainDumpPage> {
     final length = slot.endMinute - slot.startMinute;
     final picked = await showTimePicker(
       context: context,
-      initialTime: TimeOfDay(hour: slot.startMinute ~/ 60, minute: slot.startMinute % 60),
+      initialTime: TimeOfDay(
+        hour: slot.startMinute ~/ 60,
+        minute: slot.startMinute % 60,
+      ),
     );
     if (picked == null || !mounted) return;
     final newStart = picked.hour * 60 + picked.minute;
     setState(() {
-      preview[index] = slot.copyWith(startMinute: newStart, endMinute: newStart + length);
+      preview[index] = slot.copyWith(
+        startMinute: newStart,
+        endMinute: newStart + length,
+      );
     });
   }
 
@@ -149,7 +163,9 @@ class _BrainDumpPageState extends ConsumerState<BrainDumpPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('떠오르는 일들 적어보기')),
-      body: _preview == null ? _buildListPhase(context) : _buildPreviewPhase(context),
+      body: _preview == null
+          ? _buildListPhase(context)
+          : _buildPreviewPhase(context),
     );
   }
 
@@ -194,7 +210,10 @@ class _BrainDumpPageState extends ConsumerState<BrainDumpPage> {
           Expanded(
             child: _items.isEmpty
                 ? Center(
-                    child: Text('아직 추가한 항목이 없어요', style: theme.textTheme.bodySmall),
+                    child: Text(
+                      '아직 추가한 항목이 없어요',
+                      style: theme.textTheme.bodySmall,
+                    ),
                   )
                 : ListView.separated(
                     itemCount: _items.length,
@@ -266,7 +285,10 @@ class _BrainDumpPageState extends ConsumerState<BrainDumpPage> {
           Row(
             children: [
               Expanded(
-                child: OutlinedButton(onPressed: _backToList, child: const Text('목록으로')),
+                child: OutlinedButton(
+                  onPressed: _backToList,
+                  child: const Text('목록으로'),
+                ),
               ),
               const SizedBox(width: 12),
               Expanded(

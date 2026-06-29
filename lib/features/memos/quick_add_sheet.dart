@@ -20,7 +20,9 @@ Future<void> showQuickAddSheet(BuildContext context) {
     context: context,
     isScrollControlled: true,
     builder: (sheetContext) => Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(sheetContext).viewInsets.bottom),
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(sheetContext).viewInsets.bottom,
+      ),
       child: const QuickAddSheet(),
     ),
   ).whenComplete(() => quickAddSheetOpen.value = false);
@@ -34,7 +36,9 @@ Future<void> showEditMemoSheet(BuildContext context, Memo memo) {
     context: context,
     isScrollControlled: true,
     builder: (sheetContext) => Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(sheetContext).viewInsets.bottom),
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(sheetContext).viewInsets.bottom,
+      ),
       child: QuickAddSheet(existing: memo),
     ),
   ).whenComplete(() => quickAddSheetOpen.value = false);
@@ -66,9 +70,17 @@ class _QuickAddSheetState extends ConsumerState<QuickAddSheet> {
     if (widget.existing != null) {
       _controller.text = widget.existing!.text;
     }
-    _speech.init().then((available) {
-      if (mounted) setState(() => _speechAvailable = available);
-    });
+    _speech
+        .init(
+          // Reset the mic button when the recognizer stops on its own (e.g.
+          // a no-speech silence timeout), not just on an explicit final result.
+          onDone: () {
+            if (mounted && _listening) setState(() => _listening = false);
+          },
+        )
+        .then((available) {
+          if (mounted) setState(() => _speechAvailable = available);
+        });
   }
 
   @override
@@ -108,10 +120,11 @@ class _QuickAddSheetState extends ConsumerState<QuickAddSheet> {
     if (existing != null) {
       unawaited(ref.read(memosControllerProvider).edit(existing, text));
     } else {
-      unawaited(ref.read(memosControllerProvider).add(
-            text,
-            source: _usedVoice ? MemoSource.voice : MemoSource.text,
-          ));
+      unawaited(
+        ref
+            .read(memosControllerProvider)
+            .add(text, source: _usedVoice ? MemoSource.voice : MemoSource.text),
+      );
     }
     Navigator.of(context).pop();
   }
@@ -151,8 +164,9 @@ class _QuickAddSheetState extends ConsumerState<QuickAddSheet> {
                   height: 64,
                   child: FloatingActionButton(
                     heroTag: 'quick-add-mic',
-                    backgroundColor:
-                        _listening ? Theme.of(context).colorScheme.error : null,
+                    backgroundColor: _listening
+                        ? Theme.of(context).colorScheme.error
+                        : null,
                     tooltip: _listening ? '녹음 중지' : '음성으로 입력',
                     onPressed: _toggleListening,
                     child: Icon(_listening ? Icons.stop : Icons.mic),
