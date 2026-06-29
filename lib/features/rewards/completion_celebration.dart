@@ -3,8 +3,6 @@ import 'dart:math' as math;
 import 'package:confetti/confetti.dart';
 import 'package:flutter/material.dart';
 
-import '../focus/rest_quotes.dart';
-
 /// Streak lengths (in days, counting today) that get a special line in the
 /// completion celebration instead of the plain "다 끝냈어요" message alone.
 /// Deliberately sparse and front-loaded (3/7 come quickly, then spread out) so
@@ -151,14 +149,6 @@ class _CompletionCelebrationState extends State<_CompletionCelebration> {
                               textAlign: TextAlign.center,
                             ),
                           ],
-                          const SizedBox(height: 12),
-                          Text(
-                            restQuoteForToday(),
-                            style: theme.textTheme.bodyLarge?.copyWith(
-                              color: Colors.white.withValues(alpha: 0.85),
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
                           const SizedBox(height: 32),
                           FilledButton(
                             onPressed: () => Navigator.of(context).maybePop(),
