@@ -18,6 +18,7 @@ import 'features/rewards/completion_celebration.dart';
 import 'features/rewards/daily_achievement.dart';
 import 'features/rewards/streak.dart';
 import 'services/notification_service.dart';
+import 'services/screen_wake_service.dart';
 
 /// Root widget. Theme mode and font scale follow [AppSettings] live (see
 /// `settingsProvider`), so changing them in the settings screen is
@@ -52,6 +53,7 @@ class App extends ConsumerWidget {
               const _AlarmAlertLauncher(),
               const _ForegroundAlarmWatcher(),
               const _CheckinAlertLauncher(),
+              const _ScreenWakeSync(),
               const _AccountAlarmSync(),
               const _AchievementRecorder(),
               const _CompletionCelebrator(),
@@ -235,6 +237,22 @@ class _CheckinAlertLauncherState extends State<_CheckinAlertLauncher> {
   Widget build(BuildContext context) => const SizedBox.shrink();
 }
 
+/// No visual presence — applies the "화면 항상 켜두기" setting by toggling the
+/// native FLAG_KEEP_SCREEN_ON whenever it changes. setKeepScreenOn is
+/// idempotent, so re-applying it on every settings rebuild is harmless; the
+/// flag only holds while the app is foreground (see screen_wake_service.dart).
+class _ScreenWakeSync extends ConsumerWidget {
+  const _ScreenWakeSync();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final keepOn =
+        ref.watch(settingsProvider).valueOrNull?.keepScreenOn ?? false;
+    unawaited(setKeepScreenOn(keepOn));
+    return const SizedBox.shrink();
+  }
+}
+
 /// Pushes [AlarmScreen] on its own, without waiting for a notification
 /// tap, whenever a block's start alarm time arrives while this app is already
 /// the one on screen — checked once a second (cheap: just a minute-of-day
@@ -267,6 +285,20 @@ class _ForegroundAlarmWatcherState
     final minuteOfDay = now.hour * 60 + now.minute;
     if (minuteOfDay == _lastCheckedMinuteOfDay) return;
     _lastCheckedMinuteOfDay = minuteOfDay;
+
+    // Daily check-in reminder, while the app is foreground: Android tends to
+    // suppress the heads-up banner for a notification its own foreground app
+    // posted, so without this the reminder would only vibrate with nothing to
+    // tap. Mirror the block-alarm foreground pop -- open the check-in straight
+    // into its dialog at the reminder minute (its notification still covers
+    // the background/locked case via pendingCheckinAlert on tap). Independent
+    // of segments, so checked before the segments-null guard below.
+    final settings = ref.read(settingsProvider).value;
+    if (settings != null &&
+        settings.checkinAlarmEnabled &&
+        settings.checkinAlarmMinuteOfDay == minuteOfDay) {
+      pendingCheckinAlert.value = true;
+    }
 
     final segments = ref.read(segmentsProvider).value;
     if (segments == null) return;

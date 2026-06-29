@@ -15,6 +15,7 @@ import android.os.VibrationAttributes
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
+import android.view.WindowManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodCall
@@ -47,6 +48,28 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+
+        // Screen-wake toggle (settings option). FLAG_KEEP_SCREEN_ON only keeps
+        // the screen on while THIS activity is in the foreground, so it
+        // naturally scopes to "while the app is showing" with no lifecycle
+        // bookkeeping needed -- backgrounding the app lets the screen sleep
+        // normally again.
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "com.adhdplanner.adhd_planner/screen")
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "setKeepScreenOn" -> {
+                        val on = call.argument<Boolean>("on") ?: false
+                        if (on) {
+                            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                        } else {
+                            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                        }
+                        result.success(null)
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+
         val channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName)
         alarmChannel = channel
         channel.setMethodCallHandler { call, result ->

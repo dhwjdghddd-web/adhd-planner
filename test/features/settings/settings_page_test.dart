@@ -197,6 +197,21 @@ void main() {
     expect(settingsLog.last.reduceMotion, true);
   });
 
+  testWidgets('toggling 화면 항상 켜두기 persists it', (tester) async {
+    final repo = FakePlannerRepository();
+    final settingsLog = <AppSettings>[];
+    repo.watchSettings().listen(settingsLog.add);
+
+    await growSurface(tester);
+    await tester.pumpWidget(wrap(repo));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.widgetWithText(SwitchListTile, '화면 항상 켜두기'));
+    await tester.pumpAndSettle();
+
+    expect(settingsLog.last.keepScreenOn, true);
+  });
+
   testWidgets('checkin alarm is off by default, with the time row disabled', (
     tester,
   ) async {

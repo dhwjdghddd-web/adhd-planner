@@ -151,6 +151,19 @@ void main() {
       },
     );
 
+    test('keepScreenOn defaults to off and round-trips', () {
+      expect(const AppSettings.defaults().keepScreenOn, false);
+      final restored = AppSettings.fromMap(
+        const AppSettings(keepScreenOn: true).toMap(),
+      );
+      expect(restored.keepScreenOn, true);
+    });
+
+    test('fromMap defaults keepScreenOn to off on a legacy doc missing it', () {
+      final restored = AppSettings.fromMap(const {'themeMode': 'dark'});
+      expect(restored.keepScreenOn, false);
+    });
+
     test(
       'clearAlarmSound resets to the system default even with a uri/label passed',
       () {

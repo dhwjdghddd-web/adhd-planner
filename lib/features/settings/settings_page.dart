@@ -518,6 +518,13 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           onChanged: (value) =>
               controller.save(settings.copyWith(reduceMotion: value)),
         ),
+        SwitchListTile(
+          title: const Text('화면 항상 켜두기'),
+          subtitle: const Text('앱을 보고 있는 동안 화면이 꺼지지 않아요.'),
+          value: settings.keepScreenOn,
+          onChanged: (value) =>
+              controller.save(settings.copyWith(keepScreenOn: value)),
+        ),
         const Divider(),
         const _SectionHeader('계정'),
         // 계정 전환 중에는 AnimatedSwitcher로 자연스럽게 전환

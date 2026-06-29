@@ -67,6 +67,9 @@ class AppSettings {
   // an opt-in nudge, not something every user wants pinging them daily.
   final bool checkinAlarmEnabled;
   final int checkinAlarmMinuteOfDay;
+  // Keep the device screen on while the app is in the foreground (settings
+  // toggle). Off by default. See screen_wake_service.dart.
+  final bool keepScreenOn;
 
   const AppSettings({
     this.themeMode = AppThemeMode.system,
@@ -85,6 +88,7 @@ class AppSettings {
     this.homeViewMode = HomeViewMode.dial,
     this.checkinAlarmEnabled = false,
     this.checkinAlarmMinuteOfDay = 21 * 60,
+    this.keepScreenOn = false,
   });
 
   const AppSettings.defaults() : this();
@@ -109,6 +113,7 @@ class AppSettings {
     HomeViewMode? homeViewMode,
     bool? checkinAlarmEnabled,
     int? checkinAlarmMinuteOfDay,
+    bool? keepScreenOn,
   }) {
     return AppSettings(
       themeMode: themeMode ?? this.themeMode,
@@ -133,6 +138,7 @@ class AppSettings {
       checkinAlarmEnabled: checkinAlarmEnabled ?? this.checkinAlarmEnabled,
       checkinAlarmMinuteOfDay:
           checkinAlarmMinuteOfDay ?? this.checkinAlarmMinuteOfDay,
+      keepScreenOn: keepScreenOn ?? this.keepScreenOn,
     );
   }
 
@@ -153,6 +159,7 @@ class AppSettings {
     'homeViewMode': homeViewMode.name,
     'checkinAlarmEnabled': checkinAlarmEnabled,
     'checkinAlarmMinuteOfDay': checkinAlarmMinuteOfDay,
+    'keepScreenOn': keepScreenOn,
   };
 
   factory AppSettings.fromMap(Map<String, dynamic> map) => AppSettings(
@@ -182,5 +189,6 @@ class AppSettings {
     checkinAlarmEnabled: (map['checkinAlarmEnabled'] as bool?) ?? false,
     checkinAlarmMinuteOfDay:
         (map['checkinAlarmMinuteOfDay'] as num?)?.toInt() ?? 21 * 60,
+    keepScreenOn: (map['keepScreenOn'] as bool?) ?? false,
   );
 }
