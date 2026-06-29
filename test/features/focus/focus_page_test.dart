@@ -27,13 +27,14 @@ const int _kNowMinute = 12 * 60;
 Segment _currentBlock({
   String id = 's1',
   String name = '약 먹기',
+  String iconKey = 'wb_sunny',
   List<String> microSteps = const [],
 }) {
   return Segment(
     id: id,
     name: name,
     colorValue: 0xFF000000,
-    iconKey: 'wb_sunny',
+    iconKey: iconKey,
     startMinute: _kNowMinute - 30,
     endMinute: _kNowMinute + 30,
     order: 0,
@@ -42,7 +43,11 @@ Segment _currentBlock({
 }
 
 /// A block strictly after the pinned [_kNowMinute] (reads as "next").
-Segment _futureBlock({String id = 's1', String name = '나중 일', List<String> microSteps = const []}) {
+Segment _futureBlock({
+  String id = 's1',
+  String name = '나중 일',
+  List<String> microSteps = const [],
+}) {
   return Segment(
     id: id,
     name: name,
@@ -64,12 +69,18 @@ void main() {
   // taller than that; widen the test surface to match, the same approach
   // segment_form_page_test.dart uses for the same class of issue.
   setUp(() {
-    final view = TestWidgetsFlutterBinding.ensureInitialized().platformDispatcher.views.first;
+    final view = TestWidgetsFlutterBinding.ensureInitialized()
+        .platformDispatcher
+        .views
+        .first;
     view.physicalSize = const Size(1080, 2400);
     view.devicePixelRatio = 1.0;
   });
   tearDown(() {
-    final view = TestWidgetsFlutterBinding.ensureInitialized().platformDispatcher.views.first;
+    final view = TestWidgetsFlutterBinding.ensureInitialized()
+        .platformDispatcher
+        .views
+        .first;
     view.resetPhysicalSize();
     view.resetDevicePixelRatio();
   });
@@ -81,7 +92,9 @@ void main() {
         // FocusTimerSection's start buttons reach this via
         // FocusTimerController -- swap in the no-op service so that doesn't
         // reach the (absent) platform channel.
-        notificationServiceProvider.overrideWithValue(FakeNotificationService()),
+        notificationServiceProvider.overrideWithValue(
+          FakeNotificationService(),
+        ),
       ],
       child: MaterialApp(
         home: Builder(
@@ -90,7 +103,8 @@ void main() {
               child: ElevatedButton(
                 onPressed: () => Navigator.of(context).push(
                   MaterialPageRoute(
-                    builder: (_) => const FocusPage(debugNowMinuteOfDay: _kNowMinute),
+                    builder: (_) =>
+                        const FocusPage(debugNowMinuteOfDay: _kNowMinute),
                   ),
                 ),
                 child: const Text('open'),
@@ -102,7 +116,10 @@ void main() {
     );
   }
 
-  Future<void> openFocusPage(WidgetTester tester, FakePlannerRepository repo) async {
+  Future<void> openFocusPage(
+    WidgetTester tester,
+    FakePlannerRepository repo,
+  ) async {
     await tester.pumpWidget(wrap(repo));
     await tester.pumpAndSettle();
     await tester.tap(find.text('open'));
@@ -111,38 +128,105 @@ void main() {
 
   testWidgets('shows the current block', (tester) async {
     final repo = FakePlannerRepository();
-    await repo.upsertSegment(_currentBlock(name: '오전', microSteps: const ['아무거나']));
+    await repo.upsertSegment(
+      _currentBlock(name: '오전', microSteps: const ['아무거나']),
+    );
 
     await openFocusPage(tester, repo);
 
     expect(find.text('오전'), findsOneWidget);
   });
 
-  testWidgets('shows a star next to the name when the block is marked 오늘의 MIT (T7)',
-      (tester) async {
+  testWidgets(
+    'shows a star next to the name when the block is marked 오늘의 MIT (T7)',
+    (tester) async {
+      final repo = FakePlannerRepository();
+      await repo.upsertSegment(
+        _currentBlock(id: 's1', name: '오전', microSteps: const ['아무거나']),
+      );
+      await repo.saveMit(Mit.today('s1'));
+
+      await openFocusPage(tester, repo);
+
+      expect(find.byIcon(Icons.star), findsOneWidget);
+    },
+  );
+
+  testWidgets('shows no star when the block is not marked 오늘의 MIT (T7)', (
+    tester,
+  ) async {
     final repo = FakePlannerRepository();
-    await repo.upsertSegment(_currentBlock(id: 's1', name: '오전', microSteps: const ['아무거나']));
-    await repo.saveMit(Mit.today('s1'));
-
-    await openFocusPage(tester, repo);
-
-    expect(find.byIcon(Icons.star), findsOneWidget);
-  });
-
-  testWidgets('shows no star when the block is not marked 오늘의 MIT (T7)', (tester) async {
-    final repo = FakePlannerRepository();
-    await repo.upsertSegment(_currentBlock(name: '오전', microSteps: const ['아무거나']));
+    await repo.upsertSegment(
+      _currentBlock(name: '오전', microSteps: const ['아무거나']),
+    );
 
     await openFocusPage(tester, repo);
 
     expect(find.byIcon(Icons.star), findsNothing);
   });
 
-  testWidgets("shows the current block's remaining time at the top (T5)", (tester) async {
+  // These two sleep-block tests can't use openFocusPage's pumpAndSettle --
+  // SleepWindDown's breathing-guide animation repeats forever (T9, by
+  // design), which pumpAndSettle would wait on indefinitely. A bounded pump
+  // is enough to clear the page-push transition instead.
+  Future<void> openFocusPageWithoutSettling(
+    WidgetTester tester,
+    FakePlannerRepository repo,
+  ) async {
+    await tester.pumpWidget(wrap(repo));
+    await tester.pump();
+    await tester.tap(find.text('open'));
+    // Several bounded pumps (not pumpAndSettle, which would wait forever on
+    // SleepWindDown's deliberately endless breathing-guide animation) --
+    // each one gives the page-route transition and the repository's stream
+    // their own frame/microtask turn to resolve.
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+  }
+
+  testWidgets(
+    'a current sleep block shows the wind-down screen, not the checklist '
+    '(T9, even though it has microSteps)',
+    (tester) async {
+      final repo = FakePlannerRepository();
+      await repo.upsertSegment(
+        _currentBlock(
+          name: '수면',
+          iconKey: 'bedtime',
+          microSteps: const ['이불 정리'],
+        ),
+      );
+
+      await openFocusPageWithoutSettling(tester, repo);
+
+      expect(find.text('이제 폰 내려놓아요'), findsOneWidget);
+      expect(find.text('이불 정리'), findsNothing);
+      expect(find.byType(CheckboxListTile), findsNothing);
+    },
+  );
+
+  testWidgets('a current sleep block with no microSteps also shows the '
+      'wind-down screen (not the generic checklist-less rest screen)', (
+    tester,
+  ) async {
+    final repo = FakePlannerRepository();
+    await repo.upsertSegment(_currentBlock(name: '수면', iconKey: 'bedtime'));
+
+    await openFocusPageWithoutSettling(tester, repo);
+
+    expect(find.text('이제 폰 내려놓아요'), findsOneWidget);
+  });
+
+  testWidgets("shows the current block's remaining time at the top (T5)", (
+    tester,
+  ) async {
     final repo = FakePlannerRepository();
     // _currentBlock spans _kNowMinute-30 to _kNowMinute+30 -- 30분 left at
     // the pinned "now".
-    await repo.upsertSegment(_currentBlock(name: '오전', microSteps: const ['아무거나']));
+    await repo.upsertSegment(
+      _currentBlock(name: '오전', microSteps: const ['아무거나']),
+    );
 
     await openFocusPage(tester, repo);
 
@@ -150,9 +234,13 @@ void main() {
   });
 
   testWidgets('the Focus timer section offers 포모도로/15분/사용자 설정/2분만 시작, and '
-      'starting one shows a running countdown with pause/cancel (T5)', (tester) async {
+      'starting one shows a running countdown with pause/cancel (T5)', (
+    tester,
+  ) async {
     final repo = FakePlannerRepository();
-    await repo.upsertSegment(_currentBlock(name: '오전', microSteps: const ['아무거나']));
+    await repo.upsertSegment(
+      _currentBlock(name: '오전', microSteps: const ['아무거나']),
+    );
 
     await openFocusPage(tester, repo);
 
@@ -173,26 +261,34 @@ void main() {
   });
 
   testWidgets(
-      'a current block with no checklist shows its own calm rest screen, not '
-      'the next block', (tester) async {
-    final repo = FakePlannerRepository();
-    await repo.upsertSegment(_currentBlock(id: 's1', name: '회의'));
-    await repo.upsertSegment(_futureBlock(id: 's2', name: '저녁', microSteps: const ['저녁 먹기']));
+    'a current block with no checklist shows its own calm rest screen, not '
+    'the next block',
+    (tester) async {
+      final repo = FakePlannerRepository();
+      await repo.upsertSegment(_currentBlock(id: 's1', name: '회의'));
+      await repo.upsertSegment(
+        _futureBlock(id: 's2', name: '저녁', microSteps: const ['저녁 먹기']),
+      );
 
-    await openFocusPage(tester, repo);
+      await openFocusPage(tester, repo);
 
-    // The routine-less current block presents itself (icon + name + rest
-    // message), rather than detouring to the next block's waiting screen.
-    expect(find.text('회의'), findsOneWidget);
-    expect(find.text('모두 완료'), findsNothing);
-    expect(find.text('다음: 저녁'), findsNothing);
-    // The rest screen shows one (randomly chosen) rest quote.
-    expect(restQuotes.where((q) => find.text(q).evaluate().isNotEmpty).length, 1);
-  });
+      // The routine-less current block presents itself (icon + name + rest
+      // message), rather than detouring to the next block's waiting screen.
+      expect(find.text('회의'), findsOneWidget);
+      expect(find.text('모두 완료'), findsNothing);
+      expect(find.text('다음: 저녁'), findsNothing);
+      // The rest screen shows one (randomly chosen) rest quote.
+      expect(
+        restQuotes.where((q) => find.text(q).evaluate().isNotEmpty).length,
+        1,
+      );
+    },
+  );
 
   testWidgets('a pinned block with no items stays horizontally centered '
-      '(regression: body Column used to shrink-wrap and hug the left edge)',
-      (tester) async {
+      '(regression: body Column used to shrink-wrap and hug the left edge)', (
+    tester,
+  ) async {
     final repo = FakePlannerRepository();
     final block = Segment(
       id: 's1',
@@ -205,29 +301,37 @@ void main() {
     );
     await repo.upsertSegment(block);
 
-    await tester.pumpWidget(ProviderScope(
-      overrides: [plannerRepositoryProvider.overrideWithValue(repo)],
-      child: MaterialApp(home: FocusPage.forBlock(block)),
-    ));
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [plannerRepositoryProvider.overrideWithValue(repo)],
+        child: MaterialApp(home: FocusPage.forBlock(block)),
+      ),
+    );
     await tester.pumpAndSettle();
 
-    final screenCenterX = tester.view.physicalSize.width / tester.view.devicePixelRatio / 2;
+    final screenCenterX =
+        tester.view.physicalSize.width / tester.view.devicePixelRatio / 2;
     final titleCenterX = tester.getCenter(find.text('오전')).dx;
     expect(titleCenterX, closeTo(screenCenterX, 1.0));
   });
 
-  testWidgets('shows the next block and its start time when only a future block exists',
-      (tester) async {
-    final repo = FakePlannerRepository();
-    final block = _futureBlock(name: '저녁');
-    await repo.upsertSegment(block);
+  testWidgets(
+    'shows the next block and its start time when only a future block exists',
+    (tester) async {
+      final repo = FakePlannerRepository();
+      final block = _futureBlock(name: '저녁');
+      await repo.upsertSegment(block);
 
-    await openFocusPage(tester, repo);
+      await openFocusPage(tester, repo);
 
-    // WaitingIllustration renders each line of the message as its own Text.
-    expect(find.text('다음: 저녁'), findsOneWidget);
-    expect(find.text(TimeGeometry.formatMinute(block.startMinute)), findsOneWidget);
-  });
+      // WaitingIllustration renders each line of the message as its own Text.
+      expect(find.text('다음: 저녁'), findsOneWidget);
+      expect(
+        find.text(TimeGeometry.formatMinute(block.startMinute)),
+        findsOneWidget,
+      );
+    },
+  );
 
   testWidgets('shows the empty state when there are no blocks', (tester) async {
     await openFocusPage(tester, FakePlannerRepository());
@@ -237,7 +341,9 @@ void main() {
 
   testWidgets('완료 records a completion and closes the screen', (tester) async {
     final repo = FakePlannerRepository();
-    await repo.upsertSegment(_currentBlock(name: '오전', microSteps: const ['아무거나']));
+    await repo.upsertSegment(
+      _currentBlock(name: '오전', microSteps: const ['아무거나']),
+    );
     final snapshots = <List<Completion>>[];
     repo.watchCompletions().listen(snapshots.add);
 
@@ -251,21 +357,23 @@ void main() {
     expect(find.byType(FocusPage), findsNothing);
   });
 
-  testWidgets('the 닫기 back button closes the screen without recording a completion',
-      (tester) async {
-    final repo = FakePlannerRepository();
-    await repo.upsertSegment(_currentBlock());
-    final snapshots = <List<Completion>>[];
-    repo.watchCompletions().listen(snapshots.add);
+  testWidgets(
+    'the 닫기 back button closes the screen without recording a completion',
+    (tester) async {
+      final repo = FakePlannerRepository();
+      await repo.upsertSegment(_currentBlock());
+      final snapshots = <List<Completion>>[];
+      repo.watchCompletions().listen(snapshots.add);
 
-    await openFocusPage(tester, repo);
+      await openFocusPage(tester, repo);
 
-    await tester.tap(find.byTooltip('닫기'));
-    await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('닫기'));
+      await tester.pumpAndSettle();
 
-    expect(find.byType(FocusPage), findsNothing);
-    expect(snapshots.last, isEmpty);
-  });
+      expect(find.byType(FocusPage), findsNothing);
+      expect(snapshots.last, isEmpty);
+    },
+  );
 
   testWidgets('checking an item toggles its checkbox', (tester) async {
     final repo = FakePlannerRepository();
@@ -287,7 +395,9 @@ void main() {
     expect(after.value, true);
   });
 
-  testWidgets('checking the last remaining item auto-completes the block', (tester) async {
+  testWidgets('checking the last remaining item auto-completes the block', (
+    tester,
+  ) async {
     final repo = FakePlannerRepository();
     await repo.upsertSegment(_currentBlock(microSteps: const ['손 씻기', '물 준비']));
     final snapshots = <List<Completion>>[];
@@ -297,7 +407,11 @@ void main() {
 
     await tester.tap(find.text('손 씻기'));
     await tester.pumpAndSettle();
-    expect(find.byType(FocusPage), findsOneWidget, reason: 'one item left unchecked');
+    expect(
+      find.byType(FocusPage),
+      findsOneWidget,
+      reason: 'one item left unchecked',
+    );
 
     await tester.tap(find.text('물 준비'));
     await tester.pumpAndSettle();
@@ -321,8 +435,9 @@ void main() {
     expect(saved.checkedIndices.toSet(), {0, 1});
   });
 
-  testWidgets('the 빠른 메모 button opens the quick-add sheet from this screen',
-      (tester) async {
+  testWidgets('the 빠른 메모 button opens the quick-add sheet from this screen', (
+    tester,
+  ) async {
     final repo = FakePlannerRepository();
     await repo.upsertSegment(_currentBlock());
 
@@ -335,26 +450,30 @@ void main() {
     expect(find.byType(TextField), findsOneWidget);
   });
 
-  testWidgets('a checked item is still checked after leaving and reopening the screen',
-      (tester) async {
-    final repo = FakePlannerRepository();
-    // Two items: checking just the first shouldn't auto-complete and close.
-    await repo.upsertSegment(_currentBlock(microSteps: const ['퇴근준비하기', '책상 정리하기']));
+  testWidgets(
+    'a checked item is still checked after leaving and reopening the screen',
+    (tester) async {
+      final repo = FakePlannerRepository();
+      // Two items: checking just the first shouldn't auto-complete and close.
+      await repo.upsertSegment(
+        _currentBlock(microSteps: const ['퇴근준비하기', '책상 정리하기']),
+      );
 
-    await openFocusPage(tester, repo);
-    await tester.tap(find.text('퇴근준비하기'));
-    await tester.pumpAndSettle();
+      await openFocusPage(tester, repo);
+      await tester.tap(find.text('퇴근준비하기'));
+      await tester.pumpAndSettle();
 
-    await tester.tap(find.byTooltip('닫기'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('open'));
-    await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('닫기'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
 
-    final checkbox = tester.widget<CheckboxListTile>(
-      find.widgetWithText(CheckboxListTile, '퇴근준비하기'),
-    );
-    expect(checkbox.value, true);
-  });
+      final checkbox = tester.widget<CheckboxListTile>(
+        find.widgetWithText(CheckboxListTile, '퇴근준비하기'),
+      );
+      expect(checkbox.value, true);
+    },
+  );
 
   group('FocusPage.forBlock (dial arc review mode)', () {
     Widget wrapForBlock(FakePlannerRepository repo, Segment block) {
@@ -364,53 +483,57 @@ void main() {
       );
     }
 
-    testWidgets('shows the pinned block and its checklist even when its time has passed',
-        (tester) async {
-      final repo = FakePlannerRepository();
-      final block = Segment(
-        id: 's1',
-        name: '아침',
-        colorValue: 0xFF000000,
-        iconKey: 'wb_sunny',
-        startMinute: 0,
-        endMinute: 60,
-        order: 0,
-        microSteps: const ['물 마시기', '식후 30분 확인'],
-      );
-      await repo.upsertSegment(block);
+    testWidgets(
+      'shows the pinned block and its checklist even when its time has passed',
+      (tester) async {
+        final repo = FakePlannerRepository();
+        final block = Segment(
+          id: 's1',
+          name: '아침',
+          colorValue: 0xFF000000,
+          iconKey: 'wb_sunny',
+          startMinute: 0,
+          endMinute: 60,
+          order: 0,
+          microSteps: const ['물 마시기', '식후 30분 확인'],
+        );
+        await repo.upsertSegment(block);
 
-      await tester.pumpWidget(wrapForBlock(repo, block));
-      await tester.pumpAndSettle();
+        await tester.pumpWidget(wrapForBlock(repo, block));
+        await tester.pumpAndSettle();
 
-      expect(find.text('아침'), findsOneWidget);
-      expect(find.widgetWithText(CheckboxListTile, '물 마시기'), findsOneWidget);
-      expect(find.text('모두 완료'), findsOneWidget);
-    });
+        expect(find.text('아침'), findsOneWidget);
+        expect(find.widgetWithText(CheckboxListTile, '물 마시기'), findsOneWidget);
+        expect(find.text('모두 완료'), findsOneWidget);
+      },
+    );
 
     testWidgets(
-        'review mode shows neither the remaining-time bar nor the timer '
-        'section (T5 -- isCurrent is hard-coded true here for whatever block '
-        'was tapped, which could be well in the past or future)', (tester) async {
-      final repo = FakePlannerRepository();
-      final block = Segment(
-        id: 's1',
-        name: '아침',
-        colorValue: 0xFF000000,
-        iconKey: 'wb_sunny',
-        startMinute: 0,
-        endMinute: 60,
-        order: 0,
-        microSteps: const ['물 마시기'],
-      );
-      await repo.upsertSegment(block);
+      'review mode shows neither the remaining-time bar nor the timer '
+      'section (T5 -- isCurrent is hard-coded true here for whatever block '
+      'was tapped, which could be well in the past or future)',
+      (tester) async {
+        final repo = FakePlannerRepository();
+        final block = Segment(
+          id: 's1',
+          name: '아침',
+          colorValue: 0xFF000000,
+          iconKey: 'wb_sunny',
+          startMinute: 0,
+          endMinute: 60,
+          order: 0,
+          microSteps: const ['물 마시기'],
+        );
+        await repo.upsertSegment(block);
 
-      await tester.pumpWidget(wrapForBlock(repo, block));
-      await tester.pumpAndSettle();
+        await tester.pumpWidget(wrapForBlock(repo, block));
+        await tester.pumpAndSettle();
 
-      expect(find.textContaining('남음'), findsNothing);
-      expect(find.text('포모도로 25+5'), findsNothing);
-      expect(find.text('2분만 시작'), findsNothing);
-    });
+        expect(find.textContaining('남음'), findsNothing);
+        expect(find.text('포모도로 25+5'), findsNothing);
+        expect(find.text('2분만 시작'), findsNothing);
+      },
+    );
 
     testWidgets('checking an item in review mode persists it', (tester) async {
       final repo = FakePlannerRepository();
@@ -438,54 +561,58 @@ void main() {
       expect(saved.checkedIndices, [0]);
     });
 
-    testWidgets('모두 완료 in review mode records a completion and closes the screen',
-        (tester) async {
-      final repo = FakePlannerRepository();
-      final block = Segment(
-        id: 's1',
-        name: '아침',
-        colorValue: 0xFF000000,
-        iconKey: 'wb_sunny',
-        startMinute: 0,
-        endMinute: 60,
-        order: 0,
-        microSteps: const ['물 마시기'],
-      );
-      await repo.upsertSegment(block);
-      final snapshots = <List<Completion>>[];
-      repo.watchCompletions().listen(snapshots.add);
+    testWidgets(
+      '모두 완료 in review mode records a completion and closes the screen',
+      (tester) async {
+        final repo = FakePlannerRepository();
+        final block = Segment(
+          id: 's1',
+          name: '아침',
+          colorValue: 0xFF000000,
+          iconKey: 'wb_sunny',
+          startMinute: 0,
+          endMinute: 60,
+          order: 0,
+          microSteps: const ['물 마시기'],
+        );
+        await repo.upsertSegment(block);
+        final snapshots = <List<Completion>>[];
+        repo.watchCompletions().listen(snapshots.add);
 
-      await tester.pumpWidget(wrapForBlock(repo, block));
-      await tester.pumpAndSettle();
+        await tester.pumpWidget(wrapForBlock(repo, block));
+        await tester.pumpAndSettle();
 
-      await tester.tap(find.text('모두 완료'));
-      await tester.pumpAndSettle();
+        await tester.tap(find.text('모두 완료'));
+        await tester.pumpAndSettle();
 
-      expect(snapshots.last.any((c) => c.segmentId == 's1'), true);
-      expect(find.byType(FocusPage), findsNothing);
-    });
+        expect(snapshots.last.any((c) => c.segmentId == 's1'), true);
+        expect(find.byType(FocusPage), findsNothing);
+      },
+    );
 
-    testWidgets('a block with no checklist has no 모두 완료 button in review mode '
-        "either (nothing to complete -- doesn't move the streak ratio at all)",
-        (tester) async {
-      final repo = FakePlannerRepository();
-      final block = Segment(
-        id: 's1',
-        name: '퇴근',
-        colorValue: 0xFF000000,
-        iconKey: 'wb_sunny',
-        startMinute: 0,
-        endMinute: 60,
-        order: 0,
-      );
-      await repo.upsertSegment(block);
+    testWidgets(
+      'a block with no checklist has no 모두 완료 button in review mode '
+      "either (nothing to complete -- doesn't move the streak ratio at all)",
+      (tester) async {
+        final repo = FakePlannerRepository();
+        final block = Segment(
+          id: 's1',
+          name: '퇴근',
+          colorValue: 0xFF000000,
+          iconKey: 'wb_sunny',
+          startMinute: 0,
+          endMinute: 60,
+          order: 0,
+        );
+        await repo.upsertSegment(block);
 
-      await tester.pumpWidget(wrapForBlock(repo, block));
-      await tester.pumpAndSettle();
+        await tester.pumpWidget(wrapForBlock(repo, block));
+        await tester.pumpAndSettle();
 
-      expect(find.text('퇴근'), findsOneWidget);
-      expect(find.text('모두 완료'), findsNothing);
-    });
+        expect(find.text('퇴근'), findsOneWidget);
+        expect(find.text('모두 완료'), findsNothing);
+      },
+    );
 
     testWidgets('a block with no checklist shows the calm waiting illustration '
         'instead of a blank body', (tester) async {
@@ -506,15 +633,22 @@ void main() {
 
       expect(find.text('퇴근'), findsOneWidget);
       // The rest screen shows one (randomly chosen) rest quote.
-      expect(restQuotes.where((q) => find.text(q).evaluate().isNotEmpty).length, 1);
+      expect(
+        restQuotes.where((q) => find.text(q).evaluate().isNotEmpty).length,
+        1,
+      );
     });
   });
 
-  testWidgets("yesterday's checked items don't carry over to today", (tester) async {
+  testWidgets("yesterday's checked items don't carry over to today", (
+    tester,
+  ) async {
     final repo = FakePlannerRepository();
     await repo.upsertSegment(_currentBlock(microSteps: const ['퇴근준비하기']));
     final yesterday = DateTime.now().subtract(const Duration(days: 1));
-    await repo.saveMicroStepProgress(MicroStepProgress.today('s1', [0], at: yesterday));
+    await repo.saveMicroStepProgress(
+      MicroStepProgress.today('s1', [0], at: yesterday),
+    );
 
     await openFocusPage(tester, repo);
 

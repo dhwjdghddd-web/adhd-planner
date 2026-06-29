@@ -21,6 +21,7 @@ import 'completions_controller.dart';
 import 'focus_timer_section.dart';
 import 'micro_step_progress_controller.dart';
 import 'rest_quotes.dart';
+import 'sleep_wind_down.dart';
 import 'waiting_illustration.dart';
 
 /// '지금' focus screen: shows exactly one block — whichever the clock is inside
@@ -320,7 +321,19 @@ class _FocusPageState extends ConsumerState<FocusPage> {
       );
     }
 
-    // A current block with nothing to check (e.g. 퇴근/수면): rather than the
+    // T9: a sleep block gets the wind-down treatment unconditionally --
+    // checklist or not -- since a checklist (or the FocusTimerSection below)
+    // would directly undercut the "이제 폰 내려놓아요" nudge that's the whole
+    // point of this screen.
+    if (isSleepBlock(segment)) {
+      return SleepWindDown(
+        segment: segment,
+        reduceMotion: reduceMotion,
+        remainingMessage: _remainingMessage(segment),
+      );
+    }
+
+    // A current block with nothing to check (e.g. 퇴근): rather than the
     // standard header-over-checklist with an empty list, the block's own
     // identity moves into the centre of the concentric rings — one calm
     // orbital composition echoing the dial's centre hub — with the streak and
