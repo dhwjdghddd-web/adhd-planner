@@ -2,6 +2,12 @@ import 'package:flutter/foundation.dart';
 
 enum AppThemeMode { system, light, dark }
 
+/// Which view the home screen ('오늘') shows -- the full 24h dial, or T6's
+/// minimal "다음 한 행동" (next action) view that hides everything but the
+/// current/next block and a big start button. Remembered across launches
+/// (see [AppSettings.homeViewMode]) so a deliberate switch sticks.
+enum HomeViewMode { dial, nextAction }
+
 /// A named vibration shape for alarms (STEP 12+) — the actual millisecond
 /// pattern each one maps to lives in notification_service.dart, since
 /// that's the only place that needs real `Int64List` values.
@@ -12,11 +18,11 @@ enum AlarmVibrationPattern {
   doublePulse;
 
   String get label => switch (this) {
-        AlarmVibrationPattern.defaultPattern => '기본',
-        AlarmVibrationPattern.short => '짧게, 자주',
-        AlarmVibrationPattern.long => '길게, 천천히',
-        AlarmVibrationPattern.doublePulse => '두 번씩 끊어서',
-      };
+    AlarmVibrationPattern.defaultPattern => '기본',
+    AlarmVibrationPattern.short => '짧게, 자주',
+    AlarmVibrationPattern.long => '길게, 천천히',
+    AlarmVibrationPattern.doublePulse => '두 번씩 끊어서',
+  };
 }
 
 /// Single-document user preferences: theme, accessibility scaling, alarm
@@ -52,6 +58,10 @@ class AppSettings {
   // nudge was shown (or dismissed) — at most once per day, the same pattern
   // as [lastCelebratedDate]. null = never.
   final String? lastMemoNudgeDate;
+  // Last home-screen view the user deliberately switched to (T6) -- the
+  // toggle button remembers it across launches instead of always starting
+  // back on the dial.
+  final HomeViewMode homeViewMode;
 
   const AppSettings({
     this.themeMode = AppThemeMode.system,
@@ -67,6 +77,7 @@ class AppSettings {
     this.snoozeMinutes = 10,
     this.leadMinutes = 10,
     this.lastMemoNudgeDate,
+    this.homeViewMode = HomeViewMode.dial,
   });
 
   const AppSettings.defaults() : this();
@@ -88,6 +99,7 @@ class AppSettings {
     int? snoozeMinutes,
     int? leadMinutes,
     String? lastMemoNudgeDate,
+    HomeViewMode? homeViewMode,
   }) {
     return AppSettings(
       themeMode: themeMode ?? this.themeMode,
@@ -95,52 +107,63 @@ class AppSettings {
       reduceMotion: reduceMotion ?? this.reduceMotion,
       exactAlarmGranted: exactAlarmGranted ?? this.exactAlarmGranted,
       onboardingComplete: onboardingComplete ?? this.onboardingComplete,
-      alarmSoundUri: clearAlarmSound ? null : (alarmSoundUri ?? this.alarmSoundUri),
-      alarmSoundLabel: clearAlarmSound ? null : (alarmSoundLabel ?? this.alarmSoundLabel),
+      alarmSoundUri: clearAlarmSound
+          ? null
+          : (alarmSoundUri ?? this.alarmSoundUri),
+      alarmSoundLabel: clearAlarmSound
+          ? null
+          : (alarmSoundLabel ?? this.alarmSoundLabel),
       vibrationPattern: vibrationPattern ?? this.vibrationPattern,
       lastCelebratedDate: lastCelebratedDate ?? this.lastCelebratedDate,
-      lastPartialCelebratedDate: lastPartialCelebratedDate ?? this.lastPartialCelebratedDate,
+      lastPartialCelebratedDate:
+          lastPartialCelebratedDate ?? this.lastPartialCelebratedDate,
       snoozeMinutes: snoozeMinutes ?? this.snoozeMinutes,
       leadMinutes: leadMinutes ?? this.leadMinutes,
       lastMemoNudgeDate: lastMemoNudgeDate ?? this.lastMemoNudgeDate,
+      homeViewMode: homeViewMode ?? this.homeViewMode,
     );
   }
 
   Map<String, dynamic> toMap() => {
-        'themeMode': themeMode.name,
-        'fontScale': fontScale,
-        'reduceMotion': reduceMotion,
-        'exactAlarmGranted': exactAlarmGranted,
-        'onboardingComplete': onboardingComplete,
-        'alarmSoundUri': alarmSoundUri,
-        'alarmSoundLabel': alarmSoundLabel,
-        'vibrationPattern': vibrationPattern.name,
-        'lastCelebratedDate': lastCelebratedDate,
-        'lastPartialCelebratedDate': lastPartialCelebratedDate,
-        'snoozeMinutes': snoozeMinutes,
-        'leadMinutes': leadMinutes,
-        'lastMemoNudgeDate': lastMemoNudgeDate,
-      };
+    'themeMode': themeMode.name,
+    'fontScale': fontScale,
+    'reduceMotion': reduceMotion,
+    'exactAlarmGranted': exactAlarmGranted,
+    'onboardingComplete': onboardingComplete,
+    'alarmSoundUri': alarmSoundUri,
+    'alarmSoundLabel': alarmSoundLabel,
+    'vibrationPattern': vibrationPattern.name,
+    'lastCelebratedDate': lastCelebratedDate,
+    'lastPartialCelebratedDate': lastPartialCelebratedDate,
+    'snoozeMinutes': snoozeMinutes,
+    'leadMinutes': leadMinutes,
+    'lastMemoNudgeDate': lastMemoNudgeDate,
+    'homeViewMode': homeViewMode.name,
+  };
 
   factory AppSettings.fromMap(Map<String, dynamic> map) => AppSettings(
-        themeMode: AppThemeMode.values.firstWhere(
-          (m) => m.name == map['themeMode'],
-          orElse: () => AppThemeMode.system,
-        ),
-        fontScale: (map['fontScale'] as num?)?.toDouble() ?? 1.0,
-        reduceMotion: (map['reduceMotion'] as bool?) ?? false,
-        exactAlarmGranted: (map['exactAlarmGranted'] as bool?) ?? false,
-        onboardingComplete: (map['onboardingComplete'] as bool?) ?? false,
-        alarmSoundUri: map['alarmSoundUri'] as String?,
-        alarmSoundLabel: map['alarmSoundLabel'] as String?,
-        vibrationPattern: AlarmVibrationPattern.values.firstWhere(
-          (v) => v.name == map['vibrationPattern'],
-          orElse: () => AlarmVibrationPattern.defaultPattern,
-        ),
-        lastCelebratedDate: map['lastCelebratedDate'] as String?,
-        lastPartialCelebratedDate: map['lastPartialCelebratedDate'] as String?,
-        snoozeMinutes: (map['snoozeMinutes'] as num?)?.toInt() ?? 10,
-        leadMinutes: (map['leadMinutes'] as num?)?.toInt() ?? 10,
-        lastMemoNudgeDate: map['lastMemoNudgeDate'] as String?,
-      );
+    themeMode: AppThemeMode.values.firstWhere(
+      (m) => m.name == map['themeMode'],
+      orElse: () => AppThemeMode.system,
+    ),
+    fontScale: (map['fontScale'] as num?)?.toDouble() ?? 1.0,
+    reduceMotion: (map['reduceMotion'] as bool?) ?? false,
+    exactAlarmGranted: (map['exactAlarmGranted'] as bool?) ?? false,
+    onboardingComplete: (map['onboardingComplete'] as bool?) ?? false,
+    alarmSoundUri: map['alarmSoundUri'] as String?,
+    alarmSoundLabel: map['alarmSoundLabel'] as String?,
+    vibrationPattern: AlarmVibrationPattern.values.firstWhere(
+      (v) => v.name == map['vibrationPattern'],
+      orElse: () => AlarmVibrationPattern.defaultPattern,
+    ),
+    lastCelebratedDate: map['lastCelebratedDate'] as String?,
+    lastPartialCelebratedDate: map['lastPartialCelebratedDate'] as String?,
+    snoozeMinutes: (map['snoozeMinutes'] as num?)?.toInt() ?? 10,
+    leadMinutes: (map['leadMinutes'] as num?)?.toInt() ?? 10,
+    lastMemoNudgeDate: map['lastMemoNudgeDate'] as String?,
+    homeViewMode: HomeViewMode.values.firstWhere(
+      (v) => v.name == map['homeViewMode'],
+      orElse: () => HomeViewMode.dial,
+    ),
+  );
 }

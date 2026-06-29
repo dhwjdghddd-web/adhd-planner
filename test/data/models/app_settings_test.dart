@@ -94,6 +94,17 @@ void main() {
       expect(restored.lastMemoNudgeDate, isNull);
     });
 
+    test('toMap/fromMap round-trips homeViewMode', () {
+      const settings = AppSettings(homeViewMode: HomeViewMode.nextAction);
+      final restored = AppSettings.fromMap(settings.toMap());
+      expect(restored.homeViewMode, HomeViewMode.nextAction);
+    });
+
+    test('fromMap defaults homeViewMode to dial on a legacy doc missing it', () {
+      final restored = AppSettings.fromMap(const {'themeMode': 'dark'});
+      expect(restored.homeViewMode, HomeViewMode.dial);
+    });
+
     test('clearAlarmSound resets to the system default even with a uri/label passed', () {
       const settings = AppSettings(
         alarmSoundUri: 'content://media/some/sound',

@@ -6,9 +6,11 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../core/constants.dart';
 import '../../core/theme.dart';
 import '../../core/time_geometry.dart';
 import '../../data/block_status.dart';
+import '../../data/models/app_settings.dart';
 import '../../data/models/segment.dart';
 import '../../data/providers.dart';
 import '../../data/today.dart';
@@ -24,6 +26,7 @@ import '../segments/segment_templates.dart';
 import '../segments/segments_controller.dart';
 import '../memos/quick_add_button.dart'
     show MultiFabRow, GlobalQuickAddButton, fabAvoidingBottomInset;
+import '../settings/settings_controller.dart';
 import '../settings/settings_page.dart';
 import 'dial_painter.dart';
 
@@ -35,7 +38,13 @@ const _uuid = Uuid();
 /// whichever block is current (or next). Editing a block is done from the
 /// 구간 관리 list, not here.
 class PlannerPage extends ConsumerStatefulWidget {
-  const PlannerPage({super.key});
+  const PlannerPage({super.key, @visibleForTesting this.debugNowMinuteOfDay});
+
+  /// Test-only override for "now" (minute-of-day). When set, the live status
+  /// reads this fixed value instead of the wall clock, so widget tests
+  /// (e.g. T6's "다음 한 행동" view with a future block) don't break near day
+  /// boundaries.
+  final int? debugNowMinuteOfDay;
 
   @override
   ConsumerState<PlannerPage> createState() => _PlannerPageState();
@@ -58,6 +67,8 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
   }
 
   int _minuteOfNow() {
+    final override = widget.debugNowMinuteOfDay;
+    if (override != null) return override;
     final now = TimeOfDay.now();
     return now.hour * 60 + now.minute;
   }
@@ -73,11 +84,42 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
     final segmentsAsync = ref.watch(segmentsProvider);
     final completions = ref.watch(completionsProvider).value ?? const [];
     final completedSegmentIds = completedBlockIdsOn(completions);
+    final settings = ref.watch(settingsProvider).value;
+    final homeViewMode = settings?.homeViewMode ?? HomeViewMode.dial;
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('오늘'),
         actions: [
+          // T6: toggles the whole home view in place (no route push) between
+          // the dial and the minimal "다음 한 행동" screen -- shows the icon
+          // for whichever view tapping it switches *to*, the same convention
+          // a theme toggle uses. Remembered across launches via
+          // AppSettings.homeViewMode rather than resetting to the dial every
+          // cold start.
+          IconButton(
+            icon: Icon(
+              homeViewMode == HomeViewMode.dial
+                  ? Icons.bolt
+                  : Icons.donut_large,
+            ),
+            tooltip: homeViewMode == HomeViewMode.dial
+                ? '다음 한 행동 보기'
+                : '다이얼 보기',
+            onPressed: settings == null
+                ? null
+                : () => unawaited(
+                    ref
+                        .read(settingsControllerProvider)
+                        .save(
+                          settings.copyWith(
+                            homeViewMode: homeViewMode == HomeViewMode.dial
+                                ? HomeViewMode.nextAction
+                                : HomeViewMode.dial,
+                          ),
+                        ),
+                  ),
+          ),
           IconButton(
             icon: const Icon(Icons.tune),
             tooltip: '구간 관리',
@@ -88,16 +130,16 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
           IconButton(
             icon: const Icon(Icons.sticky_note_2_outlined),
             tooltip: '메모',
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const MemoInboxPage()),
-            ),
+            onPressed: () => Navigator.of(
+              context,
+            ).push(MaterialPageRoute(builder: (_) => const MemoInboxPage())),
           ),
           IconButton(
             icon: const Icon(Icons.settings_outlined),
             tooltip: '설정',
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const SettingsPage()),
-            ),
+            onPressed: () => Navigator.of(
+              context,
+            ).push(MaterialPageRoute(builder: (_) => const SettingsPage())),
           ),
         ],
       ),
@@ -119,6 +161,20 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
             padding: EdgeInsets.only(bottom: fabAvoidingBottomInset(context)),
             child: LayoutBuilder(
               builder: (context, constraints) {
+                // T6: dial, badges, and the countdown are all hidden in this
+                // mode -- just the current/next block and a big start button
+                // (or a calm empty message when there's neither).
+                if (homeViewMode == HomeViewMode.nextAction) {
+                  return segmentsAsync.maybeWhen(
+                    data: (segments) => _NextActionView(
+                      segments: segments,
+                      currentMinute: _currentMinute,
+                    ),
+                    orElse: () =>
+                        const Center(child: CircularProgressIndicator()),
+                  );
+                }
+
                 final isEmpty = segmentsAsync.value?.isEmpty ?? false;
 
                 // Empty case: there's no dialSize-style computed height to
@@ -145,7 +201,10 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
                           child: Center(
                             child: ConstrainedBox(
                               constraints: BoxConstraints(
-                                maxWidth: math.min(constraints.maxWidth * 0.9, 420),
+                                maxWidth: math.min(
+                                  constraints.maxWidth * 0.9,
+                                  420,
+                                ),
                               ),
                               child: const _EmptyHomeStarter(),
                             ),
@@ -161,7 +220,10 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
                 // gaps above/below so the header and countdown read as clearly
                 // separated from it. Reserve covers header+badges+countdown+gaps.
                 final dialSize = math
-                    .min(constraints.maxWidth * 0.9, constraints.maxHeight - 260)
+                    .min(
+                      constraints.maxWidth * 0.9,
+                      constraints.maxHeight - 260,
+                    )
                     .clamp(180.0, constraints.maxWidth);
                 return Center(
                   child: Column(
@@ -184,7 +246,8 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
                             currentMinute: _currentMinute,
                             completedSegmentIds: completedSegmentIds,
                           ),
-                          loading: () => const Center(child: CircularProgressIndicator()),
+                          loading: () =>
+                              const Center(child: CircularProgressIndicator()),
                           error: (e, st) => Center(child: Text('오류: $e')),
                         ),
                       ),
@@ -210,9 +273,9 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
           label: '구간 추가',
           child: FloatingActionButton(
             heroTag: 'planner-add-segment',
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const SegmentFormPage()),
-            ),
+            onPressed: () => Navigator.of(
+              context,
+            ).push(MaterialPageRoute(builder: (_) => const SegmentFormPage())),
             child: const Icon(Icons.add),
           ),
         ),
@@ -266,9 +329,9 @@ class _EmptyHomeStarter extends ConsumerWidget {
         ),
         const SizedBox(height: 20),
         TextButton.icon(
-          onPressed: () => Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const BrainDumpPage()),
-          ),
+          onPressed: () => Navigator.of(
+            context,
+          ).push(MaterialPageRoute(builder: (_) => const BrainDumpPage())),
           icon: const Icon(Icons.psychology_outlined),
           label: const Text('또는, 떠오르는 일들을 적어보기'),
         ),
@@ -290,6 +353,87 @@ class _EmptyHomeStarter extends ConsumerWidget {
       order: 0,
     );
     unawaited(ref.read(segmentsControllerProvider).upsert(segment));
+  }
+}
+
+/// T6's minimal "다음 한 행동" home view: hides the dial/badges/countdown
+/// entirely and surfaces only whichever block [findBlockStatus] says is
+/// current (or, failing that, next) -- one thing to look at, one button to
+/// press. For someone too overwhelmed by the whole day to look at the dial
+/// at all.
+class _NextActionView extends StatelessWidget {
+  const _NextActionView({required this.segments, required this.currentMinute});
+
+  final List<Segment> segments;
+  final int currentMinute;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final status = findBlockStatus(segments, currentMinute);
+    final segment = status.segment;
+
+    if (segment == null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            '지금이나 다음 일정이 없어요\n편히 쉬어도 좋아요',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodyLarge,
+          ),
+        ),
+      );
+    }
+
+    final avatarColor = segment.themeColor(context);
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircleAvatar(
+              radius: 48,
+              backgroundColor: avatarColor,
+              child: Icon(
+                iconForKey(segment.iconKey),
+                size: 40,
+                color: onSegmentColor(avatarColor),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              segment.name,
+              style: theme.textTheme.headlineSmall,
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 6),
+            Text(
+              status.isCurrent
+                  ? '지금'
+                  : '다음 · ${TimeGeometry.formatMinute(segment.startMinute)}',
+              style: theme.textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 36),
+            SizedBox(
+              width: 220,
+              height: 64,
+              child: FilledButton(
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => FocusPage.forBlock(segment),
+                  ),
+                ),
+                child: Text('시작', style: theme.textTheme.titleLarge),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -325,7 +469,8 @@ class _Dial extends StatelessWidget {
               width: side,
               height: side,
               child: GestureDetector(
-                onTapUp: (details) => _handleTap(context, details.localPosition, side),
+                onTapUp: (details) =>
+                    _handleTap(context, details.localPosition, side),
                 onLongPressStart: (details) =>
                     _handleLongPress(context, details.localPosition, side),
                 child: Stack(
@@ -337,14 +482,21 @@ class _Dial extends StatelessWidget {
                         segments: segments,
                         currentMinute: currentMinute,
                         tickColor: theme.colorScheme.onSurface,
-                        labelStyle: theme.textTheme.labelSmall ??
-                            const TextStyle(fontSize: 12, fontFamily: 'Pretendard'),
+                        labelStyle:
+                            theme.textTheme.labelSmall ??
+                            const TextStyle(
+                              fontSize: 12,
+                              fontFamily: 'Pretendard',
+                            ),
                         handColor: theme.colorScheme.primary,
                         brightness: Theme.of(context).brightness,
                         completedSegmentIds: completedSegmentIds,
                       ),
                     ),
-                    _CenterSummary(status: status, currentMinute: currentMinute),
+                    _CenterSummary(
+                      status: status,
+                      currentMinute: currentMinute,
+                    ),
                   ],
                 ),
               ),
@@ -359,18 +511,21 @@ class _Dial extends StatelessWidget {
   /// start-time order ("07:00 아침, 12:30 점심" …), each tagged 완료 where it
   /// applies.
   String _dialSemanticsLabel() {
-    final todays = [...segments]..sort((a, b) => a.startMinute.compareTo(b.startMinute));
+    final todays = [...segments]
+      ..sort((a, b) => a.startMinute.compareTo(b.startMinute));
 
     final now = '현재 시각 ${TimeGeometry.formatMinute(currentMinute)}';
     if (todays.isEmpty) {
       return '오늘 원형 계획표, $now, 오늘 일정이 없어요';
     }
 
-    final items = todays.map((s) {
-      final time = TimeGeometry.formatMinute(s.startMinute);
-      final tag = completedSegmentIds.contains(s.id) ? ' 완료' : '';
-      return '$time ${s.name}$tag';
-    }).join(', ');
+    final items = todays
+        .map((s) {
+          final time = TimeGeometry.formatMinute(s.startMinute);
+          final tag = completedSegmentIds.contains(s.id) ? ' 완료' : '';
+          return '$time ${s.name}$tag';
+        })
+        .join(', ');
     return '오늘 원형 계획표, $now. 오늘 일정: $items';
   }
 
@@ -404,7 +559,9 @@ class _Dial extends StatelessWidget {
     if (pressedSegment != null) {
       HapticFeedback.mediumImpact();
       Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => SegmentFormPage(existing: pressedSegment)),
+        MaterialPageRoute(
+          builder: (_) => SegmentFormPage(existing: pressedSegment),
+        ),
       );
     }
   }
@@ -414,7 +571,11 @@ class _Dial extends StatelessWidget {
   /// slack) and its angle (converted to a minute) must fall inside the block's
   /// range. Both conditions must hold, so tapping empty space opens nothing.
   Segment? _segmentAtPoint(
-      Offset center, Offset tapPoint, double outerR, Map<String, int> lanes) {
+    Offset center,
+    Offset tapPoint,
+    double outerR,
+    Map<String, int> lanes,
+  ) {
     final tapDist = (tapPoint - center).distance;
     const tolerance = DialGeometry.ringThickness / 2 + 4;
 
@@ -516,19 +677,27 @@ class _HomeHeader extends StatelessWidget {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final now = DateTime.now();
-    final dateLabel = '${now.month}월 ${now.day}일 (${_weekdayLabels[now.weekday - 1]})';
-    final mutedColor = isDark ? const Color(0xFFA6B2BE) : const Color(0xFF525C68);
+    final dateLabel =
+        '${now.month}월 ${now.day}일 (${_weekdayLabels[now.weekday - 1]})';
+    final mutedColor = isDark
+        ? const Color(0xFFA6B2BE)
+        : const Color(0xFF525C68);
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(dateLabel, style: theme.textTheme.labelMedium?.copyWith(color: mutedColor)),
+          Text(
+            dateLabel,
+            style: theme.textTheme.labelMedium?.copyWith(color: mutedColor),
+          ),
           const SizedBox(height: 2),
           Text(
             _greeting(minuteOfDay ~/ 60),
-            style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ],
       ),
@@ -540,7 +709,10 @@ class _HomeHeader extends StatelessWidget {
 /// between the dial and the bottom quick-add FAB. Hidden when no block is still
 /// ahead today.
 class _NextBlockCountdown extends StatelessWidget {
-  const _NextBlockCountdown({required this.segments, required this.currentMinute});
+  const _NextBlockCountdown({
+    required this.segments,
+    required this.currentMinute,
+  });
 
   final List<Segment> segments;
   final int currentMinute;
@@ -548,7 +720,8 @@ class _NextBlockCountdown extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (segments.isEmpty) return const SizedBox.shrink();
-    final ordered = [...segments]..sort((a, b) => a.startMinute.compareTo(b.startMinute));
+    final ordered = [...segments]
+      ..sort((a, b) => a.startMinute.compareTo(b.startMinute));
     Segment? next;
     for (final s in ordered) {
       if (s.startMinute > currentMinute) {
@@ -565,7 +738,9 @@ class _NextBlockCountdown extends StatelessWidget {
 
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final mutedColor = isDark ? const Color(0xFFA6B2BE) : const Color(0xFF525C68);
+    final mutedColor = isDark
+        ? const Color(0xFFA6B2BE)
+        : const Color(0xFF525C68);
 
     return Semantics(
       label: '다음 구간 ${next.name}까지 $remLabel 남음',
@@ -629,7 +804,9 @@ class _CenterSummary extends StatelessWidget {
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         color: AppTheme.surface3(context),
-        border: isDark ? null : Border.all(color: const Color(0xFFE4E9EF), width: 1),
+        border: isDark
+            ? null
+            : Border.all(color: const Color(0xFFE4E9EF), width: 1),
         boxShadow: isDark
             ? null
             : [
@@ -651,7 +828,10 @@ class _CenterSummary extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(TimeGeometry.formatMinute(currentMinute), style: theme.textTheme.titleMedium),
+              Text(
+                TimeGeometry.formatMinute(currentMinute),
+                style: theme.textTheme.titleMedium,
+              ),
               const SizedBox(height: 6),
               if (segment == null)
                 Text(
@@ -661,7 +841,9 @@ class _CenterSummary extends StatelessWidget {
                 )
               else ...[
                 Text(
-                  status.isCurrent ? '지금: ${segment.name}' : '다음: ${segment.name}',
+                  status.isCurrent
+                      ? '지금: ${segment.name}'
+                      : '다음: ${segment.name}',
                   style: theme.textTheme.bodyMedium,
                   textAlign: TextAlign.center,
                   maxLines: 2,
@@ -677,9 +859,9 @@ class _CenterSummary extends StatelessWidget {
               ],
               const SizedBox(height: 8),
               FilledButton(
-                onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const FocusPage()),
-                ),
+                onPressed: () => Navigator.of(
+                  context,
+                ).push(MaterialPageRoute(builder: (_) => const FocusPage())),
                 child: const Text('지금'),
               ),
             ],

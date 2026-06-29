@@ -3,12 +3,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:adhd_planner/core/time_geometry.dart';
+import 'package:adhd_planner/data/models/app_settings.dart';
 import 'package:adhd_planner/data/models/completion.dart';
 import 'package:adhd_planner/data/models/segment.dart';
 import 'package:adhd_planner/data/providers.dart';
 import 'package:adhd_planner/features/focus/focus_page.dart';
 import 'package:adhd_planner/features/planner/dial_painter.dart';
 import 'package:adhd_planner/features/planner/planner_page.dart';
+import 'package:adhd_planner/features/rewards/streak_badge.dart';
 import 'package:adhd_planner/features/segments/segment_editor_page.dart';
 import 'package:adhd_planner/features/segments/segment_form_page.dart';
 
@@ -34,10 +36,12 @@ Segment _block({
 }
 
 void main() {
-  Widget wrap(FakePlannerRepository repo) {
+  Widget wrap(FakePlannerRepository repo, {int? debugNowMinuteOfDay}) {
     return ProviderScope(
       overrides: [plannerRepositoryProvider.overrideWithValue(repo)],
-      child: const MaterialApp(home: PlannerPage()),
+      child: MaterialApp(
+        home: PlannerPage(debugNowMinuteOfDay: debugNowMinuteOfDay),
+      ),
     );
   }
 
@@ -162,4 +166,117 @@ void main() {
   // '지금' lives inside the dial's centre summary, which the empty state
   // (see above) replaces outright -- with no blocks at all there's no dial,
   // and the starter chips are the correct way in now, not a contentless Focus.
+
+  group('T6 -- 다음 한 행동 (next action) mode', () {
+    const dayMinute = 9 * 60; // pinned "now" -- 09:00.
+
+    testWidgets('tapping the toggle switches from the dial to 다음 한 행동 and back',
+        (tester) async {
+      final repo = FakePlannerRepository();
+      // ±60분 (not the whole day) -- start=0/end=24*60 wraps to lengthMinutes
+      // 0 under findBlockStatus's modular math, which would skip it as
+      // degenerate rather than read as "always current".
+      await repo.upsertSegment(
+        _block(startMinute: dayMinute - 60, endMinute: dayMinute + 60),
+      );
+
+      await tester.pumpWidget(wrap(repo, debugNowMinuteOfDay: dayMinute));
+      await tester.pumpAndSettle();
+
+      expect(find.byWidgetPredicate((w) => w is CustomPaint && w.painter is DialPainter),
+          findsOneWidget);
+
+      await tester.tap(find.byTooltip('다음 한 행동 보기'));
+      await tester.pumpAndSettle();
+
+      expect(find.byWidgetPredicate((w) => w is CustomPaint && w.painter is DialPainter),
+          findsNothing);
+      expect(find.text('시작'), findsOneWidget);
+
+      await tester.tap(find.byTooltip('다이얼 보기'));
+      await tester.pumpAndSettle();
+
+      expect(find.byWidgetPredicate((w) => w is CustomPaint && w.painter is DialPainter),
+          findsOneWidget);
+    });
+
+    testWidgets('shows the current block (지금) with no dial/badges/countdown',
+        (tester) async {
+      final repo = FakePlannerRepository();
+      await repo.saveSettings(
+        const AppSettings.defaults().copyWith(homeViewMode: HomeViewMode.nextAction),
+      );
+      await repo.upsertSegment(
+        _block(name: '아침', startMinute: dayMinute - 60, endMinute: dayMinute + 60),
+      );
+
+      await tester.pumpWidget(wrap(repo, debugNowMinuteOfDay: dayMinute));
+      await tester.pumpAndSettle();
+
+      expect(find.text('아침'), findsOneWidget);
+      expect(find.text('지금'), findsOneWidget);
+      expect(find.text('시작'), findsOneWidget);
+      expect(find.byWidgetPredicate((w) => w is CustomPaint && w.painter is DialPainter),
+          findsNothing);
+      expect(find.byType(StreakBadge), findsNothing);
+    });
+
+    testWidgets('shows the next block with its start time when nothing is current',
+        (tester) async {
+      final repo = FakePlannerRepository();
+      await repo.saveSettings(
+        const AppSettings.defaults().copyWith(homeViewMode: HomeViewMode.nextAction),
+      );
+      await repo.upsertSegment(_block(
+        name: '오후 회의',
+        startMinute: dayMinute + 60,
+        endMinute: dayMinute + 120,
+      ));
+
+      await tester.pumpWidget(wrap(repo, debugNowMinuteOfDay: dayMinute));
+      await tester.pumpAndSettle();
+
+      expect(find.text('오후 회의'), findsOneWidget);
+      expect(find.textContaining('다음'), findsOneWidget);
+    });
+
+    testWidgets('shows a calm empty message when there is nothing current or next',
+        (tester) async {
+      final repo = FakePlannerRepository();
+      await repo.saveSettings(
+        const AppSettings.defaults().copyWith(homeViewMode: HomeViewMode.nextAction),
+      );
+
+      await tester.pumpWidget(wrap(repo, debugNowMinuteOfDay: dayMinute));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('지금이나 다음 일정이 없어요'), findsOneWidget);
+      expect(find.text('시작'), findsNothing);
+      // The dial's own empty-state starter chips must not show here either --
+      // 다음 한 행동 has its own, separate empty message.
+      expect(find.text('아직 만든 구간이 없어요\n아래에서 하나 골라 시작해보세요'), findsNothing);
+    });
+
+    testWidgets('시작 opens FocusPage.forBlock for that exact segment', (tester) async {
+      final repo = FakePlannerRepository();
+      await repo.saveSettings(
+        const AppSettings.defaults().copyWith(homeViewMode: HomeViewMode.nextAction),
+      );
+      await repo.upsertSegment(_block(
+        name: '아침',
+        startMinute: dayMinute - 60,
+        endMinute: dayMinute + 60,
+        microSteps: const ['물 마시기'],
+      ));
+
+      await tester.pumpWidget(wrap(repo, debugNowMinuteOfDay: dayMinute));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('시작'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(FocusPage), findsOneWidget);
+      expect(find.widgetWithText(CheckboxListTile, '물 마시기'), findsOneWidget);
+    });
+  });
 }
