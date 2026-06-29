@@ -112,6 +112,9 @@ class MainActivity : FlutterActivity() {
                         stopScreenOffGuard()
                         result.success(null)
                     }
+                    "openChannelSettings" -> {
+                        openChannelSettings(call, result)
+                    }
                     else -> result.notImplemented()
                 }
             }
@@ -205,6 +208,20 @@ class MainActivity : FlutterActivity() {
     private fun cancelVibrationAlarm(call: MethodCall, result: MethodChannel.Result) {
         val requestCode = (call.argument<Number>("requestCode"))!!.toInt()
         VibrationAlarmReceiver.cancel(applicationContext, requestCode)
+        result.success(null)
+    }
+
+    // T10: hands off to Android's own per-channel notification settings
+    // (sound/importance/vibration override) -- this app's own settings
+    // screen only ever exposes broad app-level choices, so adjusting any one
+    // channel individually has to go through the system screen directly.
+    private fun openChannelSettings(call: MethodCall, result: MethodChannel.Result) {
+        val channelId = call.argument<String>("channelId")!!
+        val intent = Intent(android.provider.Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS).apply {
+            putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, applicationContext.packageName)
+            putExtra(android.provider.Settings.EXTRA_CHANNEL_ID, channelId)
+        }
+        startActivity(intent)
         result.success(null)
     }
 

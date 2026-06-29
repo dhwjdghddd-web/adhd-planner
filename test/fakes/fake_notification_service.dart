@@ -24,8 +24,16 @@ class FakeNotificationService extends NotificationService {
   final List<({DateTime endAt, String title, String body})> timerEndCalls = [];
   int timerEndCancelCount = 0;
 
+  /// Each channel id [openChannelSettings] was asked to open, so a test can
+  /// assert the right channel's row triggers the right deep-link without
+  /// touching any plugin.
+  final List<String> openedChannelSettings = [];
+
   @override
-  Future<void> rescheduleAll(List<Segment> segments, AppSettings settings) async {
+  Future<void> rescheduleAll(
+    List<Segment> segments,
+    AppSettings settings,
+  ) async {
     rescheduleCalls.add(segments);
   }
 
@@ -46,5 +54,10 @@ class FakeNotificationService extends NotificationService {
   @override
   Future<void> cancelTimerEnd() async {
     timerEndCancelCount++;
+  }
+
+  @override
+  Future<void> openChannelSettings(String channelId) async {
+    openedChannelSettings.add(channelId);
   }
 }

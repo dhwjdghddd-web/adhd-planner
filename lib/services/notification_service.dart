@@ -181,6 +181,17 @@ const AndroidNotificationDetails _checkinAndroidDetails =
       fullScreenIntent: false,
     );
 
+// T10: public access to every channel id this app schedules under, so the
+// settings screen can deep-link into each one's own system notification
+// settings (sound/importance/vibration override) -- this app's own UI never
+// exposes those per-channel, only the broad app-level choices that feed into
+// them. The main alarm channel's id depends on the current sound+vibration
+// choice (see _channelSuffix), so it needs [settings]; the rest are fixed.
+String alarmChannelId(AppSettings settings) => _alarmChannelId(settings);
+const String leadWarningChannelId = _leadChannelId;
+const String focusTimerChannelId = _timerChannelId;
+const String checkinChannelId = _checkinChannelId;
+
 // Talks to MainActivity.kt's "ensureAlarmChannel" handler — see the long
 // comment there for why this can't just be
 // AndroidFlutterLocalNotificationsPlugin.createNotificationChannel: that
@@ -472,6 +483,20 @@ class NotificationService {
   /// Disarms the daily check-in reminder (the toggle in 설정 turned off) --
   /// both the notification and the native Vibrator alarm riding alongside it.
   Future<void> cancelCheckinAlarm() => _silenceAlarm(_checkinNotificationId);
+
+  /// T10: opens Android's own per-channel notification settings for
+  /// [channelId] (sound/importance/vibration override) -- see
+  /// alarmChannelId/leadWarningChannelId/focusTimerChannelId/checkinChannelId
+  /// above for the ids to pass. No-op with no platform channel (tests).
+  Future<void> openChannelSettings(String channelId) async {
+    try {
+      await _alarmChannelChannel.invokeMethod('openChannelSettings', {
+        'channelId': channelId,
+      });
+    } catch (e) {
+      logSwallowed('openChannelSettings', e);
+    }
+  }
 
   /// Schedules a ONE-TIME re-alert for [segment], [settings.snoozeMinutes] from
   /// now -- the "N분 뒤 다시" action on AlarmScreen. Reuses the block's normal

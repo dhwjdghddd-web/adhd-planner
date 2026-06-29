@@ -6,7 +6,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:adhd_planner/data/models/app_settings.dart';
 import 'package:adhd_planner/data/providers.dart';
 import 'package:adhd_planner/features/settings/settings_page.dart';
+import 'package:adhd_planner/services/notification_service.dart';
 
+import '../../fakes/fake_notification_service.dart';
 import '../../fakes/fake_planner_repository.dart';
 
 void main() {
@@ -17,12 +19,32 @@ void main() {
     );
   }
 
+  // T10's 알림 채널 rows call NotificationService.openChannelSettings
+  // directly (not behind a try/catch the way _rescheduleAlarms swallows a
+  // MissingPluginException) -- the real service's own catch would still
+  // keep these tests from crashing, but a recording fake is what lets a test
+  // actually assert *which* channel id a given row opened.
+  Widget wrapWithFakeNotifications(
+    FakePlannerRepository repo,
+    FakeNotificationService fakeService,
+  ) {
+    return ProviderScope(
+      overrides: [
+        plannerRepositoryProvider.overrideWithValue(repo),
+        notificationServiceProvider.overrideWithValue(fakeService),
+      ],
+      child: const MaterialApp(home: SettingsPage()),
+    );
+  }
+
   // The settings list is taller than the default test surface, which would
   // leave the account row below the fold un-inflated. Growing the surface
   // (same approach as routine_form_page_test.dart) avoids needing to scroll.
+  // Grown again for T10's 알림 채널 section -- five more rows pushed 화면/계정
+  // further down than the previous 1400px height could still inflate.
   Future<void> growSurface(WidgetTester tester) async {
-    await tester.binding.setSurfaceSize(const Size(800, 1400));
-    tester.view.physicalSize = const Size(800, 1400);
+    await tester.binding.setSurfaceSize(const Size(800, 1900));
+    tester.view.physicalSize = const Size(800, 1900);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(() {
       tester.view.resetPhysicalSize();
@@ -222,6 +244,65 @@ void main() {
 
       expect(find.byType(CupertinoDatePicker), findsOneWidget);
       expect(find.byType(TimePickerDialog), findsNothing);
+    },
+  );
+
+  testWidgets('shows a row for every notification channel (T10)', (
+    tester,
+  ) async {
+    await growSurface(tester);
+    await tester.pumpWidget(
+      wrapWithFakeNotifications(
+        FakePlannerRepository(),
+        FakeNotificationService(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('구간 알람'), findsOneWidget);
+    expect(find.text('구간 전환 예고'), findsOneWidget);
+    expect(find.text('집중 타이머'), findsOneWidget);
+    expect(find.text('체크인 알림 채널'), findsOneWidget);
+  });
+
+  testWidgets(
+    "tapping a channel row opens that channel's system settings (T10)",
+    (tester) async {
+      final fakeService = FakeNotificationService();
+      await growSurface(tester);
+      await tester.pumpWidget(
+        wrapWithFakeNotifications(FakePlannerRepository(), fakeService),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('체크인 알림 채널'));
+      await tester.pumpAndSettle();
+      expect(fakeService.openedChannelSettings, [checkinChannelId]);
+
+      await tester.tap(find.text('집중 타이머'));
+      await tester.pumpAndSettle();
+      expect(fakeService.openedChannelSettings, [
+        checkinChannelId,
+        focusTimerChannelId,
+      ]);
+
+      await tester.tap(find.text('구간 전환 예고'));
+      await tester.pumpAndSettle();
+      expect(fakeService.openedChannelSettings, [
+        checkinChannelId,
+        focusTimerChannelId,
+        leadWarningChannelId,
+      ]);
+
+      // The main alarm channel's id varies with the current sound+vibration
+      // choice (see _channelSuffix in notification_service.dart) -- default
+      // settings here, so it should resolve to alarmChannelId's value for them.
+      await tester.tap(find.text('구간 알람'));
+      await tester.pumpAndSettle();
+      expect(
+        fakeService.openedChannelSettings.last,
+        alarmChannelId(const AppSettings.defaults()),
+      );
     },
   );
 

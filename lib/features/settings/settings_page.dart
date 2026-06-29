@@ -426,6 +426,43 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               : null,
         ),
         const Divider(),
+        const _SectionHeader('알림 채널'),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+          child: Text(
+            '소리·진동·중요도를 더 세밀하게 바꾸려면 시스템 설정으로 이동하세요.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ),
+        _ChannelSettingsRow(
+          icon: Icons.alarm,
+          label: '구간 알람',
+          onTap: () => ref
+              .read(notificationServiceProvider)
+              .openChannelSettings(alarmChannelId(settings)),
+        ),
+        _ChannelSettingsRow(
+          icon: Icons.notifications_active_outlined,
+          label: '구간 전환 예고',
+          onTap: () => ref
+              .read(notificationServiceProvider)
+              .openChannelSettings(leadWarningChannelId),
+        ),
+        _ChannelSettingsRow(
+          icon: Icons.timer_outlined,
+          label: '집중 타이머',
+          onTap: () => ref
+              .read(notificationServiceProvider)
+              .openChannelSettings(focusTimerChannelId),
+        ),
+        _ChannelSettingsRow(
+          icon: Icons.mood_outlined,
+          label: '체크인 알림 채널',
+          onTap: () => ref
+              .read(notificationServiceProvider)
+              .openChannelSettings(checkinChannelId),
+        ),
+        const Divider(),
         const _SectionHeader('화면'),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -494,6 +531,32 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// T10: one row per notification channel, deep-linking to Android's own
+/// per-channel settings (sound/importance/vibration override) -- this app's
+/// settings screen only ever exposes the broad app-level choices that feed
+/// into a channel, never a per-channel override.
+class _ChannelSettingsRow extends StatelessWidget {
+  const _ChannelSettingsRow({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      leading: Icon(icon),
+      title: Text(label),
+      trailing: const Icon(Icons.open_in_new, size: 18),
+      onTap: onTap,
     );
   }
 }
