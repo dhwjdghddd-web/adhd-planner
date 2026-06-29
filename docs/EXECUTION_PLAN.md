@@ -167,7 +167,7 @@
 - **확정 사양 (UI 결정 완료)**: 1) 승격은 메모 행 **롱프레스** → 바텀시트("새 블록으로 만들기" / "기존 블록에 항목으로 추가"), 완료 시 메모 reviewed=true. 2) 재부상은 인박스 상단 카드, **3일 이상** 미확인 메모 중 가장 오래된 것 하나, **하루 한 번**(AppSettings.lastMemoNudgeDate). 3) "오늘 처리할 메모 N개" 표면은 사용자 지시로 **보류**(project_memo_today_count_surface_deferred 메모리).
 - **실행 결과 (2026-06-29, Sonnet 4.6 구현)**: 확정 사양대로 구현, 1·2번만(3번 보류). `SegmentFormPage`에 `initialName` 파라미터 + 저장 시 `Navigator.pop(context, true)` 추가(승격 성공 여부 판별용). 신규: `memo_resurfacing.dart`(순수 `oldestNudgeworthyMemo`/`kMemoNudgeMinAge`), `promote_memo_sheet.dart`(승격 시트 + 블록 피커). `AppSettings.lastMemoNudgeDate` 필드 추가(4곳 패턴). 구현 중 실제 버그 두 건 발견·수정: ① 기존 `memo_inbox_page_test.dart` 픽스처가 고정 과거 날짜를 써서 재부상 기준(3일)에 걸려 텍스트 중복으로 4개 테스트 깨짐 → `MemoInboxPage`에 `debugNow` 시드 추가(FocusPage의 `debugNowMinuteOfDay`와 같은 패턴). ② 승격 플로우가 `ref.read(segmentsProvider).value`를 직접 읽었는데, 그 provider를 트리의 아무도 먼저 watch한 적 없으면 첫 읽기가 스트림의 비동기 첫 이벤트보다 앞서 동기적으로 빈 리스트를 반환하는 레이스 발견 → `SegmentsController`가 이미 쓰는 "저장소에서 직접 fresh read" 패턴으로 교정. test 210→227(+17). 실기기 설치·확인 완료(사용자 "확인완료").
 
-### T5 — Focus를 진짜 집중 도구로 (블록 내 잔여시간 + 짧은 타이머 + 2분 룰)  〔규모 M~L〕 [UI-CONFIRM 완료]
+### T5 — Focus를 진짜 집중 도구로 (블록 내 잔여시간 + 짧은 타이머 + 2분 룰)  〔규모 M~L〕 [UI-CONFIRM 완료] ✅(8d443ba)
 - **목표**: 시간맹(블록 내부)·착수·과몰입 탈출 대응.
 - **확정 사양 (UI 결정 완료)**:
   1. **블록 잔여시간**: Focus 상단에 **진행 링(또는 바) + "20분 남음"** 텍스트(현재 블록 경과/잔여). 시계 의존이므로 위젯테스트는 `debugNowMinuteOfDay` 시드로.
@@ -178,6 +178,7 @@
 - **파일**: `focus_page.dart`, 타이머 컨트롤러(신규, riverpod), 필요 시 알림 인프라.
 - **검증**: 타이머 컨트롤러 단위테스트(시작/일시정지/완료 전이), Focus 위젯테스트(잔여시간 표시는 `debugNowMinuteOfDay` 시드로 결정). 전체 통과.
 - **커밋**: `추가: Focus 블록 잔여시간·집중 타이머·2분 룰`.
+- **실행 결과 (2026-06-29, Sonnet 4.6 구현)**: 확정 사양대로 구현, 실기기 다단계 검증으로 디자인·버그 모두 수정. ① 잔여시간 표시는 처음엔 상단 분리 막대였으나 사용자가 "원형 그래픽에 합쳐서"라고 명확히 지적해 `WaitingIllustration`의 가장 바깥 ripple 링을 진행률 트랙+아크로 교체하는 형태로 재설계(`progress` 파라미터 신규, null이면 다른 화면 영향 없음). ② 타이머 종료 진동이 처음엔 너무 짧음(명시적 vibrationPattern 누락) → 추가했는데도 무음모드에서 안 울림 → T2의 메인 알람과 같은 Samsung OneUI 버그로 확인, 네이티브 Vibrator 직접 호출(기존 `VibrationAlarmReceiver.kt` 재사용, 새 코드 없음)로 해결. ③ **치명적 레이아웃 버그 발견**: 체크리스트가 하단 FAB(메모/모두완료) 영역을 침범, 스크롤로도 못 피함 — `SingleChildScrollView` 내부 padding만으론 콘텐츠가 짧아 스크롤이 안 일어나는 경우 효과 없다는 걸 실기기로 확인, `Expanded` 전체를 `Padding(bottom: fabAvoidingBottomInset)`로 감싸 가용 높이 자체를 줄이는 방식으로 교정(다른 5개 FAB 화면은 전부 이미 이 방식이라 점검만 함). ④ 타이머 섹션이 체크리스트와 같이 스크롤되던 것도 지적받아 헤더(원형+스트릭) 쪽 고정 영역으로 재배치. test 226→250(+24).
 
 ### T6 — 다음 한 행동(Next Action) 저부하 모드  〔규모 M〕 [UI-CONFIRM 완료]
 - **목표**: 과제마비형 구제 — 하루 전체 대신 "지금 딱 하나".
