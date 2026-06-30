@@ -164,6 +164,28 @@ class FakePlannerRepository implements PlannerRepository {
     _settings = s;
     _settingsStream.add(_settings);
   }
+
+  @override
+  Future<void> deleteAllData() async {
+    _segments.clear();
+    _memos.clear();
+    _completions.clear();
+    _microStepProgress.clear();
+    _achievedDays.clear();
+    _alarmSkips.clear();
+    _mits.clear();
+    _checkins.clear();
+    _settings = const AppSettings.defaults();
+    _segmentsStream.add(const []);
+    _memosStream.add(const []);
+    _completionsStream.add(const []);
+    _microStepProgressStream.add(const []);
+    _achievedDaysStream.add(const []);
+    _alarmSkipsStream.add(const []);
+    _mitsStream.add(const []);
+    _checkinsStream.add(const []);
+    _settingsStream.add(_settings);
+  }
 }
 
 /// Broadcast stream that replays the latest value to new listeners,

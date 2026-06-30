@@ -4,13 +4,9 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:adhd_planner/app.dart';
 import 'package:adhd_planner/data/models/achieved_day.dart';
-import 'package:adhd_planner/data/models/alarm_skip.dart';
 import 'package:adhd_planner/data/models/app_settings.dart';
-import 'package:adhd_planner/data/models/checkin.dart';
 import 'package:adhd_planner/data/models/completion.dart';
-import 'package:adhd_planner/data/models/memo.dart';
 import 'package:adhd_planner/data/models/micro_step_progress.dart';
-import 'package:adhd_planner/data/models/mit.dart';
 import 'package:adhd_planner/data/models/segment.dart';
 import 'package:adhd_planner/data/providers.dart';
 import 'package:adhd_planner/data/repositories/planner_repository.dart';
@@ -21,6 +17,7 @@ import 'package:adhd_planner/features/memos/quick_add_button.dart';
 import 'package:adhd_planner/services/notification_service.dart';
 
 import 'fakes/fake_planner_repository.dart';
+import 'fakes/forwarding_planner_repository.dart';
 
 Segment _block({
   String id = 's1',
@@ -48,71 +45,30 @@ Segment _block({
 /// resolved near-instantly, while these needed an actual round trip, leaving
 /// a real window where the new account is active but its checklist data
 /// hasn't arrived yet.
-class _DelayedDataRepository implements PlannerRepository {
-  _DelayedDataRepository(this._inner);
-  final PlannerRepository _inner;
+class _DelayedDataRepository extends ForwardingPlannerRepository {
+  _DelayedDataRepository(this.inner);
+  @override
+  final PlannerRepository inner;
 
   Stream<T> _delayed<T>(Stream<T> source) => source.asyncMap((v) async {
     await Future.delayed(const Duration(milliseconds: 10));
     return v;
   });
 
+  // Only these four are delayed (to exercise loading states); every other
+  // method forwards straight through via ForwardingPlannerRepository, so a new
+  // interface method never breaks this double again.
   @override
-  Stream<List<Segment>> watchSegments() => _delayed(_inner.watchSegments());
+  Stream<List<Segment>> watchSegments() => _delayed(inner.watchSegments());
   @override
   Stream<List<Completion>> watchCompletions() =>
-      _delayed(_inner.watchCompletions());
+      _delayed(inner.watchCompletions());
   @override
   Stream<List<MicroStepProgress>> watchMicroStepProgress() =>
-      _delayed(_inner.watchMicroStepProgress());
+      _delayed(inner.watchMicroStepProgress());
   @override
   Stream<List<AchievedDay>> watchAchievedDays() =>
-      _delayed(_inner.watchAchievedDays());
-
-  @override
-  Stream<List<Memo>> watchMemos() => _inner.watchMemos();
-  @override
-  Stream<List<AlarmSkip>> watchAlarmSkips() => _inner.watchAlarmSkips();
-  @override
-  Stream<List<Mit>> watchMits() => _inner.watchMits();
-  @override
-  Stream<List<Checkin>> watchCheckins() => _inner.watchCheckins();
-  @override
-  Stream<AppSettings> watchSettings() => _inner.watchSettings();
-
-  @override
-  Future<void> upsertSegment(Segment s) => _inner.upsertSegment(s);
-  @override
-  Future<void> deleteSegment(String id) => _inner.deleteSegment(id);
-  @override
-  Future<void> addMemo(Memo m) => _inner.addMemo(m);
-  @override
-  Future<void> updateMemo(Memo m) => _inner.updateMemo(m);
-  @override
-  Future<void> deleteMemo(String id) => _inner.deleteMemo(id);
-  @override
-  Future<void> setCompletion(Completion c) => _inner.setCompletion(c);
-  @override
-  Future<void> removeCompletion(String dateKey, String segmentId) =>
-      _inner.removeCompletion(dateKey, segmentId);
-  @override
-  Future<void> saveMicroStepProgress(MicroStepProgress p) =>
-      _inner.saveMicroStepProgress(p);
-  @override
-  Future<void> saveAchievedDay(AchievedDay d) => _inner.saveAchievedDay(d);
-  @override
-  Future<void> saveAlarmSkip(AlarmSkip s) => _inner.saveAlarmSkip(s);
-  @override
-  Future<void> saveMit(Mit m) => _inner.saveMit(m);
-  @override
-  Future<void> removeMit(String dateKey, String segmentId) =>
-      _inner.removeMit(dateKey, segmentId);
-  @override
-  Future<void> saveCheckin(Checkin c) => _inner.saveCheckin(c);
-  @override
-  Future<void> removeCheckin(String dateKey) => _inner.removeCheckin(dateKey);
-  @override
-  Future<void> saveSettings(AppSettings s) => _inner.saveSettings(s);
+      _delayed(inner.watchAchievedDays());
 }
 
 void main() {

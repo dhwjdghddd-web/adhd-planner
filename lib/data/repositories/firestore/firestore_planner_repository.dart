@@ -154,6 +154,26 @@ class FirestorePlannerRepository implements PlannerRepository {
   Future<void> saveSettings(AppSettings s) =>
       _userDoc.set(s.toMap(), SetOptions(merge: true));
 
+  @override
+  Future<void> deleteAllData() async {
+    // Firestore has no client-side recursive delete, so each known
+    // subcollection is drained explicitly, then the user doc (which holds
+    // AppSettings) itself. Batched in chunks to stay under the 500-write
+    // limit. _historyWindowDays-windowed readers don't matter here -- we
+    // delete every doc regardless of date.
+    for (final name in _ownedCollections) {
+      final snap = await _collection(name).get();
+      for (var i = 0; i < snap.docs.length; i += 450) {
+        final batch = _firestore.batch();
+        for (final doc in snap.docs.skip(i).take(450)) {
+          batch.delete(doc.reference);
+        }
+        await batch.commit();
+      }
+    }
+    await _userDoc.delete();
+  }
+
   Stream<List<T>> _watchAll<T>(
     String collection,
     T Function(Map<String, dynamic>) fromMap,
@@ -187,3 +207,16 @@ class FirestorePlannerRepository implements PlannerRepository {
 // Firestore (never deleted) but not streamed into the app — see the per-method
 // comments above for why each reader is safe with only this much history.
 const _historyWindowDays = 90; // completions, micro-step progress
+
+// Every subcollection under users/{uid}. Kept in one place so account deletion
+// (deleteAllData) can't silently miss one as new collections are added.
+const _ownedCollections = [
+  'segments',
+  'memos',
+  'completions',
+  'microStepProgress',
+  'achievedDays',
+  'alarmSkips',
+  'mits',
+  'checkins',
+];

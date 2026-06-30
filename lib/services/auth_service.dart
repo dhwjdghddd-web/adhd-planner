@@ -40,7 +40,8 @@ class AuthService {
       await user.linkWithCredential(credential);
       return AuthOutcome.linked;
     } on FirebaseAuthException catch (e) {
-      if (e.code == 'credential-already-in-use' || e.code == 'email-already-in-use') {
+      if (e.code == 'credential-already-in-use' ||
+          e.code == 'email-already-in-use') {
         // 그 구글 계정은 이미 Firebase 사용자임 → 그 계정으로 로그인(복구).
         final cred = e.credential ?? credential;
         await FirebaseAuth.instance.signInWithCredential(cred);
@@ -53,6 +54,47 @@ class AuthService {
     } catch (_) {
       return AuthOutcome.failed;
     }
+  }
+
+  /// 계정 영구 삭제: 먼저 [wipeData]로 모든 Firestore 데이터를 지우고(아직
+  /// 그 uid로 인증된 상태라 보안 규칙이 허용함), Firebase 사용자를 삭제한 뒤,
+  /// 다시 익명으로 로그인해 "uid는 절대 null이 아니다" 불변식을 지킨다(기기는
+  /// 빈 상태로 새로 시작).
+  ///
+  /// 완료하지 못하면 false(예: 구글 연결 계정 삭제에 필요한 재로그인을
+  /// 사용자가 취소). 이 경우 인증 쪽은 건드리지 않는다([wipeData]가 이미 한
+  /// 작업은 별개).
+  Future<bool> deleteAccount(Future<void> Function() wipeData) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return false;
+
+    await wipeData();
+
+    try {
+      await user.delete();
+    } on FirebaseAuthException catch (e) {
+      // 구글 연결 계정은 삭제 전에 최근 재인증을 요구한다.
+      if (e.code != 'requires-recent-login') return false;
+      final reauthed = await _reauthenticateWithGoogle(user);
+      if (!reauthed) return false;
+      await user.delete();
+    }
+
+    await GoogleSignIn().signOut();
+    await FirebaseAuth.instance.signInAnonymously();
+    return true;
+  }
+
+  Future<bool> _reauthenticateWithGoogle(User user) async {
+    final gUser = await GoogleSignIn().signIn();
+    if (gUser == null) return false; // 사용자가 취소
+    final gAuth = await gUser.authentication;
+    final credential = GoogleAuthProvider.credential(
+      accessToken: gAuth.accessToken,
+      idToken: gAuth.idToken,
+    );
+    await user.reauthenticateWithCredential(credential);
+    return true;
   }
 
   /// 로그아웃 후 즉시 익명으로 재로그인 → uid가 절대 null이 되지 않게 한다

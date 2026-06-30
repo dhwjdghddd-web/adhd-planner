@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+import '../../core/error_reporting.dart';
 import '../../core/error_view.dart';
 import '../../core/screen_mode.dart';
 import '../../data/models/app_settings.dart';
@@ -327,6 +328,65 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     showAppSnackBar(context, const Text('로그아웃했어요.'));
   }
 
+  // 계정과 모든 데이터를 영구 삭제. 두 단계 확인(다이얼로그 + '삭제' 버튼)으로
+  // 실수를 막고, 로그아웃과 같은 이유로 삭제 전에 이 기기의 알람을 먼저 해제한다.
+  Future<void> _deleteAccount() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('계정·데이터 삭제'),
+        content: const Text(
+          '구간·메모·기록·설정 등 모든 데이터가 영구히 삭제되고 계정도 지워져요.\n'
+          '되돌릴 수 없어요. 정말 삭제할까요?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('영구 삭제'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    // 삭제 전에 이 기기의 네이티브 알람을 먼저 해제(로그아웃과 동일한 이유).
+    final knownIds = (ref.read(segmentsProvider).value ?? const [])
+        .expand((s) => s.notificationIds)
+        .toList();
+    try {
+      await ref
+          .read(notificationServiceProvider)
+          .cancelEverything(knownIds: knownIds);
+    } catch (_) {
+      // 플랫폼 채널 없음(예: flutter test) — 해제할 예약이 없음.
+    }
+    pendingAlarmAlert.value = null;
+
+    final repo = ref.read(plannerRepositoryProvider);
+    if (repo == null) return;
+    bool ok;
+    try {
+      ok = await ref
+          .read(authServiceProvider)
+          .deleteAccount(repo.deleteAllData);
+    } catch (e, st) {
+      reportError(e, st, where: '계정 삭제');
+      ok = false;
+    }
+    if (!mounted) return;
+    showAppSnackBar(
+      context,
+      Text(ok ? '계정과 데이터를 삭제했어요.' : '삭제를 완료하지 못했어요. 잠시 후 다시 시도해 주세요.'),
+    );
+  }
+
   Widget _buildBody(AppSettings settings) {
     final user = ref.watch(firebaseUserProvider).valueOrNull;
     final isSignedIn = user != null && !user.isAnonymous;
@@ -553,6 +613,18 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                     child: const Text('Google 연결'),
                   ),
           ),
+        ),
+        ListTile(
+          leading: Icon(
+            Icons.delete_forever_outlined,
+            color: Theme.of(context).colorScheme.error,
+          ),
+          title: Text(
+            '계정·데이터 삭제',
+            style: TextStyle(color: Theme.of(context).colorScheme.error),
+          ),
+          subtitle: const Text('모든 데이터를 영구 삭제하고 계정을 지웁니다. 되돌릴 수 없어요.'),
+          onTap: _deleteAccount,
         ),
       ],
     );

@@ -4,13 +4,31 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:adhd_planner/data/models/app_settings.dart';
+import 'package:adhd_planner/data/models/segment.dart';
 import 'package:adhd_planner/data/providers.dart';
 import 'package:adhd_planner/features/help/help_page.dart';
 import 'package:adhd_planner/features/settings/settings_page.dart';
+import 'package:adhd_planner/services/auth_service.dart';
 import 'package:adhd_planner/services/notification_service.dart';
 
 import '../../fakes/fake_notification_service.dart';
 import '../../fakes/fake_planner_repository.dart';
+
+/// Records the delete call (and actually runs [wipeData] so the repo empties),
+/// standing in for the real AuthService -- which would hit FirebaseAuth.instance
+/// and crash with no Firebase app under flutter test.
+class _FakeAuthService extends AuthService {
+  _FakeAuthService({this.result = true});
+  final bool result;
+  bool deleteCalled = false;
+
+  @override
+  Future<bool> deleteAccount(Future<void> Function() wipeData) async {
+    deleteCalled = true;
+    await wipeData();
+    return result;
+  }
+}
 
 void main() {
   Widget wrap(FakePlannerRepository repo) {
@@ -349,4 +367,72 @@ void main() {
       expect(find.text('Google 연결'), findsOneWidget);
     },
   );
+
+  Widget wrapWithAuth(
+    FakePlannerRepository repo,
+    AuthService auth, {
+    FakeNotificationService? notifications,
+  }) {
+    return ProviderScope(
+      overrides: [
+        plannerRepositoryProvider.overrideWithValue(repo),
+        authServiceProvider.overrideWithValue(auth),
+        if (notifications != null)
+          notificationServiceProvider.overrideWithValue(notifications),
+      ],
+      child: const MaterialApp(home: SettingsPage()),
+    );
+  }
+
+  testWidgets('계정·데이터 삭제: 확인 후 데이터 wipe + 계정 삭제 호출 + 성공 안내', (tester) async {
+    final repo = FakePlannerRepository();
+    await repo.upsertSegment(
+      const Segment(
+        id: 's1',
+        name: 'block',
+        colorValue: 0xFF000000,
+        iconKey: 'wb_sunny',
+        startMinute: 0,
+        endMinute: 60,
+        order: 0,
+      ),
+    );
+    final auth = _FakeAuthService();
+
+    await growSurface(tester);
+    await tester.pumpWidget(
+      wrapWithAuth(repo, auth, notifications: FakeNotificationService()),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('계정·데이터 삭제'));
+    await tester.pumpAndSettle();
+
+    // Two-step: a destructive confirm dialog must appear first.
+    expect(find.text('영구 삭제'), findsOneWidget);
+    await tester.tap(find.text('영구 삭제'));
+    await tester.pumpAndSettle();
+
+    expect(auth.deleteCalled, true);
+    expect(await repo.watchSegments().first, isEmpty); // wipeData ran
+    expect(find.text('계정과 데이터를 삭제했어요.'), findsOneWidget);
+  });
+
+  testWidgets('계정·데이터 삭제: 취소하면 아무것도 지우지 않음', (tester) async {
+    final repo = FakePlannerRepository();
+    final auth = _FakeAuthService();
+
+    await growSurface(tester);
+    await tester.pumpWidget(
+      wrapWithAuth(repo, auth, notifications: FakeNotificationService()),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('계정·데이터 삭제'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('취소'));
+    await tester.pumpAndSettle();
+
+    expect(auth.deleteCalled, false);
+  });
 }

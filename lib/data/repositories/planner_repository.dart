@@ -55,4 +55,8 @@ abstract class PlannerRepository {
   // Settings
   Stream<AppSettings> watchSettings();
   Future<void> saveSettings(AppSettings s);
+
+  // Wipes every document this user owns (all subcollections + the user doc
+  // itself). Used by account deletion -- see AuthService.deleteAccount.
+  Future<void> deleteAllData();
 }
