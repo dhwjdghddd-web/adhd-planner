@@ -11,6 +11,7 @@ import '../../core/minute_ticker.dart';
 import '../../core/screen_mode.dart';
 import '../../core/time_geometry.dart';
 import '../../data/block_status.dart';
+import '../../data/micro_step_layout.dart';
 import '../../data/models/micro_step_progress.dart';
 import '../../data/models/segment.dart';
 import '../../data/providers.dart';
@@ -22,6 +23,7 @@ import '../segments/segment_icons.dart';
 import 'block_remaining.dart';
 import 'completions_controller.dart';
 import 'focus_timer_section.dart';
+import 'micro_step_move_controller.dart';
 import 'micro_step_progress_controller.dart';
 import 'rest_quotes.dart';
 import 'sleep_wind_down.dart';
@@ -57,11 +59,16 @@ class FocusPage extends ConsumerStatefulWidget {
 class _FocusPageState extends ConsumerState<FocusPage> {
   late int _currentMinute;
   late final MinuteTicker _ticker;
-  final Set<int> _checked = {};
-  // "$segmentId|$dateKey" the above _checked currently reflects, so persisted
-  // progress is only loaded into it once per block/day rather than stomping
-  // local taps on every rebuild.
-  String? _hydratedFor;
+  // Checked item indices per HOME block id. A "오늘만 여기서" item shown under
+  // another block still has its checks tracked under its home here, keyed by
+  // its home index -- so progress/streak counting (home-indexed) is unaffected
+  // and a new day reverts cleanly. Hydrated lazily per home (see below).
+  final Map<String, Set<int>> _checkedByHome = {};
+  // The day _checkedByHome reflects, and which home blocks have been loaded
+  // from storage, so persisted progress is only read once per home/day rather
+  // than stomping local taps on every rebuild.
+  String? _hydratedDay;
+  final Set<String> _hydratedHomes = {};
   late final ConfettiController _confettiController;
   bool _celebrating = false;
   // Picked once per screen entry so the routine-less rest screen shows a fresh
@@ -120,6 +127,10 @@ class _FocusPageState extends ConsumerState<FocusPage> {
   @override
   Widget build(BuildContext context) {
     final segmentsAsync = ref.watch(segmentsProvider);
+    // Watched so any "오늘만 여기서" move (which changes what's shown under the
+    // current block, and whether 완료 is offered) rebuilds the whole screen,
+    // FABs included; the helpers below read it via ref.read.
+    ref.watch(microStepMovesProvider);
     final theme = Theme.of(context);
     final reduceMotion =
         ref.watch(settingsProvider).value?.reduceMotion ?? false;
@@ -251,7 +262,7 @@ class _FocusPageState extends ConsumerState<FocusPage> {
   Widget _buildCompactFabs(BlockStatus? status) {
     final segment = status?.segment;
     final showComplete =
-        segment != null && status!.isCurrent && segment.microSteps.isNotEmpty;
+        segment != null && status!.isCurrent && _hasDisplayedSteps(segment);
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -269,8 +280,7 @@ class _FocusPageState extends ConsumerState<FocusPage> {
             label: '모두 완료',
             child: FloatingActionButton.small(
               heroTag: 'focus-complete',
-              onPressed: () =>
-                  _complete(segment.id, microSteps: segment.microSteps),
+              onPressed: () => _completeBlock(segment),
               child: const Icon(Icons.done_all),
             ),
           ),
@@ -289,7 +299,7 @@ class _FocusPageState extends ConsumerState<FocusPage> {
     // daily_achievement.dart), so there's no real action here to offer at all,
     // pinned/review mode included.
     final showComplete =
-        segment != null && status!.isCurrent && segment.microSteps.isNotEmpty;
+        segment != null && status!.isCurrent && _hasDisplayedSteps(segment);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -307,8 +317,7 @@ class _FocusPageState extends ConsumerState<FocusPage> {
             const SizedBox(width: 12),
             Expanded(
               child: FilledButton(
-                onPressed: () =>
-                    _complete(segment.id, microSteps: segment.microSteps),
+                onPressed: () => _completeBlock(segment),
                 child: const Text('모두 완료'),
               ),
             ),
@@ -318,26 +327,47 @@ class _FocusPageState extends ConsumerState<FocusPage> {
     );
   }
 
-  /// Loads today's persisted checks into [_checked] the first time this build
-  /// sees this particular block+day — a new day (or a different block) has no
-  /// record yet, which is exactly how the reset-next-day behaviour falls out.
-  void _hydrateChecked(Segment segment, List<MicroStepProgress> allProgress) {
+  /// Loads today's persisted checks for each [homeIds] block into
+  /// [_checkedByHome] the first time this build needs it — a new day (or a home
+  /// not yet seen) has no record yet, which is exactly how the reset-next-day
+  /// behaviour falls out. Hydrating per home (not just the current block) is
+  /// what lets a "오늘만 여기서" item shown here carry its home's checked state.
+  void _ensureHydrated(
+    Iterable<String> homeIds,
+    List<MicroStepProgress> allProgress,
+  ) {
     final dateKey = dayKeyFor();
-    final key = '${segment.id}|$dateKey';
-    if (_hydratedFor == key) return;
-    _hydratedFor = key;
-
-    MicroStepProgress? existing;
-    for (final p in allProgress) {
-      if (p.segmentId == segment.id && p.dateKey == dateKey) {
-        existing = p;
-        break;
-      }
+    if (_hydratedDay != dateKey) {
+      _hydratedDay = dateKey;
+      _checkedByHome.clear();
+      _hydratedHomes.clear();
     }
-    _checked
-      ..clear()
-      ..addAll(existing?.checkedIndices ?? const []);
+    for (final homeId in homeIds) {
+      if (!_hydratedHomes.add(homeId)) continue;
+      final checked = <int>{};
+      for (final p in allProgress) {
+        if (p.segmentId == homeId && p.dateKey == dateKey) {
+          checked.addAll(p.checkedIndices);
+          break;
+        }
+      }
+      _checkedByHome[homeId] = checked;
+    }
   }
+
+  bool _isChecked(DisplayedStep ds) =>
+      _checkedByHome[ds.homeSegmentId]?.contains(ds.index) ?? false;
+
+  /// The checklist items shown under [block] today (own items minus those moved
+  /// away, plus items moved in). Uses ref.read so it's safe from callbacks;
+  /// build() watches microStepMovesProvider for reactivity.
+  List<DisplayedStep> _displayedFor(Segment block) {
+    final segments = ref.read(segmentsProvider).value ?? const [];
+    final moves = ref.read(microStepMovesProvider).value ?? const [];
+    return displayedStepsFor(block: block, allSegments: segments, moves: moves);
+  }
+
+  bool _hasDisplayedSteps(Segment block) => _displayedFor(block).isNotEmpty;
 
   Widget _buildContent(BuildContext context, BlockStatus status) {
     final theme = Theme.of(context);
@@ -359,9 +389,6 @@ class _FocusPageState extends ConsumerState<FocusPage> {
         message: '오늘 일정이 없어요\n지금은 편히 쉬셔도 좋습니다.',
       );
     }
-
-    final allProgress = ref.watch(microStepProgressProvider).value ?? const [];
-    _hydrateChecked(segment, allProgress);
 
     if (!status.isCurrent) {
       // Not inside any block right now -- show the next one and when it starts.
@@ -395,7 +422,7 @@ class _FocusPageState extends ConsumerState<FocusPage> {
     // identity moves into the centre of the concentric rings — one calm
     // orbital composition echoing the dial's centre hub — with the streak and
     // a soft "쉬어도 좋아요" sat beneath it as a single cluster.
-    if (segment.microSteps.isEmpty) {
+    if (!_hasDisplayedSteps(segment)) {
       return _buildRestComposition(context, segment, reduceMotion);
     }
 
@@ -527,12 +554,9 @@ class _FocusPageState extends ConsumerState<FocusPage> {
       );
     }
 
-    final allProgress = ref.watch(microStepProgressProvider).value ?? const [];
-    _hydrateChecked(segment, allProgress);
-
     final progress = _remainingProgress(segment);
     final remaining = _remainingMessage(segment);
-    final hasSteps = segment.microSteps.isNotEmpty;
+    final hasSteps = _hasDisplayedSteps(segment);
 
     // Fixed header: name + flat remaining-time bar. Only the checklist below
     // scrolls (when there is one).
@@ -694,8 +718,11 @@ class _FocusPageState extends ConsumerState<FocusPage> {
     );
   }
 
-  /// The block's "루틴" items as a checklist. Persisted immediately (per
-  /// block+day) so checks survive leaving and reopening, resetting next day.
+  /// The items shown under [segment] today as a checklist -- its own "루틴"
+  /// items minus any moved away, plus any moved in ("오늘만 여기서"). Persisted
+  /// immediately (per home block+day) so checks survive leaving and reopening,
+  /// resetting next day. Long-pressing a row offers to move it to another block
+  /// for today.
   ///
   /// [autoCompleteWhenAllChecked]: checking off the last remaining item finishes
   /// the block the same way pressing 모두 완료 would.
@@ -703,56 +730,146 @@ class _FocusPageState extends ConsumerState<FocusPage> {
     Segment segment, {
     bool autoCompleteWhenAllChecked = false,
   }) {
-    if (segment.microSteps.isEmpty) return const [];
+    final displayed = _displayedFor(segment);
+    if (displayed.isEmpty) return const [];
+    final allProgress = ref.watch(microStepProgressProvider).value ?? const [];
+    _ensureHydrated(displayed.map((d) => d.homeSegmentId), allProgress);
+    final mutedColor = Theme.of(context).colorScheme.outline;
     return [
       const SizedBox(height: 16),
-      ...List.generate(segment.microSteps.length, (i) {
-        final checked = _checked.contains(i);
-        return CheckboxListTile(
-          value: checked,
-          title: Text(segment.microSteps[i]),
-          onChanged: (_) =>
-              _toggleMicroStep(segment, i, autoCompleteWhenAllChecked),
-        );
-      }),
+      for (final ds in displayed)
+        GestureDetector(
+          onLongPress: () => _showMoveSheet(ds, currentBlockId: segment.id),
+          child: CheckboxListTile(
+            value: _isChecked(ds),
+            title: Text(ds.text),
+            // Mark items moved in from another block today, so it's clear they
+            // aren't this block's own and can be sent back.
+            secondary: ds.movedHere
+                ? Tooltip(
+                    message: '오늘만 여기로 옮긴 항목 (길게 눌러 이동/되돌리기)',
+                    child: Icon(Icons.swap_horiz, size: 20, color: mutedColor),
+                  )
+                : null,
+            onChanged: (_) =>
+                _toggleStep(segment, ds, autoCompleteWhenAllChecked),
+          ),
+        ),
     ];
   }
 
-  void _toggleMicroStep(
-    Segment segment,
-    int index,
+  void _toggleStep(
+    Segment block,
+    DisplayedStep ds,
     bool autoCompleteWhenAllChecked,
   ) {
-    final wasChecked = _checked.contains(index);
+    final set = _checkedByHome.putIfAbsent(ds.homeSegmentId, () => <int>{});
+    final wasChecked = set.contains(ds.index);
     setState(() {
       if (wasChecked) {
-        _checked.remove(index);
+        set.remove(ds.index);
       } else {
-        _checked.add(index);
+        set.add(ds.index);
       }
     });
     unawaited(
-      ref.read(microStepProgressControllerProvider).save(segment.id, _checked),
+      ref.read(microStepProgressControllerProvider).save(ds.homeSegmentId, set),
     );
 
-    final justCompletedAll =
-        !wasChecked && _checked.length == segment.microSteps.length;
-    if (autoCompleteWhenAllChecked && justCompletedAll) {
-      _complete(segment.id);
+    if (autoCompleteWhenAllChecked && !wasChecked) {
+      final displayed = _displayedFor(block);
+      if (displayed.isNotEmpty && displayed.every(_isChecked)) {
+        _completeBlock(block);
+      }
     }
   }
 
-  Future<void> _complete(String segmentId, {List<String>? microSteps}) async {
-    // 완료 finishes every item too — there's no real "done but some items
-    // unchecked" state once the whole block is marked done.
-    if (microSteps != null && microSteps.isNotEmpty) {
+  /// Long-press action: pick another block to show [ds] under for today (or
+  /// pick its home block to send it back). Mirrors the codebase's sheet-style
+  /// pickers.
+  void _showMoveSheet(DisplayedStep ds, {required String currentBlockId}) {
+    final segments = ref.read(segmentsProvider).value ?? const [];
+    final targets = segments.where((s) => s.id != currentBlockId).toList()
+      ..sort((a, b) => a.startMinute.compareTo(b.startMinute));
+    if (targets.isEmpty) return;
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
+              child: Text(
+                '오늘만 여기서',
+                style: Theme.of(sheetContext).textTheme.titleMedium,
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+              child: Text(
+                '"${ds.text}"\n오늘 하루만 다른 구간에서 할게요. 내일이면 원래 자리로 돌아와요.',
+                style: Theme.of(sheetContext).textTheme.bodySmall,
+              ),
+            ),
+            Flexible(
+              child: ListView(
+                shrinkWrap: true,
+                children: [
+                  for (final t in targets)
+                    ListTile(
+                      leading: Icon(iconForKey(t.iconKey)),
+                      title: Text(t.name),
+                      // The home block, when this item is currently moved away,
+                      // reads as "되돌리기".
+                      trailing: (ds.movedHere && t.id == ds.homeSegmentId)
+                          ? const Text('되돌리기')
+                          : null,
+                      onTap: () {
+                        Navigator.pop(sheetContext);
+                        unawaited(
+                          ref
+                              .read(microStepMoveControllerProvider)
+                              .moveToday(ds.homeSegmentId, ds.index, t.id),
+                        );
+                      },
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _completeBlock(Segment block) async {
+    // 완료 finishes every item shown here too -- there's no real "done but some
+    // items unchecked" state once the whole block is marked done. Each item is
+    // saved under its own home block (a moved-in item stays the home's).
+    final displayed = _displayedFor(block);
+    if (displayed.isNotEmpty) {
+      final byHome = <String, Set<int>>{};
+      for (final ds in displayed) {
+        byHome.putIfAbsent(ds.homeSegmentId, () => <int>{}).add(ds.index);
+      }
       setState(() {
-        _checked.addAll(List.generate(microSteps.length, (i) => i));
+        byHome.forEach((home, indices) {
+          _checkedByHome.putIfAbsent(home, () => <int>{}).addAll(indices);
+        });
       });
-      unawaited(
-        ref.read(microStepProgressControllerProvider).save(segmentId, _checked),
-      );
+      for (final home in byHome.keys) {
+        unawaited(
+          ref
+              .read(microStepProgressControllerProvider)
+              .save(home, _checkedByHome[home]!),
+        );
+      }
     }
+    final segmentId = block.id;
 
     // Not awaited: Firestore's write Future only resolves once the backend
     // acknowledges it, which never happens while offline — the celebration

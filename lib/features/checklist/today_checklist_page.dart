@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constants.dart';
 import '../../core/error_view.dart';
 import '../../core/time_geometry.dart';
+import '../../data/micro_step_layout.dart';
 import '../../data/models/completion.dart';
 import '../../data/models/micro_step_progress.dart';
 import '../../data/models/segment.dart';
@@ -60,34 +61,54 @@ class _Body extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final dateKey = dayKeyFor();
+    final moves = ref.watch(microStepMovesProvider).value ?? const [];
     final completedIds = completedBlockIdsOn(completions);
     final checkedBySegmentId = {
       for (final p in microStepProgress)
         if (p.dateKey == dateKey) p.segmentId: p.checkedIndices.toSet(),
     };
 
-    final displayed = [...segments]
+    final sorted = [...segments]
       ..sort((a, b) => a.startMinute.compareTo(b.startMinute));
 
-    if (displayed.isEmpty) {
+    if (sorted.isEmpty) {
       return const Center(child: Text('오늘 일정이 없어요'));
     }
 
+    bool isItemChecked(DisplayedStep ds) =>
+        checkedBySegmentId[ds.homeSegmentId]?.contains(ds.index) ?? false;
+
     return ListView.builder(
       padding: const EdgeInsets.symmetric(vertical: 8),
-      itemCount: displayed.length,
+      itemCount: sorted.length,
       itemBuilder: (context, index) {
-        final segment = displayed[index];
+        final segment = sorted[index];
+        // Same "오늘만 여기서" composition Focus uses, so a moved item shows
+        // under its today-block here too (its check state already syncs, since
+        // it's stored under the home block).
+        final displayed = displayedStepsFor(
+          block: segment,
+          allSegments: segments,
+          moves: moves,
+        );
         return _ChecklistTile(
           segment: segment,
           isCompleted: completedIds.contains(segment.id),
-          checkedItems: checkedBySegmentId[segment.id] ?? const {},
-          onChanged: (checked) => _toggleBlock(ref, segment, checked),
-          onItemChanged: (i, checked) => _toggleItem(
+          displayedSteps: displayed,
+          isItemChecked: isItemChecked,
+          onChanged: (checked) => _toggleBlock(
             ref,
             segment,
-            checkedBySegmentId[segment.id] ?? const {},
-            i,
+            displayed,
+            checkedBySegmentId,
+            checked,
+          ),
+          onItemChanged: (ds, checked) => _toggleItem(
+            ref,
+            segment,
+            displayed,
+            checkedBySegmentId,
+            ds,
             checked,
           ),
         );
@@ -95,32 +116,35 @@ class _Body extends ConsumerWidget {
     );
   }
 
-  void _toggleBlock(WidgetRef ref, Segment segment, bool checked) {
+  // Each displayed item is saved under its OWN home block (a moved-in item
+  // stays the home's), so progress/streak counting is unaffected by the move.
+  void _toggleBlock(
+    WidgetRef ref,
+    Segment segment,
+    List<DisplayedStep> displayed,
+    Map<String, Set<int>> checkedBySegmentId,
+    bool checked,
+  ) {
     final controller = ref.read(completionsControllerProvider);
-    if (checked) {
-      // 완료 finishes every item too -- mirrors Focus's 완료 button, there's no
-      // real "done but some items unchecked" state.
-      if (segment.microSteps.isNotEmpty) {
-        unawaited(
-          ref
-              .read(microStepProgressControllerProvider)
-              .save(
-                segment.id,
-                List.generate(segment.microSteps.length, (i) => i),
-              ),
-        );
+    final progressCtrl = ref.read(microStepProgressControllerProvider);
+
+    final byHome = <String, Set<int>>{};
+    for (final ds in displayed) {
+      byHome.putIfAbsent(ds.homeSegmentId, () => <int>{}).add(ds.index);
+    }
+    for (final entry in byHome.entries) {
+      final next = Set<int>.from(checkedBySegmentId[entry.key] ?? const {});
+      if (checked) {
+        next.addAll(entry.value);
+      } else {
+        next.removeAll(entry.value);
       }
+      unawaited(progressCtrl.save(entry.key, next));
+    }
+
+    if (checked) {
       unawaited(controller.complete(segment.id));
     } else {
-      // Un-checking the block is the exact mirror of checking it: checking
-      // filled every item, so un-checking clears them all again.
-      if (segment.microSteps.isNotEmpty) {
-        unawaited(
-          ref
-              .read(microStepProgressControllerProvider)
-              .save(segment.id, const {}),
-        );
-      }
       unawaited(controller.uncomplete(segment.id));
     }
   }
@@ -128,22 +152,34 @@ class _Body extends ConsumerWidget {
   void _toggleItem(
     WidgetRef ref,
     Segment segment,
-    Set<int> currentChecked,
-    int index,
+    List<DisplayedStep> displayed,
+    Map<String, Set<int>> checkedBySegmentId,
+    DisplayedStep ds,
     bool checked,
   ) {
-    final current = Set<int>.from(currentChecked);
+    final current = Set<int>.from(
+      checkedBySegmentId[ds.homeSegmentId] ?? const {},
+    );
     if (checked) {
-      current.add(index);
+      current.add(ds.index);
     } else {
-      current.remove(index);
+      current.remove(ds.index);
     }
     unawaited(
-      ref.read(microStepProgressControllerProvider).save(segment.id, current),
+      ref
+          .read(microStepProgressControllerProvider)
+          .save(ds.homeSegmentId, current),
     );
 
     final completionsController = ref.read(completionsControllerProvider);
-    if (checked && current.length == segment.microSteps.length) {
+    // "All of this block's displayed items checked?" using the post-toggle state.
+    final allChecked = displayed.every((d) {
+      if (d.homeSegmentId == ds.homeSegmentId && d.index == ds.index) {
+        return checked;
+      }
+      return checkedBySegmentId[d.homeSegmentId]?.contains(d.index) ?? false;
+    });
+    if (checked && displayed.isNotEmpty && allChecked) {
       // Checking the last remaining item finishes the block, same as Focus.
       unawaited(completionsController.complete(segment.id));
     } else if (!checked) {
@@ -158,16 +194,18 @@ class _ChecklistTile extends StatelessWidget {
   const _ChecklistTile({
     required this.segment,
     required this.isCompleted,
-    required this.checkedItems,
+    required this.displayedSteps,
+    required this.isItemChecked,
     required this.onChanged,
     required this.onItemChanged,
   });
 
   final Segment segment;
   final bool isCompleted;
-  final Set<int> checkedItems;
+  final List<DisplayedStep> displayedSteps;
+  final bool Function(DisplayedStep) isItemChecked;
   final ValueChanged<bool> onChanged;
-  final void Function(int index, bool checked) onItemChanged;
+  final void Function(DisplayedStep step, bool checked) onItemChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -208,17 +246,27 @@ class _ChecklistTile extends StatelessWidget {
             ),
           ),
         ),
-        for (var i = 0; i < segment.microSteps.length; i++)
+        for (final ds in displayedSteps)
           Padding(
             padding: const EdgeInsets.only(left: 40),
             child: CheckboxListTile(
               dense: true,
               visualDensity: VisualDensity.compact,
               controlAffinity: ListTileControlAffinity.leading,
-              value: checkedItems.contains(i),
-              onChanged: (checked) => onItemChanged(i, checked ?? false),
+              value: isItemChecked(ds),
+              onChanged: (checked) => onItemChanged(ds, checked ?? false),
+              secondary: ds.movedHere
+                  ? Tooltip(
+                      message: '오늘만 여기로 옮긴 항목',
+                      child: Icon(
+                        Icons.swap_horiz,
+                        size: 18,
+                        color: mutedColor,
+                      ),
+                    )
+                  : null,
               title: Text(
-                segment.microSteps[i],
+                ds.text,
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
             ),

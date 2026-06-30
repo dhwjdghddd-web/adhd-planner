@@ -7,6 +7,7 @@ import '../../models/app_settings.dart';
 import '../../models/checkin.dart';
 import '../../models/completion.dart';
 import '../../models/memo.dart';
+import '../../models/micro_step_move.dart';
 import '../../models/micro_step_progress.dart';
 import '../../models/mit.dart';
 import '../../models/segment.dart';
@@ -142,6 +143,24 @@ class FirestorePlannerRepository implements PlannerRepository {
   Future<void> removeCheckin(String dateKey) =>
       _collection('checkins').doc(dateKey).delete();
 
+  // Micro-step moves ("오늘만 여기서") -- per item, per day; same recent-window
+  // reasoning as the other date-keyed collections.
+  @override
+  Stream<List<MicroStepMove>> watchMicroStepMoves() =>
+      _watchSince('microStepMoves', MicroStepMove.fromMap, _historyWindowDays);
+
+  @override
+  Future<void> saveMicroStepMove(MicroStepMove m) =>
+      _collection('microStepMoves').doc(m.id).set(m.toMap());
+
+  @override
+  Future<void> removeMicroStepMove(String homeSegmentId, int stepIndex) {
+    final dateKey = DateFormat('yyyy-MM-dd').format(DateTime.now());
+    return _collection(
+      'microStepMoves',
+    ).doc(MicroStepMove.keyFor(dateKey, homeSegmentId, stepIndex)).delete();
+  }
+
   // Settings
   @override
   Stream<AppSettings> watchSettings() => _userDoc.snapshots().map((snap) {
@@ -219,4 +238,5 @@ const _ownedCollections = [
   'alarmSkips',
   'mits',
   'checkins',
+  'microStepMoves',
 ];

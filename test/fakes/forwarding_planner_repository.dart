@@ -4,6 +4,7 @@ import 'package:adhd_planner/data/models/app_settings.dart';
 import 'package:adhd_planner/data/models/checkin.dart';
 import 'package:adhd_planner/data/models/completion.dart';
 import 'package:adhd_planner/data/models/memo.dart';
+import 'package:adhd_planner/data/models/micro_step_move.dart';
 import 'package:adhd_planner/data/models/micro_step_progress.dart';
 import 'package:adhd_planner/data/models/mit.dart';
 import 'package:adhd_planner/data/models/segment.dart';
@@ -76,6 +77,15 @@ abstract class ForwardingPlannerRepository implements PlannerRepository {
   Future<void> saveCheckin(Checkin c) => inner.saveCheckin(c);
   @override
   Future<void> removeCheckin(String dateKey) => inner.removeCheckin(dateKey);
+
+  @override
+  Stream<List<MicroStepMove>> watchMicroStepMoves() =>
+      inner.watchMicroStepMoves();
+  @override
+  Future<void> saveMicroStepMove(MicroStepMove m) => inner.saveMicroStepMove(m);
+  @override
+  Future<void> removeMicroStepMove(String homeSegmentId, int stepIndex) =>
+      inner.removeMicroStepMove(homeSegmentId, stepIndex);
 
   @override
   Stream<AppSettings> watchSettings() => inner.watchSettings();

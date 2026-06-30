@@ -4,6 +4,7 @@ import '../models/app_settings.dart';
 import '../models/checkin.dart';
 import '../models/completion.dart';
 import '../models/memo.dart';
+import '../models/micro_step_move.dart';
 import '../models/micro_step_progress.dart';
 import '../models/mit.dart';
 import '../models/segment.dart';
@@ -51,6 +52,12 @@ abstract class PlannerRepository {
   Stream<List<Checkin>> watchCheckins();
   Future<void> saveCheckin(Checkin c);
   Future<void> removeCheckin(String dateKey);
+
+  // Micro-step moves ("오늘만 여기서" -- per block item, per day: show a
+  // checklist item under a different block just for today)
+  Stream<List<MicroStepMove>> watchMicroStepMoves();
+  Future<void> saveMicroStepMove(MicroStepMove m);
+  Future<void> removeMicroStepMove(String homeSegmentId, int stepIndex);
 
   // Settings
   Stream<AppSettings> watchSettings();

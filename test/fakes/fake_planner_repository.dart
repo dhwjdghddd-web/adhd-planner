@@ -6,6 +6,7 @@ import 'package:adhd_planner/data/models/app_settings.dart';
 import 'package:adhd_planner/data/models/checkin.dart';
 import 'package:adhd_planner/data/models/completion.dart';
 import 'package:adhd_planner/data/models/memo.dart';
+import 'package:adhd_planner/data/models/micro_step_move.dart';
 import 'package:adhd_planner/data/models/micro_step_progress.dart';
 import 'package:adhd_planner/data/models/mit.dart';
 import 'package:adhd_planner/data/models/segment.dart';
@@ -23,6 +24,7 @@ class FakePlannerRepository implements PlannerRepository {
   final Map<String, AlarmSkip> _alarmSkips = {};
   final Map<String, Mit> _mits = {};
   final Map<String, Checkin> _checkins = {};
+  final Map<String, MicroStepMove> _moves = {};
   AppSettings _settings = const AppSettings.defaults();
 
   final _segmentsStream = _ReplayStream<List<Segment>>();
@@ -33,6 +35,7 @@ class FakePlannerRepository implements PlannerRepository {
   final _alarmSkipsStream = _ReplayStream<List<AlarmSkip>>();
   final _mitsStream = _ReplayStream<List<Mit>>();
   final _checkinsStream = _ReplayStream<List<Checkin>>();
+  final _movesStream = _ReplayStream<List<MicroStepMove>>();
   final _settingsStream = _ReplayStream<AppSettings>();
 
   FakePlannerRepository() {
@@ -44,6 +47,7 @@ class FakePlannerRepository implements PlannerRepository {
     _alarmSkipsStream.add(const []);
     _mitsStream.add(const []);
     _checkinsStream.add(const []);
+    _movesStream.add(const []);
     _settingsStream.add(_settings);
   }
 
@@ -166,6 +170,23 @@ class FakePlannerRepository implements PlannerRepository {
   }
 
   @override
+  Stream<List<MicroStepMove>> watchMicroStepMoves() => _movesStream.stream;
+
+  @override
+  Future<void> saveMicroStepMove(MicroStepMove m) async {
+    _moves[m.id] = m;
+    _movesStream.add(_moves.values.toList());
+  }
+
+  @override
+  Future<void> removeMicroStepMove(String homeSegmentId, int stepIndex) async {
+    _moves.removeWhere(
+      (_, m) => m.homeSegmentId == homeSegmentId && m.stepIndex == stepIndex,
+    );
+    _movesStream.add(_moves.values.toList());
+  }
+
+  @override
   Future<void> deleteAllData() async {
     _segments.clear();
     _memos.clear();
@@ -175,6 +196,7 @@ class FakePlannerRepository implements PlannerRepository {
     _alarmSkips.clear();
     _mits.clear();
     _checkins.clear();
+    _moves.clear();
     _settings = const AppSettings.defaults();
     _segmentsStream.add(const []);
     _memosStream.add(const []);
@@ -184,6 +206,7 @@ class FakePlannerRepository implements PlannerRepository {
     _alarmSkipsStream.add(const []);
     _mitsStream.add(const []);
     _checkinsStream.add(const []);
+    _movesStream.add(const []);
     _settingsStream.add(_settings);
   }
 }

@@ -7,6 +7,7 @@ import 'models/app_settings.dart';
 import 'models/checkin.dart';
 import 'models/completion.dart';
 import 'models/memo.dart';
+import 'models/micro_step_move.dart';
 import 'models/micro_step_progress.dart';
 import 'models/mit.dart';
 import 'models/segment.dart';
@@ -108,6 +109,13 @@ final checkinsProvider = StreamProvider<List<Checkin>>(
   (ref) => _guardedStream(
     ref.watch(plannerRepositoryProvider),
     (r) => r.watchCheckins(),
+  ),
+);
+
+final microStepMovesProvider = StreamProvider<List<MicroStepMove>>(
+  (ref) => _guardedStream(
+    ref.watch(plannerRepositoryProvider),
+    (r) => r.watchMicroStepMoves(),
   ),
 );
 

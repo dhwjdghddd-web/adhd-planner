@@ -657,4 +657,36 @@ void main() {
     );
     expect(checkbox.value, false);
   });
+
+  testWidgets('오늘만 여기서: 항목을 길게 눌러 다른 구간으로 옮기면 현재 구간에서 사라지고 move가 저장된다', (
+    tester,
+  ) async {
+    final repo = FakePlannerRepository();
+    await repo.upsertSegment(
+      _currentBlock(id: 'am', name: '오전', microSteps: const ['약', '물']),
+    );
+    await repo.upsertSegment(
+      _futureBlock(id: 'pm', name: '오후', microSteps: const ['운동']),
+    );
+
+    await openFocusPage(tester, repo);
+    expect(find.text('약'), findsOneWidget);
+
+    await tester.longPress(find.text('약'));
+    await tester.pumpAndSettle();
+    expect(find.text('오늘만 여기서'), findsOneWidget);
+
+    await tester.tap(find.text('오후'));
+    await tester.pumpAndSettle();
+
+    // Left the current (오전) block; the other item stays.
+    expect(find.text('약'), findsNothing);
+    expect(find.text('물'), findsOneWidget);
+
+    final moves = await repo.watchMicroStepMoves().first;
+    expect(moves.length, 1);
+    expect(moves.single.homeSegmentId, 'am');
+    expect(moves.single.stepIndex, 0);
+    expect(moves.single.targetSegmentId, 'pm');
+  });
 }
