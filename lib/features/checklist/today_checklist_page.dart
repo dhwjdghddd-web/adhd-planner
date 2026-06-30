@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/constants.dart';
+import '../../core/error_view.dart';
 import '../../core/time_geometry.dart';
 import '../../data/models/completion.dart';
 import '../../data/models/micro_step_progress.dart';
@@ -27,7 +28,8 @@ class TodayChecklistPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final segmentsAsync = ref.watch(segmentsProvider);
     final completions = ref.watch(completionsProvider).value ?? const [];
-    final microStepProgress = ref.watch(microStepProgressProvider).value ?? const [];
+    final microStepProgress =
+        ref.watch(microStepProgressProvider).value ?? const [];
 
     return Scaffold(
       appBar: AppBar(title: const Text('오늘의 체크리스트')),
@@ -38,7 +40,7 @@ class TodayChecklistPage extends ConsumerWidget {
           microStepProgress: microStepProgress,
         ),
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, st) => Center(child: Text('오류: $e')),
+        error: errorView,
       ),
     );
   }
@@ -64,7 +66,8 @@ class _Body extends ConsumerWidget {
         if (p.dateKey == dateKey) p.segmentId: p.checkedIndices.toSet(),
     };
 
-    final displayed = [...segments]..sort((a, b) => a.startMinute.compareTo(b.startMinute));
+    final displayed = [...segments]
+      ..sort((a, b) => a.startMinute.compareTo(b.startMinute));
 
     if (displayed.isEmpty) {
       return const Center(child: Text('오늘 일정이 없어요'));
@@ -98,17 +101,25 @@ class _Body extends ConsumerWidget {
       // 완료 finishes every item too -- mirrors Focus's 완료 button, there's no
       // real "done but some items unchecked" state.
       if (segment.microSteps.isNotEmpty) {
-        unawaited(ref.read(microStepProgressControllerProvider).save(
-              segment.id,
-              List.generate(segment.microSteps.length, (i) => i),
-            ));
+        unawaited(
+          ref
+              .read(microStepProgressControllerProvider)
+              .save(
+                segment.id,
+                List.generate(segment.microSteps.length, (i) => i),
+              ),
+        );
       }
       unawaited(controller.complete(segment.id));
     } else {
       // Un-checking the block is the exact mirror of checking it: checking
       // filled every item, so un-checking clears them all again.
       if (segment.microSteps.isNotEmpty) {
-        unawaited(ref.read(microStepProgressControllerProvider).save(segment.id, const {}));
+        unawaited(
+          ref
+              .read(microStepProgressControllerProvider)
+              .save(segment.id, const {}),
+        );
       }
       unawaited(controller.uncomplete(segment.id));
     }
@@ -127,7 +138,9 @@ class _Body extends ConsumerWidget {
     } else {
       current.remove(index);
     }
-    unawaited(ref.read(microStepProgressControllerProvider).save(segment.id, current));
+    unawaited(
+      ref.read(microStepProgressControllerProvider).save(segment.id, current),
+    );
 
     final completionsController = ref.read(completionsControllerProvider);
     if (checked && current.length == segment.microSteps.length) {
@@ -165,21 +178,29 @@ class _ChecklistTile extends StatelessWidget {
     return Column(
       children: [
         Semantics(
-          label: '${segment.name} 구간, $subtitleText, ${isCompleted ? "완료됨" : "미완료"}',
+          label:
+              '${segment.name} 구간, $subtitleText, ${isCompleted ? "완료됨" : "미완료"}',
           child: CheckboxListTile(
             value: isCompleted,
             onChanged: (checked) => onChanged(checked ?? false),
             controlAffinity: ListTileControlAffinity.leading,
-            secondary: Builder(builder: (context) {
-              final avatarColor = segment.themeColor(context);
-              return CircleAvatar(
-                backgroundColor: avatarColor,
-                child: Icon(iconForKey(segment.iconKey), color: onSegmentColor(avatarColor)),
-              );
-            }),
+            secondary: Builder(
+              builder: (context) {
+                final avatarColor = segment.themeColor(context);
+                return CircleAvatar(
+                  backgroundColor: avatarColor,
+                  child: Icon(
+                    iconForKey(segment.iconKey),
+                    color: onSegmentColor(avatarColor),
+                  ),
+                );
+              },
+            ),
             title: Text(
               segment.name,
-              style: isCompleted ? const TextStyle(decoration: TextDecoration.lineThrough) : null,
+              style: isCompleted
+                  ? const TextStyle(decoration: TextDecoration.lineThrough)
+                  : null,
             ),
             subtitle: Text(
               subtitleText,

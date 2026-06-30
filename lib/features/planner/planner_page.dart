@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../core/constants.dart';
+import '../../core/error_view.dart';
 import '../../core/screen_mode.dart';
 import '../../core/theme.dart';
 import '../../core/time_geometry.dart';
@@ -289,7 +290,7 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
                         ),
                         loading: () =>
                             const Center(child: CircularProgressIndicator()),
-                        error: (e, st) => Center(child: Text('오류: $e')),
+                        error: errorView,
                       ),
                     ),
                     SizedBox(height: vGap),

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+import '../../core/error_view.dart';
 import '../../core/screen_mode.dart';
 import '../../data/models/app_settings.dart';
 import '../../data/providers.dart';
@@ -243,11 +244,11 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                   return _buildBody(s);
                 },
                 loading: () => const Center(child: CircularProgressIndicator()),
-                error: (e, st) => Center(child: Text('오류: $e')),
+                error: errorView,
               )
             // 캐시가 있으면 에러가 아닌 한 항상 본문을 표시
             : settingsAsync.hasError
-            ? Center(child: Text('오류: ${settingsAsync.error}'))
+            ? errorView(settingsAsync.error!, settingsAsync.stackTrace)
             : _buildBody(settings),
       ),
       floatingActionButton: isCompactLayout(context)

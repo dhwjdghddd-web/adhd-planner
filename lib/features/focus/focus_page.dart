@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/error_view.dart';
 import '../../core/screen_mode.dart';
 import '../../core/time_geometry.dart';
 import '../../data/block_status.dart';
@@ -178,7 +179,7 @@ class _FocusPageState extends ConsumerState<FocusPage> {
                               loading: () => const Center(
                                 child: CircularProgressIndicator(),
                               ),
-                              error: (e, st) => Center(child: Text('오류: $e')),
+                              error: errorView,
                             ),
                     ),
                     if (_celebrating)

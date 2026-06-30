@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/constants.dart';
+import '../../core/error_view.dart';
 import '../../core/screen_mode.dart';
 import '../../core/time_geometry.dart';
 import '../../data/models/segment.dart';
@@ -33,7 +34,7 @@ class SegmentEditorPage extends ConsumerWidget {
         child: segmentsAsync.when(
           data: (segments) => _SegmentList(segments: segments),
           loading: () => const Center(child: CircularProgressIndicator()),
-          error: (e, st) => Center(child: Text('오류: $e')),
+          error: errorView,
         ),
       ),
       floatingActionButton: isCompactLayout(context)

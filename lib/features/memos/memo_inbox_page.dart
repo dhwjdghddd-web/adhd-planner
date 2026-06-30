@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/error_view.dart';
 import '../../core/screen_mode.dart';
 import '../../data/models/memo.dart';
 import '../../data/providers.dart';
@@ -110,7 +111,7 @@ class _MemoInboxPageState extends ConsumerState<MemoInboxPage> {
                   showReviewed: _showReviewed,
                 ),
                 loading: () => const Center(child: CircularProgressIndicator()),
-                error: (e, st) => Center(child: Text('오류: $e')),
+                error: errorView,
               ),
             ),
           ),

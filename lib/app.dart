@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/debug_log.dart';
+import 'core/error_view.dart';
 import 'core/screen_mode.dart';
 import 'core/theme.dart';
 import 'data/models/achieved_day.dart';
@@ -146,7 +147,7 @@ class _RootRouterState extends ConsumerState<_RootRouter> {
           s.onboardingComplete ? const PlannerPage() : const OnboardingPage(),
       loading: () =>
           const Scaffold(body: Center(child: CircularProgressIndicator())),
-      error: (e, st) => Scaffold(body: Center(child: Text('오류: $e'))),
+      error: (e, st) => Scaffold(body: errorView(e, st)),
     );
   }
 }
