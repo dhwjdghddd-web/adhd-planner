@@ -4,6 +4,8 @@ import 'dart:ui' show PlatformDispatcher;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -42,6 +44,12 @@ void main() {
     );
     FirebaseFirestore.instance.settings = const Settings(
       persistenceEnabled: true,
+    );
+
+    // Only ship crash reports from release builds -- debug runs would otherwise
+    // spam the console with noise from intentional/test errors.
+    await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(
+      !kDebugMode,
     );
 
     // 항상 로그인 상태 보장: 아무 계정도 없으면 익명으로 시작.
