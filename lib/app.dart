@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/debug_log.dart';
 import 'core/error_view.dart';
+import 'core/minute_ticker.dart';
 import 'core/screen_mode.dart';
 import 'core/theme.dart';
 import 'data/models/achieved_day.dart';
@@ -325,13 +326,17 @@ class _ForegroundAlarmWatcher extends ConsumerStatefulWidget {
 
 class _ForegroundAlarmWatcherState
     extends ConsumerState<_ForegroundAlarmWatcher> {
-  Timer? _ticker;
+  late final MinuteTicker _ticker;
   int? _lastCheckedMinuteOfDay;
 
   @override
   void initState() {
     super.initState();
-    _ticker = Timer.periodic(const Duration(seconds: 1), (_) => _check());
+    // Once-a-minute (boundary-aligned) rather than 1Hz polling: _check already
+    // no-ops until the minute actually changes, so per-second wake-ups were
+    // wasted. Run once now too, in case we mount mid-minute on a block's start.
+    _ticker = MinuteTicker(_check)..start();
+    _check();
   }
 
   void _check() {
@@ -379,7 +384,7 @@ class _ForegroundAlarmWatcherState
 
   @override
   void dispose() {
-    _ticker?.cancel();
+    _ticker.cancel();
     super.dispose();
   }
 

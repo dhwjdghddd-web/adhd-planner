@@ -8,6 +8,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../core/constants.dart';
 import '../../core/error_view.dart';
+import '../../core/minute_ticker.dart';
 import '../../core/screen_mode.dart';
 import '../../core/theme.dart';
 import '../../core/time_geometry.dart';
@@ -55,18 +56,18 @@ class PlannerPage extends ConsumerStatefulWidget {
 
 class _PlannerPageState extends ConsumerState<PlannerPage> {
   late int _currentMinute;
-  Timer? _ticker;
+  late final MinuteTicker _ticker;
 
   @override
   void initState() {
     super.initState();
     _currentMinute = _minuteOfNow();
-    _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
+    _ticker = MinuteTicker(() {
       final minute = _minuteOfNow();
       if (minute != _currentMinute) {
         setState(() => _currentMinute = minute);
       }
-    });
+    })..start();
   }
 
   int _minuteOfNow() {
@@ -78,7 +79,7 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
 
   @override
   void dispose() {
-    _ticker?.cancel();
+    _ticker.cancel();
     super.dispose();
   }
 

@@ -18,15 +18,13 @@ import '../../fakes/fake_planner_repository.dart';
 /// standing in for the real AuthService -- which would hit FirebaseAuth.instance
 /// and crash with no Firebase app under flutter test.
 class _FakeAuthService extends AuthService {
-  _FakeAuthService({this.result = true});
-  final bool result;
   bool deleteCalled = false;
 
   @override
   Future<bool> deleteAccount(Future<void> Function() wipeData) async {
     deleteCalled = true;
     await wipeData();
-    return result;
+    return true;
   }
 }
 

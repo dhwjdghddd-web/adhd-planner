@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/error_view.dart';
+import '../../core/minute_ticker.dart';
 import '../../core/screen_mode.dart';
 import '../../core/time_geometry.dart';
 import '../../data/block_status.dart';
@@ -55,7 +56,7 @@ class FocusPage extends ConsumerStatefulWidget {
 
 class _FocusPageState extends ConsumerState<FocusPage> {
   late int _currentMinute;
-  Timer? _ticker;
+  late final MinuteTicker _ticker;
   final Set<int> _checked = {};
   // "$segmentId|$dateKey" the above _checked currently reflects, so persisted
   // progress is only loaded into it once per block/day rather than stomping
@@ -71,12 +72,12 @@ class _FocusPageState extends ConsumerState<FocusPage> {
   void initState() {
     super.initState();
     _currentMinute = _minuteOfNow();
-    _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
+    _ticker = MinuteTicker(() {
       final minute = _minuteOfNow();
       if (minute != _currentMinute) {
         setState(() => _currentMinute = minute);
       }
-    });
+    })..start();
     _confettiController = ConfettiController(
       duration: const Duration(milliseconds: 600),
     );
@@ -111,7 +112,7 @@ class _FocusPageState extends ConsumerState<FocusPage> {
 
   @override
   void dispose() {
-    _ticker?.cancel();
+    _ticker.cancel();
     _confettiController.dispose();
     super.dispose();
   }
