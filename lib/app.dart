@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/debug_log.dart';
+import 'core/screen_mode.dart';
 import 'core/theme.dart';
 import 'data/models/achieved_day.dart';
 import 'data/models/app_settings.dart';
@@ -54,6 +55,7 @@ class App extends ConsumerWidget {
               const _ForegroundAlarmWatcher(),
               const _CheckinAlertLauncher(),
               const _ScreenWakeSync(),
+              const _CoverDisplayWatcher(),
               const _AccountAlarmSync(),
               const _AchievementRecorder(),
               const _CompletionCelebrator(),
@@ -251,6 +253,57 @@ class _ScreenWakeSync extends ConsumerWidget {
     unawaited(setKeepScreenOn(keepOn));
     return const SizedBox.shrink();
   }
+}
+
+/// No visual presence — keeps [coverDisplayActive] in sync with whether the
+/// app is on a foldable cover (non-primary built-in) display. Re-queries on
+/// every metrics change, which is exactly when folding/unfolding moves the
+/// app between the cover and main displays. The height-dp side of
+/// [isCompactLayout] reacts to the same metrics change live; this adds the
+/// precise OS-reported cover signal on top.
+class _CoverDisplayWatcher extends StatefulWidget {
+  const _CoverDisplayWatcher();
+
+  @override
+  State<_CoverDisplayWatcher> createState() => _CoverDisplayWatcherState();
+}
+
+class _CoverDisplayWatcherState extends State<_CoverDisplayWatcher>
+    with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _refresh();
+  }
+
+  @override
+  void didChangeMetrics() => _refresh();
+
+  // Also re-check when the app comes back to the foreground: folding/unfolding
+  // can move the app between displays, and re-querying on resume self-heals
+  // the flag if a metrics change was missed (so the main screen never stays
+  // stuck in compact after returning from the cover, and vice versa).
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _refresh();
+  }
+
+  Future<void> _refresh() async {
+    final onCover = await queryOnCoverDisplay();
+    if (coverDisplayActive.value != onCover) {
+      coverDisplayActive.value = onCover;
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => const SizedBox.shrink();
 }
 
 /// Pushes [AlarmScreen] on its own, without waiting for a notification

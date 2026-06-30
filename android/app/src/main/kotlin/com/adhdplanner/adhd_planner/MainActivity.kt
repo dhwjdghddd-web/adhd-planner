@@ -15,6 +15,7 @@ import android.os.VibrationAttributes
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
+import android.view.Display
 import android.view.WindowManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -65,6 +66,27 @@ class MainActivity : FlutterActivity() {
                             window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                         }
                         result.success(null)
+                    }
+                    "getDisplayInfo" -> {
+                        // Which physical display this activity is currently on.
+                        // A foldable cover screen is a non-default built-in
+                        // display (Z Flip7: cover = displayId 1, main = 0,
+                        // primary = 0), so isDefault == false means "cover".
+                        // getDisplay() is API 30+, hence the windowManager
+                        // fallback for older devices.
+                        val d = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                            display
+                        } else {
+                            @Suppress("DEPRECATION")
+                            windowManager.defaultDisplay
+                        }
+                        val id = d?.displayId ?: Display.DEFAULT_DISPLAY
+                        result.success(
+                            mapOf(
+                                "displayId" to id,
+                                "isDefault" to (id == Display.DEFAULT_DISPLAY),
+                            ),
+                        )
                     }
                     else -> result.notImplemented()
                 }
