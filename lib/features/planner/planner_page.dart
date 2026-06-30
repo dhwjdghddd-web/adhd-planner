@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../core/constants.dart';
+import '../../core/screen_mode.dart';
 import '../../core/theme.dart';
 import '../../core/time_geometry.dart';
 import '../../data/block_status.dart';
@@ -172,9 +173,33 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
           // that balance on any screen height. Reserving the FAB inset at the
           // bottom guarantees nothing ever sits in the FAB's space.
           Padding(
-            padding: EdgeInsets.only(bottom: fabAvoidingBottomInset(context)),
+            // Compact (cover): the FABs are a short corner row, so reserve
+            // only enough to clear them -- the dashboard then uses the whole
+            // short screen down to just above the camera, instead of a big
+            // full-width FAB band.
+            padding: EdgeInsets.only(
+              bottom: isCompactLayout(context)
+                  ? 56
+                  : fabAvoidingBottomInset(context),
+            ),
             child: LayoutBuilder(
               builder: (context, constraints) {
+                // Compact screen (foldable cover / small phone): the 24h dial
+                // is too cramped to read, so show a dedicated compact
+                // dashboard (current/next block card + streak + checklist),
+                // no dial -- regardless of the dial/next-action toggle.
+                if (isCompactLayout(context)) {
+                  return segmentsAsync.maybeWhen(
+                    data: (segments) => _CompactHome(
+                      segments: segments,
+                      currentMinute: _currentMinute,
+                      mitSegmentIds: mitSegmentIds,
+                    ),
+                    orElse: () =>
+                        const Center(child: CircularProgressIndicator()),
+                  );
+                }
+
                 // T6: dial, badges, and the countdown are all hidden in this
                 // mode -- just the current/next block and a big start button
                 // (or a calm empty message when there's neither).
@@ -299,20 +324,46 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
           ),
         ],
       ),
-      floatingActionButton: MultiFabRow(
-        left: const GlobalQuickAddButton(),
-        right: Semantics(
-          label: '구간 추가',
-          child: FloatingActionButton(
-            heroTag: 'planner-add-segment',
-            onPressed: () => Navigator.of(
-              context,
-            ).push(MaterialPageRoute(builder: (_) => const SegmentFormPage())),
-            child: const Icon(Icons.add),
-          ),
-        ),
-      ),
-      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
+      floatingActionButton: isCompactLayout(context)
+          // Compact: small buttons in a single horizontal row in the
+          // bottom-left corner (a row, not a stack, so they take only one
+          // FAB's height -- sitting just above the camera and freeing the most
+          // vertical room).
+          ? Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const GlobalQuickAddButton(small: true),
+                const SizedBox(width: 12),
+                Semantics(
+                  label: '구간 추가',
+                  child: FloatingActionButton.small(
+                    heroTag: 'planner-add-segment',
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const SegmentFormPage(),
+                      ),
+                    ),
+                    child: const Icon(Icons.add),
+                  ),
+                ),
+              ],
+            )
+          : MultiFabRow(
+              left: const GlobalQuickAddButton(),
+              right: Semantics(
+                label: '구간 추가',
+                child: FloatingActionButton(
+                  heroTag: 'planner-add-segment',
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const SegmentFormPage()),
+                  ),
+                  child: const Icon(Icons.add),
+                ),
+              ),
+            ),
+      floatingActionButtonLocation: isCompactLayout(context)
+          ? const CompactCornerFabLocation()
+          : FloatingActionButtonLocation.centerFloat,
     );
   }
 }
@@ -490,6 +541,106 @@ class _NextActionView extends StatelessWidget {
                 ),
                 child: Text('시작', style: theme.textTheme.titleLarge),
               ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Dedicated compact home for a cover screen / small phone (see
+/// [isCompactLayout]): no 24h dial and no block icon graphic (too cramped to
+/// read at that size) -- a tight, text-first dashboard that fits the whole
+/// thing on one short screen without scrolling: small date+greeting, the
+/// current (or next) block's name + when, a small 시작 button, and the
+/// streak/checklist counts. Tapping 시작 on the *current* block opens the live
+/// Focus (same as the main screen's 지금 button); a future block opens it
+/// pinned for review.
+class _CompactHome extends StatelessWidget {
+  const _CompactHome({
+    required this.segments,
+    required this.currentMinute,
+    required this.mitSegmentIds,
+  });
+
+  final List<Segment> segments;
+  final int currentMinute;
+  final Set<String> mitSegmentIds;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final status = findBlockStatus(segments, currentMinute);
+    final segment = status.segment;
+
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _HomeHeader(minuteOfDay: currentMinute),
+            const SizedBox(height: 16),
+            if (segment == null)
+              Text(
+                segments.isEmpty
+                    ? '아직 구간이 없어요\n+ 로 하루를 나눠보세요'
+                    : '지금이나 다음 일정이 없어요\n편히 쉬어도 좋아요',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodyMedium,
+              )
+            else ...[
+              if (mitSegmentIds.contains(segment.id)) ...[
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.star_rounded,
+                      size: 15,
+                      color: Colors.amber[600],
+                    ),
+                    const SizedBox(width: 4),
+                    Text('오늘의 MIT', style: theme.textTheme.labelSmall),
+                  ],
+                ),
+                const SizedBox(height: 4),
+              ],
+              Text(
+                segment.name,
+                style: theme.textTheme.titleLarge,
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 2),
+              Text(
+                status.isCurrent
+                    ? '지금'
+                    : '다음 · ${TimeGeometry.formatMinute(segment.startMinute)}',
+                style: theme.textTheme.bodySmall,
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                height: 40,
+                child: FilledButton(
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => status.isCurrent
+                          ? const FocusPage()
+                          : FocusPage.forBlock(segment),
+                    ),
+                  ),
+                  child: const Text('시작'),
+                ),
+              ),
+            ],
+            const SizedBox(height: 16),
+            const Wrap(
+              spacing: 12,
+              runSpacing: 4,
+              alignment: WrapAlignment.center,
+              children: [StreakBadge(), DailyChecklistBadge()],
             ),
           ],
         ),

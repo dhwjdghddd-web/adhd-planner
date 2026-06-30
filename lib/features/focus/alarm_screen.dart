@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/debug_log.dart';
+import '../../core/screen_mode.dart';
 import '../../core/time_geometry.dart';
 import '../../data/models/app_settings.dart';
 import '../../data/models/segment.dart';
@@ -130,6 +131,10 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
     final mutedColor = isDark
         ? const Color(0xFFA6B2BE)
         : const Color(0xFF525C68);
+    // Compact (cover/small) screen: smaller icon/clock/spacing so the whole
+    // alarm -- icon, time, name, slide-to-dismiss, and the two exits -- fits a
+    // short cover screen without scrolling.
+    final compact = isCompactLayout(context);
 
     // No back button / pop scope: the slide is the only way out, so a stray
     // system-back can't dismiss the alarm without the deliberate gesture.
@@ -150,35 +155,39 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
                 constraints: BoxConstraints(minHeight: constraints.maxHeight),
                 child: Center(
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(
+                    padding: EdgeInsets.symmetric(
                       horizontal: 24,
-                      vertical: 24,
+                      vertical: compact ? 12 : 24,
                     ),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(
                           Icons.alarm,
-                          size: 72,
+                          size: compact ? 44 : 72,
                           color: theme.colorScheme.primary,
                         ),
-                        const SizedBox(height: 28),
+                        SizedBox(height: compact ? 14 : 28),
                         Text(
                           TimeGeometry.formatMinute(segment!.startMinute),
-                          style: theme.textTheme.displayMedium?.copyWith(
-                            fontWeight: FontWeight.w700,
-                          ),
+                          style:
+                              (compact
+                                      ? theme.textTheme.headlineMedium
+                                      : theme.textTheme.displayMedium)
+                                  ?.copyWith(fontWeight: FontWeight.w700),
                           textAlign: TextAlign.center,
                         ),
                         const SizedBox(height: 8),
                         Text(
                           segment.name,
-                          style: theme.textTheme.headlineSmall,
+                          style: compact
+                              ? theme.textTheme.titleMedium
+                              : theme.textTheme.headlineSmall,
                           textAlign: TextAlign.center,
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),
-                        const SizedBox(height: 12),
+                        SizedBox(height: compact ? 6 : 12),
                         Text(
                           '지금 시작할 시간이에요',
                           style: theme.textTheme.titleMedium?.copyWith(
@@ -186,12 +195,12 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
                           ),
                           textAlign: TextAlign.center,
                         ),
-                        const SizedBox(height: 48),
+                        SizedBox(height: compact ? 24 : 48),
                         _SlideToDismiss(
                           label: '밀어서 끄기',
                           onDismiss: () => _dismiss(segment!),
                         ),
-                        const SizedBox(height: 20),
+                        SizedBox(height: compact ? 8 : 20),
                         // Two lighter exits below the slide track (never
                         // overlapping it) -- "지금은 못 함"의 출구. A bare 해제 was
                         // the only response before; these turn the alarm into

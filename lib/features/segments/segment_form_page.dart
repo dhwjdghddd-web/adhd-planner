@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../core/constants.dart';
+import '../../core/screen_mode.dart';
 import '../../core/time_geometry.dart';
 import '../../data/models/segment.dart';
 import '../../data/providers.dart';
@@ -56,7 +57,9 @@ class _SegmentFormPageState extends ConsumerState<SegmentFormPage> {
   void initState() {
     super.initState();
     final existing = widget.existing;
-    _nameController = TextEditingController(text: existing?.name ?? widget.initialName ?? '');
+    _nameController = TextEditingController(
+      text: existing?.name ?? widget.initialName ?? '',
+    );
     _noteController = TextEditingController(text: existing?.note ?? '');
     _microStepController = TextEditingController();
     _colorValue = existing?.colorValue ?? kSegmentPalette.first.toARGB32();
@@ -66,7 +69,10 @@ class _SegmentFormPageState extends ConsumerState<SegmentFormPage> {
     _alarmEnabled = existing?.alarmEnabled ?? true;
     _leadWarning = existing?.leadWarning ?? true;
     _microSteps = [...(existing?.microSteps ?? const <String>[])];
-    _microStepKeyIds = List.generate(_microSteps.length, (_) => _nextMicroStepKeyId++);
+    _microStepKeyIds = List.generate(
+      _microSteps.length,
+      (_) => _nextMicroStepKeyId++,
+    );
   }
 
   @override
@@ -80,9 +86,11 @@ class _SegmentFormPageState extends ConsumerState<SegmentFormPage> {
 
   bool get _isEditing => widget.existing != null;
 
-  int get _lengthMinutes => TimeGeometry.lengthMinutes(_startMinute, _endMinute);
+  int get _lengthMinutes =>
+      TimeGeometry.lengthMinutes(_startMinute, _endMinute);
 
-  bool get _canSave => _nameController.text.trim().isNotEmpty && _lengthMinutes > 0;
+  bool get _canSave =>
+      _nameController.text.trim().isNotEmpty && _lengthMinutes > 0;
 
   // A scrollable 24h wheel (no AM/PM, no separate keyboard-entry mode) instead
   // of the standard dial/keyboard showTimePicker.
@@ -90,18 +98,28 @@ class _SegmentFormPageState extends ConsumerState<SegmentFormPage> {
     var pickedMinute = initialMinute;
     final confirmed = await showModalBottomSheet<bool>(
       context: context,
+      // isScrollControlled so a short (cover) screen isn't capped at the
+      // default 9/16 height, which the wheel + 확인 button would overflow.
+      isScrollControlled: true,
       builder: (sheetContext) => SafeArea(
         top: false,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             SizedBox(
-              height: 216,
+              height: isCompactLayout(sheetContext) ? 150 : 216,
               child: CupertinoDatePicker(
                 mode: CupertinoDatePickerMode.time,
                 use24hFormat: true,
-                initialDateTime: DateTime(2000, 1, 1, initialMinute ~/ 60, initialMinute % 60),
-                onDateTimeChanged: (dt) => pickedMinute = dt.hour * 60 + dt.minute,
+                initialDateTime: DateTime(
+                  2000,
+                  1,
+                  1,
+                  initialMinute ~/ 60,
+                  initialMinute % 60,
+                ),
+                onDateTimeChanged: (dt) =>
+                    pickedMinute = dt.hour * 60 + dt.minute,
               ),
             ),
             Padding(
@@ -149,7 +167,10 @@ class _SegmentFormPageState extends ConsumerState<SegmentFormPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final inputContext = _microStepInputKey.currentContext;
       if (inputContext == null) return;
-      Scrollable.ensureVisible(inputContext, duration: const Duration(milliseconds: 200));
+      Scrollable.ensureVisible(
+        inputContext,
+        duration: const Duration(milliseconds: 200),
+      );
     });
   }
 
@@ -240,14 +261,23 @@ class _SegmentFormPageState extends ConsumerState<SegmentFormPage> {
       // Delete FAB: bottom-right, mirroring the global memo FAB on the left.
       // Only shown in edit mode — new blocks have nothing to delete yet.
       floatingActionButton: _isEditing
-          ? FloatingActionButton(
-              heroTag: 'segment-delete',
-              onPressed: _confirmDelete,
-              tooltip: '구간 삭제',
-              backgroundColor: theme.colorScheme.errorContainer,
-              foregroundColor: theme.colorScheme.onErrorContainer,
-              child: const Icon(Icons.delete_outline),
-            )
+          ? (isCompactLayout(context)
+                ? FloatingActionButton.small(
+                    heroTag: 'segment-delete',
+                    onPressed: _confirmDelete,
+                    tooltip: '구간 삭제',
+                    backgroundColor: theme.colorScheme.errorContainer,
+                    foregroundColor: theme.colorScheme.onErrorContainer,
+                    child: const Icon(Icons.delete_outline),
+                  )
+                : FloatingActionButton(
+                    heroTag: 'segment-delete',
+                    onPressed: _confirmDelete,
+                    tooltip: '구간 삭제',
+                    backgroundColor: theme.colorScheme.errorContainer,
+                    foregroundColor: theme.colorScheme.onErrorContainer,
+                    child: const Icon(Icons.delete_outline),
+                  ))
           : null,
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       body: Padding(
@@ -286,11 +316,17 @@ class _SegmentFormPageState extends ConsumerState<SegmentFormPage> {
               runSpacing: 12,
               children: kSegmentPalette.map((color) {
                 final brightness = Theme.of(context).brightness;
-                final displayColor = getEffectiveSegmentColor(color, brightness);
+                final displayColor = getEffectiveSegmentColor(
+                  color,
+                  brightness,
+                );
                 final value = color.toARGB32();
                 final selected =
-                    getEffectiveSegmentColor(Color(_colorValue), brightness).toARGB32() ==
-                        displayColor.toARGB32();
+                    getEffectiveSegmentColor(
+                      Color(_colorValue),
+                      brightness,
+                    ).toARGB32() ==
+                    displayColor.toARGB32();
                 return Semantics(
                   label: '색상 선택',
                   selected: selected,
@@ -303,10 +339,15 @@ class _SegmentFormPageState extends ConsumerState<SegmentFormPage> {
                         color: displayColor,
                         shape: BoxShape.circle,
                         border: selected
-                            ? Border.all(color: theme.colorScheme.onSurface, width: 3)
+                            ? Border.all(
+                                color: theme.colorScheme.onSurface,
+                                width: 3,
+                              )
                             : null,
                       ),
-                      child: selected ? const Icon(Icons.check, color: Colors.white) : null,
+                      child: selected
+                          ? const Icon(Icons.check, color: Colors.white)
+                          : null,
                     ),
                   ),
                 );
@@ -396,7 +437,10 @@ class _SegmentFormPageState extends ConsumerState<SegmentFormPage> {
               itemCount: _microSteps.length,
               onReorderItem: (oldIndex, newIndex) => setState(() {
                 _microSteps.insert(newIndex, _microSteps.removeAt(oldIndex));
-                _microStepKeyIds.insert(newIndex, _microStepKeyIds.removeAt(oldIndex));
+                _microStepKeyIds.insert(
+                  newIndex,
+                  _microStepKeyIds.removeAt(oldIndex),
+                );
               }),
               itemBuilder: (context, i) => ListTile(
                 key: ValueKey(_microStepKeyIds[i]),

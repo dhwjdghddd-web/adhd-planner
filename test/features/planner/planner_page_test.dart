@@ -65,6 +65,67 @@ void main() {
     },
   );
 
+  group('compact (cover/small) screen', () {
+    void useCompactSurface(WidgetTester tester) {
+      // 400dp tall < kCompactHeightDp(560) → compact layout.
+      tester.view.physicalSize = const Size(400, 400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+    }
+
+    testWidgets('shows the compact dashboard card, not the 24h dial', (
+      tester,
+    ) async {
+      useCompactSurface(tester);
+      final repo = FakePlannerRepository();
+      // Spans almost the whole day (not 0..1440, which findBlockStatus treats
+      // as a degenerate zero-length block) so it reads as current both under
+      // PlannerPage's seeded clock and the live FocusPage's wall clock.
+      await repo.upsertSegment(
+        _block(id: 's1', name: '점심', startMinute: 0, endMinute: 24 * 60 - 1),
+      );
+      await tester.pumpWidget(wrap(repo, debugNowMinuteOfDay: 12 * 60));
+      await tester.pumpAndSettle();
+
+      // Dial is hidden on a compact screen.
+      expect(
+        find.byWidgetPredicate(
+          (w) => w is CustomPaint && w.painter is DialPainter,
+        ),
+        findsNothing,
+      );
+      // Dashboard shows the current block as a card with a 시작 button.
+      expect(find.text('점심'), findsOneWidget);
+      expect(find.text('지금'), findsOneWidget);
+      expect(find.widgetWithText(FilledButton, '시작'), findsOneWidget);
+    });
+
+    testWidgets('시작 on the current block opens the live Focus', (tester) async {
+      useCompactSurface(tester);
+      final repo = FakePlannerRepository();
+      // Spans almost the whole day (not 0..1440, which findBlockStatus treats
+      // as a degenerate zero-length block) so it reads as current both under
+      // PlannerPage's seeded clock and the live FocusPage's wall clock.
+      await repo.upsertSegment(
+        _block(id: 's1', name: '점심', startMinute: 0, endMinute: 24 * 60 - 1),
+      );
+      await tester.pumpWidget(wrap(repo, debugNowMinuteOfDay: 12 * 60));
+      await tester.pumpAndSettle();
+
+      // The dashboard is scroll-safe on a short screen, so scroll the button
+      // into view before tapping it.
+      await tester.ensureVisible(find.widgetWithText(FilledButton, '시작'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, '시작'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(FocusPage), findsOneWidget);
+    });
+  });
+
   testWidgets('tapping a starter chip adds exactly that block and the dial '
       'replaces the empty state', (tester) async {
     final repo = FakePlannerRepository();

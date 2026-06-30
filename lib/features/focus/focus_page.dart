@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/screen_mode.dart';
 import '../../core/time_geometry.dart';
 import '../../data/block_status.dart';
 import '../../data/models/micro_step_progress.dart';
@@ -152,8 +153,14 @@ class _FocusPageState extends ConsumerState<FocusPage> {
               // right underneath it, unreachable by scrolling past since
               // there'd be nothing forcing a scroll offset to begin with.
               child: Padding(
+                // Compact (cover) screen reserves almost nothing at the
+                // bottom -- the FAB is a small corner button (not a full-width
+                // row), so the content (e.g. the checklist) gets nearly the
+                // whole short screen instead of being squeezed out.
                 padding: EdgeInsets.only(
-                  bottom: fabAvoidingBottomInset(context),
+                  bottom: isCompactLayout(context)
+                      ? 8
+                      : fabAvoidingBottomInset(context),
                 ),
                 child: Stack(
                   children: [
@@ -225,8 +232,48 @@ class _FocusPageState extends ConsumerState<FocusPage> {
           ],
         ),
       ),
-      floatingActionButton: _buildFabRow(status),
-      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
+      floatingActionButton: isCompactLayout(context)
+          ? _buildCompactFabs(status)
+          : _buildFabRow(status),
+      floatingActionButtonLocation: isCompactLayout(context)
+          ? const CompactCornerFabLocation()
+          : FloatingActionButtonLocation.centerFloat,
+    );
+  }
+
+  /// Compact (cover/small) screen FABs: small buttons in a single horizontal
+  /// row in the bottom-left corner -- a row (not a stack) so they take only one
+  /// FAB's height, sitting just above the cover screen's camera and freeing the
+  /// most vertical room. 모두 완료 (when there's a checklist) becomes a small
+  /// check FAB rather than a wide button.
+  Widget _buildCompactFabs(BlockStatus? status) {
+    final segment = status?.segment;
+    final showComplete =
+        segment != null && status!.isCurrent && segment.microSteps.isNotEmpty;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Semantics(
+          label: '빠른 메모 추가',
+          child: FloatingActionButton.small(
+            heroTag: 'focus-quick-add',
+            onPressed: () => showQuickAddSheet(context),
+            child: const Icon(Icons.edit_note),
+          ),
+        ),
+        if (showComplete) ...[
+          const SizedBox(width: 12),
+          Semantics(
+            label: '모두 완료',
+            child: FloatingActionButton.small(
+              heroTag: 'focus-complete',
+              onPressed: () =>
+                  _complete(segment.id, microSteps: segment.microSteps),
+              child: const Icon(Icons.done_all),
+            ),
+          ),
+        ],
+      ],
     );
   }
 
@@ -295,6 +342,14 @@ class _FocusPageState extends ConsumerState<FocusPage> {
     final segment = status.segment;
     final reduceMotion =
         ref.watch(settingsProvider).value?.reduceMotion ?? false;
+
+    // Compact (cover/small) screen: a stripped-down, graphic-free Focus -- a
+    // flat remaining-time bar instead of the concentric-ring illustration,
+    // smaller text, everything on one short screen. (Sleep blocks keep their
+    // own wind-down; handled inside.)
+    if (isCompactLayout(context)) {
+      return _buildCompactContent(context, status, reduceMotion);
+    }
 
     if (segment == null) {
       return WaitingIllustration(
@@ -441,6 +496,130 @@ class _FocusPageState extends ConsumerState<FocusPage> {
           ),
         );
       },
+    );
+  }
+
+  /// Compact (cover/small) Focus: no concentric-ring graphic -- just the block
+  /// name, a flat remaining-time bar, and the checklist (or a soft rest line),
+  /// all sized to fit a short screen. Sleep blocks still get their wind-down.
+  Widget _buildCompactContent(
+    BuildContext context,
+    BlockStatus status,
+    bool reduceMotion,
+  ) {
+    final theme = Theme.of(context);
+    final segment = status.segment;
+
+    if (segment == null) {
+      return _compactCenterMessage(context, '오늘 일정이 없어요\n편히 쉬어도 좋아요');
+    }
+    if (!status.isCurrent) {
+      final startTime = TimeGeometry.formatMinute(segment.startMinute);
+      return _compactCenterMessage(context, '다음 · $startTime\n${segment.name}');
+    }
+    if (isSleepBlock(segment)) {
+      return SleepWindDown(
+        segment: segment,
+        reduceMotion: reduceMotion,
+        remainingMessage: _remainingMessage(segment),
+      );
+    }
+
+    final allProgress = ref.watch(microStepProgressProvider).value ?? const [];
+    _hydrateChecked(segment, allProgress);
+
+    final progress = _remainingProgress(segment);
+    final remaining = _remainingMessage(segment);
+    final hasSteps = segment.microSteps.isNotEmpty;
+
+    // Fixed header: name + flat remaining-time bar. Only the checklist below
+    // scrolls (when there is one).
+    final head = Padding(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+      child: Column(
+        children: [
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (_isMitToday(segment)) ...[
+                Icon(Icons.star_rounded, size: 16, color: Colors.amber[600]),
+                const SizedBox(width: 4),
+              ],
+              Flexible(
+                child: Text(
+                  segment.name,
+                  style: theme.textTheme.titleMedium,
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+          if (progress != null) ...[
+            const SizedBox(height: 10),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: progress,
+                minHeight: 6,
+                backgroundColor: theme.colorScheme.surfaceContainerHighest,
+              ),
+            ),
+            if (remaining != null) ...[
+              const SizedBox(height: 4),
+              Text(remaining, style: theme.textTheme.bodySmall),
+            ],
+          ],
+        ],
+      ),
+    );
+
+    if (!hasSteps) {
+      return Column(
+        children: [
+          head,
+          const Spacer(),
+          const StreakBadge(),
+          const SizedBox(height: 12),
+          Text('쉬어도 좋아요', style: theme.textTheme.bodyMedium),
+          const Spacer(),
+        ],
+      );
+    }
+
+    return Column(
+      children: [
+        head,
+        Expanded(
+          child: SingleChildScrollView(
+            // Bottom padding clears the small corner FAB row so the last
+            // checklist item never hides behind it (a single-row of small
+            // FABs, so this is modest).
+            padding: const EdgeInsets.fromLTRB(8, 8, 8, 56),
+            child: Column(
+              children: _microStepsChecklist(
+                segment,
+                autoCompleteWhenAllChecked: true,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _compactCenterMessage(BuildContext context, String message) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Text(
+          message,
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.bodyLarge,
+        ),
+      ),
     );
   }
 

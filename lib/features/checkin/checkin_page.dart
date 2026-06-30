@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/screen_mode.dart';
 import '../../data/models/checkin.dart';
 import '../../data/providers.dart';
 import '../../data/today.dart';
@@ -127,17 +128,30 @@ class _CheckinPageState extends ConsumerState<CheckinPage> {
           ),
         ),
       ),
-      floatingActionButton: MultiFabRow(
-        left: const GlobalQuickAddButton(),
-        right: Semantics(
-          label: today == null ? '기분 추가' : '기분 수정',
-          child: FloatingActionButton(
-            onPressed: () => _openMoodDialog(today),
-            child: const Icon(Icons.add_reaction_outlined),
-          ),
-        ),
-      ),
-      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
+      floatingActionButton: isCompactLayout(context)
+          ? compactCornerFabs(
+              actions: [
+                Semantics(
+                  label: today == null ? '기분 추가' : '기분 수정',
+                  child: FloatingActionButton.small(
+                    heroTag: 'checkin-add',
+                    onPressed: () => _openMoodDialog(today),
+                    child: const Icon(Icons.add_reaction_outlined),
+                  ),
+                ),
+              ],
+            )
+          : MultiFabRow(
+              left: const GlobalQuickAddButton(),
+              right: Semantics(
+                label: today == null ? '기분 추가' : '기분 수정',
+                child: FloatingActionButton(
+                  onPressed: () => _openMoodDialog(today),
+                  child: const Icon(Icons.add_reaction_outlined),
+                ),
+              ),
+            ),
+      floatingActionButtonLocation: screenFabLocation(context),
     );
   }
 }

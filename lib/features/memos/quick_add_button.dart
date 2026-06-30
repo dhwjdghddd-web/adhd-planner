@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/screen_mode.dart';
 import 'quick_add_sheet.dart';
 
 /// The app's [Navigator] key (set on `MaterialApp.navigatorKey` in
@@ -19,8 +20,13 @@ final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 /// reservation mid-keyboard and visibly shift a height-centred body (the home
 /// dial "흔들림" when the quick-add sheet rose). `viewPadding` is the raw
 /// system inset, constant whether or not the keyboard is up.
-double fabAvoidingBottomInset(BuildContext context) =>
-    88 + MediaQuery.viewPaddingOf(context).bottom;
+///
+/// On a compact (cover/small) screen the FABs are a small left-corner row, so
+/// only a small clearance is reserved -- the body then uses nearly the whole
+/// short screen down to just above the camera, instead of a tall FAB band.
+double fabAvoidingBottomInset(BuildContext context) => isCompactLayout(context)
+    ? 56
+    : 88 + MediaQuery.viewPaddingOf(context).bottom;
 
 /// 앱 전역 스낵바 표시 헬퍼.
 ///
@@ -79,12 +85,49 @@ class MultiFabRow extends StatelessWidget {
   }
 }
 
+/// The Scaffold `floatingActionButtonLocation` a screen should use: a tight
+/// bottom-left corner (beside the cover camera) on a compact screen, the usual
+/// centre-float row otherwise. Pair with [compactCornerFabs] / [MultiFabRow].
+FloatingActionButtonLocation screenFabLocation(BuildContext context) =>
+    isCompactLayout(context)
+    ? const CompactCornerFabLocation()
+    : FloatingActionButtonLocation.centerFloat;
+
+/// Compact (cover/small) screens' bottom FABs: the quick-add memo button plus
+/// any [actions] (small FABs), clustered into one short horizontal row in the
+/// bottom-left corner so they take a single FAB's height and free the screen.
+Widget compactCornerFabs({List<Widget> actions = const []}) {
+  return Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      const GlobalQuickAddButton(small: true),
+      for (final a in actions) ...[const SizedBox(width: 12), a],
+    ],
+  );
+}
+
 /// Floating button mounted on pages so a memo can be captured from the screen
 /// in one tap. Bottom-left, since the segments/routines editors already have
 /// their own extended FAB at the bottom-right. Hides itself while the quick-add
 /// sheet is open.
-class GlobalQuickAddButton extends StatelessWidget {
-  const GlobalQuickAddButton({super.key});
+class GlobalQuickAddButton extends StatefulWidget {
+  const GlobalQuickAddButton({super.key, this.small = false});
+
+  /// Compact (cover/small) screens use the smaller FAB so the bottom buttons
+  /// take up less of the limited screen.
+  final bool small;
+
+  @override
+  State<GlobalQuickAddButton> createState() => _GlobalQuickAddButtonState();
+}
+
+class _GlobalQuickAddButtonState extends State<GlobalQuickAddButton> {
+  // A heroTag unique per mounted instance (not a constant shared by every
+  // screen's memo FAB) so the button never runs a cross-screen Hero flight.
+  // Sharing one tag made the FAB "fly" between screens on navigation, which
+  // briefly rendered the .small FAB at the default (larger) size before
+  // snapping back -- the "버튼이 커졌다 작아지는" bug. A unique tag = no flight.
+  final Object _heroTag = UniqueKey();
 
   @override
   Widget build(BuildContext context) {
@@ -92,13 +135,20 @@ class GlobalQuickAddButton extends StatelessWidget {
       valueListenable: quickAddSheetOpen,
       builder: (context, isOpen, _) {
         if (isOpen) return const SizedBox.shrink();
+        const icon = Icon(Icons.edit_note);
         return Semantics(
           label: '빠른 메모 추가',
-          child: FloatingActionButton(
-            heroTag: 'global-quick-add',
-            onPressed: () => showQuickAddSheet(context),
-            child: const Icon(Icons.edit_note),
-          ),
+          child: widget.small
+              ? FloatingActionButton.small(
+                  heroTag: _heroTag,
+                  onPressed: () => showQuickAddSheet(context),
+                  child: icon,
+                )
+              : FloatingActionButton(
+                  heroTag: _heroTag,
+                  onPressed: () => showQuickAddSheet(context),
+                  child: icon,
+                ),
         );
       },
     );

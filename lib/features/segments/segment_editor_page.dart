@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/constants.dart';
+import '../../core/screen_mode.dart';
 import '../../core/time_geometry.dart';
 import '../../data/models/segment.dart';
 import '../../data/providers.dart';
@@ -35,15 +36,28 @@ class SegmentEditorPage extends ConsumerWidget {
           error: (e, st) => Center(child: Text('오류: $e')),
         ),
       ),
-      floatingActionButton: MultiFabRow(
-        left: const GlobalQuickAddButton(),
-        right: FloatingActionButton.extended(
-          onPressed: () => _openForm(context),
-          icon: const Icon(Icons.add),
-          label: const Text('구간 추가'),
-        ),
-      ),
-      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
+      floatingActionButton: isCompactLayout(context)
+          ? compactCornerFabs(
+              actions: [
+                Semantics(
+                  label: '구간 추가',
+                  child: FloatingActionButton.small(
+                    heroTag: 'segment-add',
+                    onPressed: () => _openForm(context),
+                    child: const Icon(Icons.add),
+                  ),
+                ),
+              ],
+            )
+          : MultiFabRow(
+              left: const GlobalQuickAddButton(),
+              right: FloatingActionButton.extended(
+                onPressed: () => _openForm(context),
+                icon: const Icon(Icons.add),
+                label: const Text('구간 추가'),
+              ),
+            ),
+      floatingActionButtonLocation: screenFabLocation(context),
     );
   }
 }

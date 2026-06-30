@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+import '../../core/screen_mode.dart';
 import '../../data/models/app_settings.dart';
 import '../../data/providers.dart';
 import '../../services/alarm_sound_picker.dart';
@@ -165,13 +166,16 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     var pickedMinute = initialMinute;
     final confirmed = await showModalBottomSheet<bool>(
       context: context,
+      // isScrollControlled so a short (cover) screen isn't capped at the
+      // default 9/16 height, which the wheel + 확인 button would overflow.
+      isScrollControlled: true,
       builder: (sheetContext) => SafeArea(
         top: false,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             SizedBox(
-              height: 216,
+              height: isCompactLayout(sheetContext) ? 150 : 216,
               child: CupertinoDatePicker(
                 mode: CupertinoDatePickerMode.time,
                 use24hFormat: true,
@@ -246,8 +250,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             ? Center(child: Text('오류: ${settingsAsync.error}'))
             : _buildBody(settings),
       ),
-      floatingActionButton: const MultiFabRow(left: GlobalQuickAddButton()),
-      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
+      floatingActionButton: isCompactLayout(context)
+          ? compactCornerFabs()
+          : const MultiFabRow(left: GlobalQuickAddButton()),
+      floatingActionButtonLocation: screenFabLocation(context),
     );
   }
 

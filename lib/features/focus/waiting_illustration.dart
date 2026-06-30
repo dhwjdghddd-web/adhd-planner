@@ -113,6 +113,10 @@ class _WaitingIllustrationState extends State<WaitingIllustration>
 
     return Center(
       child: Column(
+        // Shrink-wrap (not max) so the graphic + message never overflow by a
+        // few px when handed a height barely smaller than their natural size
+        // (e.g. a compact/cover screen) -- the outer Center still positions it.
+        mainAxisSize: MainAxisSize.min,
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           // Graphic container

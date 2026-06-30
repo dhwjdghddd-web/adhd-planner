@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/screen_mode.dart';
 import '../../data/models/memo.dart';
 import '../../data/providers.dart';
 import '../../data/today.dart';
@@ -63,7 +64,8 @@ class _MemoInboxPageState extends ConsumerState<MemoInboxPage> {
         children: [
           memosAsync.maybeWhen(
             data: (memos) {
-              if (settings == null || settings.lastMemoNudgeDate == dayKeyFor(_now)) {
+              if (settings == null ||
+                  settings.lastMemoNudgeDate == dayKeyFor(_now)) {
                 return const SizedBox.shrink();
               }
               final nudge = oldestNudgeworthyMemo(memos, _now);
@@ -114,10 +116,10 @@ class _MemoInboxPageState extends ConsumerState<MemoInboxPage> {
           ),
         ],
       ),
-      floatingActionButton: const MultiFabRow(
-        left: GlobalQuickAddButton(),
-      ),
-      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
+      floatingActionButton: isCompactLayout(context)
+          ? compactCornerFabs()
+          : const MultiFabRow(left: GlobalQuickAddButton()),
+      floatingActionButtonLocation: screenFabLocation(context),
     );
   }
 }
@@ -272,8 +274,9 @@ class _MemoNudgeCard extends StatelessWidget {
           children: [
             Text(
               '이 메모, 아직이에요',
-              style: theme.textTheme.titleSmall
-                  ?.copyWith(color: theme.colorScheme.onSecondaryContainer),
+              style: theme.textTheme.titleSmall?.copyWith(
+                color: theme.colorScheme.onSecondaryContainer,
+              ),
             ),
             const SizedBox(height: 4),
             Text(
