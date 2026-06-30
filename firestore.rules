@@ -2,8 +2,14 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
+    // A user may only ever touch their OWN document subtree. Checking just
+    // `request.auth != null` (the old rule) let ANY signed-in user -- including
+    // any throwaway anonymous account -- read and write EVERY other user's
+    // data by uid. The uid match is the only real data-isolation boundary,
+    // since the Firebase config (google-services.json / firebase_options.dart)
+    // is shipped in the app and therefore public.
     match /users/{uid}/{document=**} {
-      allow read, write: if request.auth != null;
+      allow read, write: if request.auth != null && request.auth.uid == uid;
     }
   }
 }
