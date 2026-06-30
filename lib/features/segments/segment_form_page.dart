@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
@@ -8,6 +7,7 @@ import 'package:uuid/uuid.dart';
 import '../../core/constants.dart';
 import '../../core/screen_mode.dart';
 import '../../core/time_geometry.dart';
+import '../../core/wheel_time_picker.dart';
 import '../../data/models/segment.dart';
 import '../../data/providers.dart';
 import '../memos/quick_add_button.dart';
@@ -94,50 +94,8 @@ class _SegmentFormPageState extends ConsumerState<SegmentFormPage> {
 
   // A scrollable 24h wheel (no AM/PM, no separate keyboard-entry mode) instead
   // of the standard dial/keyboard showTimePicker.
-  Future<int?> _pickWheelMinute(int initialMinute) async {
-    var pickedMinute = initialMinute;
-    final confirmed = await showModalBottomSheet<bool>(
-      context: context,
-      // isScrollControlled so a short (cover) screen isn't capped at the
-      // default 9/16 height, which the wheel + 확인 button would overflow.
-      isScrollControlled: true,
-      builder: (sheetContext) => SafeArea(
-        top: false,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            SizedBox(
-              height: isCompactLayout(sheetContext) ? 150 : 216,
-              child: CupertinoDatePicker(
-                mode: CupertinoDatePickerMode.time,
-                use24hFormat: true,
-                initialDateTime: DateTime(
-                  2000,
-                  1,
-                  1,
-                  initialMinute ~/ 60,
-                  initialMinute % 60,
-                ),
-                onDateTimeChanged: (dt) =>
-                    pickedMinute = dt.hour * 60 + dt.minute,
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              child: SizedBox(
-                width: double.infinity,
-                child: FilledButton(
-                  onPressed: () => Navigator.pop(sheetContext, true),
-                  child: const Text('확인'),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-    return confirmed == true ? pickedMinute : null;
-  }
+  Future<int?> _pickWheelMinute(int initialMinute) =>
+      pickWheelMinute(context, initialMinute);
 
   // Confirming the start time chains straight into the end-time picker --
   // entering a block's range is one continuous action.

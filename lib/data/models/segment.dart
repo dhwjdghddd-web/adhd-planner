@@ -141,20 +141,38 @@ class Segment {
         'notificationIds': notificationIds,
       };
 
-  factory Segment.fromMap(Map<String, dynamic> map) => Segment(
-        id: map['id'] as String,
-        name: map['name'] as String,
-        colorValue: map['colorValue'] as int,
-        iconKey: map['iconKey'] as String,
-        startMinute: map['startMinute'] as int,
-        endMinute: map['endMinute'] as int,
-        order: map['order'] as int,
-        note: (map['note'] as String?) ?? '',
-        microSteps: List<String>.from(map['microSteps'] as List? ?? const []),
-        alarmEnabled: (map['alarmEnabled'] as bool?) ?? true,
-        leadWarning: (map['leadWarning'] as bool?) ?? true,
-        notificationIds: List<int>.from(map['notificationIds'] as List? ?? const []),
-      );
+  /// Defensive against malformed stored data so one bad document can't error
+  /// the whole segments stream: numbers tolerate num/missing, times are clamped
+  /// to a valid minute-of-day (0~1440 -- an out-of-range value would otherwise
+  /// break the dial painter / containsMinute), and list elements of the wrong
+  /// type are dropped rather than throwing.
+  factory Segment.fromMap(Map<String, dynamic> map) {
+    int intOr(Object? v, int fallback) => v is num ? v.toInt() : fallback;
+    final start = intOr(
+      map['startMinute'],
+      0,
+    ).clamp(0, TimeGeometry.minutesPerDay);
+    final end = intOr(map['endMinute'], 0).clamp(0, TimeGeometry.minutesPerDay);
+    return Segment(
+      id: (map['id'] as String?) ?? '',
+      name: (map['name'] as String?) ?? '',
+      colorValue: intOr(map['colorValue'], 0xFF000000),
+      iconKey: (map['iconKey'] as String?) ?? 'wb_sunny',
+      startMinute: start,
+      endMinute: end,
+      order: intOr(map['order'], 0),
+      note: (map['note'] as String?) ?? '',
+      microSteps: (map['microSteps'] as List? ?? const [])
+          .whereType<String>()
+          .toList(),
+      alarmEnabled: (map['alarmEnabled'] as bool?) ?? true,
+      leadWarning: (map['leadWarning'] as bool?) ?? true,
+      notificationIds: (map['notificationIds'] as List? ?? const [])
+          .whereType<num>()
+          .map((n) => n.toInt())
+          .toList(),
+    );
+  }
 }
 
 class _SegmentInterval {

@@ -9,6 +9,15 @@
 # packages, and plugins designed to encourage good coding practices.
 include: package:flutter_lints/flutter.yaml
 
+# Stricter than flutter_lints' defaults: catch implicit dynamic casts and raw
+# generic types at analysis time -- both are easy ways for malformed data or a
+# typo to slip through silently (exactly the kind of thing the model fromMap
+# hardening guards against at runtime).
+analyzer:
+  language:
+    strict-casts: true
+    strict-raw-types: true
+
 linter:
   # The lint rules applied to this project can be customized in the
   # section below to disable rules from the `package:flutter_lints/flutter.yaml`

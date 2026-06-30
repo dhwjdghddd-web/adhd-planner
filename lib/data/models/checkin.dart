@@ -18,7 +18,8 @@ class Checkin {
     required this.mood,
     required this.energy,
     this.note,
-  });
+  }) : assert(mood >= 1 && mood <= 5, 'mood is a 1~5 self-rating'),
+       assert(energy >= 1 && energy <= 5, 'energy is a 1~5 self-rating');
 
   /// Builds today's check-in (or [at]'s, for tests).
   factory Checkin.today({
@@ -45,10 +46,16 @@ class Checkin {
     'note': note,
   };
 
+  /// Defensive against malformed stored data: a missing/garbage rating falls
+  /// back to 3 (neutral) and is clamped to 1~5, so one bad document can't crash
+  /// the check-in stream or violate the constructor's invariant.
   factory Checkin.fromMap(Map<String, dynamic> map) => Checkin(
-    dateKey: map['dateKey'] as String,
-    mood: (map['mood'] as num).toInt(),
-    energy: (map['energy'] as num).toInt(),
+    dateKey: (map['dateKey'] as String?) ?? '',
+    mood: _rating(map['mood']),
+    energy: _rating(map['energy']),
     note: map['note'] as String?,
   );
+
+  static int _rating(Object? value) =>
+      (value is num ? value.toInt() : 3).clamp(1, 5);
 }
