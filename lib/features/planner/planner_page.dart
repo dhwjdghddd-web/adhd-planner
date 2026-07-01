@@ -351,11 +351,11 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
           if (isResting)
             const Positioned.fill(
               child: IgnorePointer(
-                // Sit on the dial's visual centre (the ambient backdrop's focal
-                // point is at ~46% height) so the rest graphic reads as balanced
-                // over the dial behind it, not floating at mid-screen.
+                // Whole banner (moon + text) centred on the SCREEN. The body
+                // sits below the app bar, so nudge up a touch from body-centre
+                // to land on true screen-centre rather than just below it.
                 child: Align(
-                  alignment: Alignment(0, -0.08),
+                  alignment: Alignment(0, -0.1),
                   child: _RestDayBanner(),
                 ),
               ),
@@ -923,23 +923,31 @@ class _RestDayBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Center(
+    // Smaller on a compact (cover/small) screen so the moon + text don't crowd
+    // the tiny dashboard behind it. No Center here -- the caller positions the
+    // whole cluster (a Center would fill the overlay and pin it to the middle).
+    final compact = isCompactLayout(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(
             Icons.bedtime_rounded,
-            size: 48,
+            size: compact ? 32 : 48,
             color: theme.colorScheme.primary,
           ),
-          const SizedBox(height: 12),
-          Text('오늘은 쉬는 날', style: theme.textTheme.headlineSmall),
+          SizedBox(height: compact ? 8 : 12),
+          Text(
+            '오늘은 쉬는 날',
+            style: compact ? theme.textTheme.titleMedium : theme.textTheme.headlineSmall,
+          ),
           const SizedBox(height: 6),
           Text(
             '푹 쉬어요. 알람은 내일 다시 울려요.',
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
+            textAlign: TextAlign.center,
+            style: (compact ? theme.textTheme.bodySmall : theme.textTheme.bodyMedium)
+                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
           ),
         ],
       ),
