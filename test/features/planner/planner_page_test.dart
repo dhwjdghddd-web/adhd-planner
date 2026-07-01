@@ -493,14 +493,14 @@ void main() {
   });
 
   group('오늘은 쉬기 (rest day)', () {
-    testWidgets('the toggle is shown and off by default', (tester) async {
+    testWidgets('the toggle FAB is shown and off by default', (tester) async {
       final repo = FakePlannerRepository();
       await repo.upsertSegment(_block(name: '하루'));
 
       await tester.pumpWidget(wrap(repo, debugNowMinuteOfDay: 12 * 60));
       await tester.pumpAndSettle();
 
-      expect(find.text('오늘은 쉬기'), findsOneWidget);
+      expect(find.byTooltip('오늘은 쉬기'), findsOneWidget);
       expect(find.text('오늘은 쉬는 날'), findsNothing); // no rest banner yet
     });
 
@@ -513,15 +513,15 @@ void main() {
       await tester.pumpWidget(wrap(repo, debugNowMinuteOfDay: 12 * 60));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('오늘은 쉬기'));
+      await tester.tap(find.byTooltip('오늘은 쉬기'));
       await tester.pumpAndSettle();
 
       final restDays = await repo.watchRestDays().first;
       expect(restDays.length, 1);
-      // Home now reads as a rest day: banner + the toggle flips to "쉬는 날".
+      // Home now reads as a rest day: banner shows + the FAB flips state.
       expect(find.text('오늘은 쉬는 날'), findsOneWidget);
-      expect(find.text('쉬는 날'), findsOneWidget);
-      expect(find.text('오늘은 쉬기'), findsNothing);
+      expect(find.byTooltip('쉬는 날 해제'), findsOneWidget);
+      expect(find.byTooltip('오늘은 쉬기'), findsNothing);
     });
 
     testWidgets('tapping again resumes the day (removes the rest mark)', (
@@ -533,17 +533,17 @@ void main() {
       await tester.pumpWidget(wrap(repo, debugNowMinuteOfDay: 12 * 60));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('오늘은 쉬기'));
+      await tester.tap(find.byTooltip('오늘은 쉬기'));
       await tester.pumpAndSettle();
-      // Let the confirmation SnackBar auto-dismiss (it sits over the toggle).
+      // Let the confirmation SnackBar auto-dismiss (it can sit over the FAB).
       await tester.pump(const Duration(seconds: 3));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('쉬는 날'));
+      await tester.tap(find.byTooltip('쉬는 날 해제'));
       await tester.pumpAndSettle();
 
       expect(await repo.watchRestDays().first, isEmpty);
       expect(find.text('오늘은 쉬는 날'), findsNothing);
-      expect(find.text('오늘은 쉬기'), findsOneWidget);
+      expect(find.byTooltip('오늘은 쉬기'), findsOneWidget);
     });
   });
 }

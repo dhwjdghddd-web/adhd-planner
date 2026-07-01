@@ -292,19 +292,18 @@ class NotificationService {
   /// ones [segments] now call for (one start-of-block alarm per alarm-enabled
   /// block), using [settings]'s current sound and vibration choice. Call this
   /// again whenever blocks or that choice change so it takes effect immediately.
-  /// Anchor for a spec's first fire. On a rest day ([restToday]), an alarm that
-  /// would otherwise fire TODAY is pushed to tomorrow so today is silent, while
-  /// the daily `matchDateTimeComponents.time` repeat (and the native
-  /// self-re-arming Vibrator alarm) keeps every following day intact.
-  tz.TZDateTime _firstTrigger(int minuteOfDay, {required bool restToday}) {
+  /// Whether [minuteOfDay]'s next occurrence lands later TODAY (vs already
+  /// passed, so its next fire is tomorrow). On a rest day these are the alarms
+  /// to skip -- the `matchDateTimeComponents.time` daily repeat re-anchors to
+  /// the next matching *time* regardless of the scheduled date, so a would-be
+  /// today alarm can't be "moved" to tomorrow; it has to be left unscheduled,
+  /// and the next launch's rescheduleAll re-arms the normal daily repeat.
+  bool _firesToday(int minuteOfDay) {
     final trigger = nextInstanceOf(minuteOfDay);
-    if (!restToday) return trigger;
     final now = tz.TZDateTime.now(tz.local);
-    final firesToday =
-        trigger.year == now.year &&
+    return trigger.year == now.year &&
         trigger.month == now.month &&
         trigger.day == now.day;
-    return firesToday ? trigger.add(const Duration(days: 1)) : trigger;
   }
 
   Future<void> rescheduleAll(
@@ -330,7 +329,12 @@ class NotificationService {
 
     final specs = buildSchedule(segments, leadMinutes: settings.leadMinutes);
     for (final spec in specs) {
-      final triggerAt = _firstTrigger(spec.minuteOfDay, restToday: restToday);
+      // "오늘은 쉬기": leave today's remaining alarms unscheduled entirely (see
+      // _firesToday) so nothing fires today -- no sound AND no popup. Alarms
+      // that already passed today still schedule normally (their next fire is
+      // tomorrow, so they stay armed for every following day).
+      if (restToday && _firesToday(spec.minuteOfDay)) continue;
+      final triggerAt = nextInstanceOf(spec.minuteOfDay);
       if (spec.isLeadWarning) {
         // Quiet heads-up only -- no native Vibrator call, no alarmClock
         // urgency/status-bar icon. flutter_local_notifications auto-creates
@@ -480,7 +484,10 @@ class NotificationService {
     int minuteOfDay, {
     bool restToday = false,
   }) async {
-    final triggerAt = _firstTrigger(minuteOfDay, restToday: restToday);
+    // "오늘은 쉬기": if today's reminder hasn't fired yet, leave it unscheduled
+    // so it stays silent today (same reasoning as the block alarms).
+    if (restToday && _firesToday(minuteOfDay)) return;
+    final triggerAt = nextInstanceOf(minuteOfDay);
     await _plugin.zonedSchedule(
       _checkinNotificationId,
       '체크인',

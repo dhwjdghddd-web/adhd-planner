@@ -350,17 +350,16 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
           ),
           if (isResting)
             const Positioned.fill(
-              child: IgnorePointer(child: _RestDayBanner()),
+              child: IgnorePointer(
+                // Sit on the dial's visual centre (the ambient backdrop's focal
+                // point is at ~46% height) so the rest graphic reads as balanced
+                // over the dial behind it, not floating at mid-screen.
+                child: Align(
+                  alignment: Alignment(0, -0.08),
+                  child: _RestDayBanner(),
+                ),
+              ),
             ),
-          Positioned(
-            right: 12,
-            bottom:
-                (isCompactLayout(context)
-                    ? 56
-                    : fabAvoidingBottomInset(context)) +
-                4,
-            child: _RestDayToggle(resting: isResting),
-          ),
         ],
       ),
       floatingActionButton: isCompactLayout(context)
@@ -385,19 +384,30 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
                     child: const Icon(Icons.add),
                   ),
                 ),
+                const SizedBox(width: 12),
+                _RestDayFab(resting: isResting, small: true),
               ],
             )
           : MultiFabRow(
               left: const GlobalQuickAddButton(),
-              right: Semantics(
-                label: '구간 추가',
-                child: FloatingActionButton(
-                  heroTag: 'planner-add-segment',
-                  onPressed: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const SegmentFormPage()),
+              right: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Semantics(
+                    label: '구간 추가',
+                    child: FloatingActionButton(
+                      heroTag: 'planner-add-segment',
+                      onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const SegmentFormPage(),
+                        ),
+                      ),
+                      child: const Icon(Icons.add),
+                    ),
                   ),
-                  child: const Icon(Icons.add),
-                ),
+                  const SizedBox(width: 12),
+                  _RestDayFab(resting: isResting),
+                ],
               ),
             ),
       floatingActionButtonLocation: isCompactLayout(context)
@@ -937,16 +947,19 @@ class _RestDayBanner extends StatelessWidget {
   }
 }
 
-/// Bottom-right toggle for "오늘은 쉬기". Filled while resting (tap to resume),
-/// tonal otherwise (tap to rest). Toggling reschedules alarms via app.dart's
-/// _RestDayAlarmSync watching the same record.
-class _RestDayToggle extends ConsumerWidget {
-  const _RestDayToggle({required this.resting});
+/// Icon-only FAB for "오늘은 쉬기", sitting in the home FAB row next to 구간
+/// 추가. Highlighted (primary fill) while resting, plain otherwise. Toggling
+/// reschedules alarms via app.dart's _RestDayAlarmSync watching the same record.
+class _RestDayFab extends ConsumerWidget {
+  const _RestDayFab({required this.resting, this.small = false});
 
   final bool resting;
+  final bool small;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final scheme = Theme.of(context).colorScheme;
+
     void toggle() {
       final next = !resting;
       unawaited(ref.read(restDayControllerProvider).setToday(next));
@@ -957,20 +970,28 @@ class _RestDayToggle extends ConsumerWidget {
       );
     }
 
-    return Semantics(
-      button: true,
-      label: resting ? '쉬는 날 해제' : '오늘은 쉬기',
-      child: resting
-          ? FilledButton.icon(
-              onPressed: toggle,
-              icon: const Icon(Icons.bedtime_rounded, size: 18),
-              label: const Text('쉬는 날'),
-            )
-          : FilledButton.tonalIcon(
-              onPressed: toggle,
-              icon: const Icon(Icons.bedtime_outlined, size: 18),
-              label: const Text('오늘은 쉬기'),
-            ),
-    );
+    final icon = Icon(resting ? Icons.bedtime_rounded : Icons.bedtime_outlined);
+    final tooltip = resting ? '쉬는 날 해제' : '오늘은 쉬기';
+    // Highlight the FAB while a rest day is active so its "on" state is obvious.
+    final background = resting ? scheme.primary : null;
+    final foreground = resting ? scheme.onPrimary : null;
+
+    return small
+        ? FloatingActionButton.small(
+            heroTag: 'planner-rest-day',
+            tooltip: tooltip,
+            backgroundColor: background,
+            foregroundColor: foreground,
+            onPressed: toggle,
+            child: icon,
+          )
+        : FloatingActionButton(
+            heroTag: 'planner-rest-day',
+            tooltip: tooltip,
+            backgroundColor: background,
+            foregroundColor: foreground,
+            onPressed: toggle,
+            child: icon,
+          );
   }
 }
