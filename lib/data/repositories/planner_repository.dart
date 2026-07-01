@@ -7,6 +7,7 @@ import '../models/memo.dart';
 import '../models/micro_step_move.dart';
 import '../models/micro_step_progress.dart';
 import '../models/mit.dart';
+import '../models/rest_day.dart';
 import '../models/segment.dart';
 
 /// Storage abstraction for the whole app. Screens and controllers depend
@@ -58,6 +59,11 @@ abstract class PlannerRepository {
   Stream<List<MicroStepMove>> watchMicroStepMoves();
   Future<void> saveMicroStepMove(MicroStepMove m);
   Future<void> removeMicroStepMove(String homeSegmentId, int stepIndex);
+
+  // Rest days ("오늘은 쉬기" -- per day: suppress all alarms + rest-mode home)
+  Stream<List<RestDay>> watchRestDays();
+  Future<void> saveRestDay(RestDay r);
+  Future<void> removeRestDay(String dateKey);
 
   // Settings
   Stream<AppSettings> watchSettings();

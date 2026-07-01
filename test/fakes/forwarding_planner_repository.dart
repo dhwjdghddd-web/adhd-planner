@@ -7,6 +7,7 @@ import 'package:adhd_planner/data/models/memo.dart';
 import 'package:adhd_planner/data/models/micro_step_move.dart';
 import 'package:adhd_planner/data/models/micro_step_progress.dart';
 import 'package:adhd_planner/data/models/mit.dart';
+import 'package:adhd_planner/data/models/rest_day.dart';
 import 'package:adhd_planner/data/models/segment.dart';
 import 'package:adhd_planner/data/repositories/planner_repository.dart';
 
@@ -86,6 +87,13 @@ abstract class ForwardingPlannerRepository implements PlannerRepository {
   @override
   Future<void> removeMicroStepMove(String homeSegmentId, int stepIndex) =>
       inner.removeMicroStepMove(homeSegmentId, stepIndex);
+
+  @override
+  Stream<List<RestDay>> watchRestDays() => inner.watchRestDays();
+  @override
+  Future<void> saveRestDay(RestDay r) => inner.saveRestDay(r);
+  @override
+  Future<void> removeRestDay(String dateKey) => inner.removeRestDay(dateKey);
 
   @override
   Stream<AppSettings> watchSettings() => inner.watchSettings();

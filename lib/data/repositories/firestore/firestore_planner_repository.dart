@@ -10,6 +10,7 @@ import '../../models/memo.dart';
 import '../../models/micro_step_move.dart';
 import '../../models/micro_step_progress.dart';
 import '../../models/mit.dart';
+import '../../models/rest_day.dart';
 import '../../models/segment.dart';
 import '../planner_repository.dart';
 
@@ -161,6 +162,19 @@ class FirestorePlannerRepository implements PlannerRepository {
     ).doc(MicroStepMove.keyFor(dateKey, homeSegmentId, stepIndex)).delete();
   }
 
+  // Rest days ("오늘은 쉬기") -- per day; same recent-window reasoning.
+  @override
+  Stream<List<RestDay>> watchRestDays() =>
+      _watchSince('restDays', RestDay.fromMap, _historyWindowDays);
+
+  @override
+  Future<void> saveRestDay(RestDay r) =>
+      _collection('restDays').doc(r.id).set(r.toMap());
+
+  @override
+  Future<void> removeRestDay(String dateKey) =>
+      _collection('restDays').doc(dateKey).delete();
+
   // Settings
   @override
   Stream<AppSettings> watchSettings() => _userDoc.snapshots().map((snap) {
@@ -239,4 +253,5 @@ const _ownedCollections = [
   'mits',
   'checkins',
   'microStepMoves',
+  'restDays',
 ];

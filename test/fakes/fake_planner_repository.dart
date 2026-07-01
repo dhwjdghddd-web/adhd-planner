@@ -9,6 +9,7 @@ import 'package:adhd_planner/data/models/memo.dart';
 import 'package:adhd_planner/data/models/micro_step_move.dart';
 import 'package:adhd_planner/data/models/micro_step_progress.dart';
 import 'package:adhd_planner/data/models/mit.dart';
+import 'package:adhd_planner/data/models/rest_day.dart';
 import 'package:adhd_planner/data/models/segment.dart';
 import 'package:adhd_planner/data/repositories/planner_repository.dart';
 
@@ -25,6 +26,7 @@ class FakePlannerRepository implements PlannerRepository {
   final Map<String, Mit> _mits = {};
   final Map<String, Checkin> _checkins = {};
   final Map<String, MicroStepMove> _moves = {};
+  final Map<String, RestDay> _restDays = {};
   AppSettings _settings = const AppSettings.defaults();
 
   final _segmentsStream = _ReplayStream<List<Segment>>();
@@ -36,6 +38,7 @@ class FakePlannerRepository implements PlannerRepository {
   final _mitsStream = _ReplayStream<List<Mit>>();
   final _checkinsStream = _ReplayStream<List<Checkin>>();
   final _movesStream = _ReplayStream<List<MicroStepMove>>();
+  final _restDaysStream = _ReplayStream<List<RestDay>>();
   final _settingsStream = _ReplayStream<AppSettings>();
 
   FakePlannerRepository() {
@@ -48,6 +51,7 @@ class FakePlannerRepository implements PlannerRepository {
     _mitsStream.add(const []);
     _checkinsStream.add(const []);
     _movesStream.add(const []);
+    _restDaysStream.add(const []);
     _settingsStream.add(_settings);
   }
 
@@ -187,6 +191,21 @@ class FakePlannerRepository implements PlannerRepository {
   }
 
   @override
+  Stream<List<RestDay>> watchRestDays() => _restDaysStream.stream;
+
+  @override
+  Future<void> saveRestDay(RestDay r) async {
+    _restDays[r.id] = r;
+    _restDaysStream.add(_restDays.values.toList());
+  }
+
+  @override
+  Future<void> removeRestDay(String dateKey) async {
+    _restDays.remove(dateKey);
+    _restDaysStream.add(_restDays.values.toList());
+  }
+
+  @override
   Future<void> deleteAllData() async {
     _segments.clear();
     _memos.clear();
@@ -197,6 +216,7 @@ class FakePlannerRepository implements PlannerRepository {
     _mits.clear();
     _checkins.clear();
     _moves.clear();
+    _restDays.clear();
     _settings = const AppSettings.defaults();
     _segmentsStream.add(const []);
     _memosStream.add(const []);
@@ -207,6 +227,7 @@ class FakePlannerRepository implements PlannerRepository {
     _mitsStream.add(const []);
     _checkinsStream.add(const []);
     _movesStream.add(const []);
+    _restDaysStream.add(const []);
     _settingsStream.add(_settings);
   }
 }

@@ -13,6 +13,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'app.dart';
 import 'core/error_reporting.dart';
 import 'data/repositories/firestore/firestore_planner_repository.dart';
+import 'data/today.dart';
 import 'firebase_options.dart';
 import 'services/notification_service.dart';
 
@@ -79,7 +80,12 @@ Future<void> _initNotificationsInBackground(String uid) async {
     await notificationService.requestPermissions();
     final segments = await repository.watchSegments().first;
     final settings = await repository.watchSettings().first;
-    await notificationService.rescheduleAll(segments, settings);
+    final restDays = await repository.watchRestDays().first;
+    await notificationService.rescheduleAll(
+      segments,
+      settings,
+      restToday: isRestDayOn(restDays),
+    );
   } catch (e, st) {
     reportError(e, st, where: '초기 알림 스케줄');
   }

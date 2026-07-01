@@ -59,6 +59,7 @@ class App extends ConsumerWidget {
               const _ScreenWakeSync(),
               const _CoverDisplayWatcher(),
               const _AccountAlarmSync(),
+              const _RestDayAlarmSync(),
               const _AchievementRecorder(),
               const _CompletionCelebrator(),
             ],
@@ -345,6 +346,10 @@ class _ForegroundAlarmWatcherState
     if (minuteOfDay == _lastCheckedMinuteOfDay) return;
     _lastCheckedMinuteOfDay = minuteOfDay;
 
+    // "오늘은 쉬기": no alarms of any kind pop while resting today.
+    final restDays = ref.read(restDaysProvider).value ?? const [];
+    if (isRestDayOn(restDays)) return;
+
     // Daily check-in reminder, while the app is foreground: Android tends to
     // suppress the heads-up banner for a notification its own foreground app
     // posted, so without this the reminder would only vibrate with nothing to
@@ -435,6 +440,40 @@ class _AccountAlarmSync extends ConsumerWidget {
       } catch (e) {
         // 플랫폼 채널 부재(테스트 등) — 무시.
         logSwallowed('계정 전환 후 알람 재스케줄', e);
+      }
+    });
+    return const SizedBox.shrink();
+  }
+}
+
+/// Reschedules alarms whenever the "오늘은 쉬기" toggle changes, so today's
+/// alarms are suppressed (or, when un-toggled, restored) without waiting for
+/// the next app launch. Only reacts to genuine changes -- the initial load is
+/// skipped (main.dart already scheduled with the right rest state at startup),
+/// which also keeps this quiet under widget tests (no platform channel).
+class _RestDayAlarmSync extends ConsumerWidget {
+  const _RestDayAlarmSync();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    ref.listen(restDaysProvider, (prev, next) async {
+      // Skip the initial loading→data emission; only a real toggle after that.
+      if (prev == null || !prev.hasValue) return;
+      final restDays = next.value;
+      if (restDays == null) return;
+      final segments = ref.read(segmentsProvider).value;
+      final settings = ref.read(settingsProvider).value;
+      if (segments == null || settings == null) return;
+      try {
+        await ref
+            .read(notificationServiceProvider)
+            .rescheduleAll(
+              segments,
+              settings,
+              restToday: isRestDayOn(restDays),
+            );
+      } catch (e) {
+        logSwallowed('쉬는 날 토글 후 알람 재스케줄', e);
       }
     });
     return const SizedBox.shrink();
@@ -618,6 +657,7 @@ class _CompletionCelebratorState extends ConsumerState<_CompletionCelebrator> {
     final progress = progressAsync.value;
     final settings = settingsAsync.value;
     final achievedDays = achievedDaysAsync.value;
+    final restDays = ref.watch(restDaysProvider).value ?? const [];
 
     if (segments == null ||
         completions == null ||
@@ -660,6 +700,7 @@ class _CompletionCelebratorState extends ConsumerState<_CompletionCelebrator> {
           segments: segments,
           completions: completions,
           progress: progress,
+          restDays: restDays,
         ),
       );
       // After this frame: persisting (and showing a dialog) mid-build would

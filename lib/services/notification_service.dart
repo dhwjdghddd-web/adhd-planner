@@ -292,10 +292,26 @@ class NotificationService {
   /// ones [segments] now call for (one start-of-block alarm per alarm-enabled
   /// block), using [settings]'s current sound and vibration choice. Call this
   /// again whenever blocks or that choice change so it takes effect immediately.
+  /// Anchor for a spec's first fire. On a rest day ([restToday]), an alarm that
+  /// would otherwise fire TODAY is pushed to tomorrow so today is silent, while
+  /// the daily `matchDateTimeComponents.time` repeat (and the native
+  /// self-re-arming Vibrator alarm) keeps every following day intact.
+  tz.TZDateTime _firstTrigger(int minuteOfDay, {required bool restToday}) {
+    final trigger = nextInstanceOf(minuteOfDay);
+    if (!restToday) return trigger;
+    final now = tz.TZDateTime.now(tz.local);
+    final firesToday =
+        trigger.year == now.year &&
+        trigger.month == now.month &&
+        trigger.day == now.day;
+    return firesToday ? trigger.add(const Duration(days: 1)) : trigger;
+  }
+
   Future<void> rescheduleAll(
     List<Segment> segments,
-    AppSettings settings,
-  ) async {
+    AppSettings settings, {
+    bool restToday = false,
+  }) async {
     final repo = _repository;
     if (repo == null) return; // auth 전환 중 — 알람 재스케줄 건너뜀
     await _ensureChannels(settings);
@@ -314,7 +330,7 @@ class NotificationService {
 
     final specs = buildSchedule(segments, leadMinutes: settings.leadMinutes);
     for (final spec in specs) {
-      final triggerAt = nextInstanceOf(spec.minuteOfDay);
+      final triggerAt = _firstTrigger(spec.minuteOfDay, restToday: restToday);
       if (spec.isLeadWarning) {
         // Quiet heads-up only -- no native Vibrator call, no alarmClock
         // urgency/status-bar icon. flutter_local_notifications auto-creates
@@ -371,7 +387,10 @@ class NotificationService {
     // reminder along with the block alarms -- re-arm it here under the
     // current setting, same as every block alarm just was.
     if (settings.checkinAlarmEnabled) {
-      await scheduleCheckinAlarm(settings.checkinAlarmMinuteOfDay);
+      await scheduleCheckinAlarm(
+        settings.checkinAlarmMinuteOfDay,
+        restToday: restToday,
+      );
     }
 
     final idsBySegment = <String, List<int>>{};
@@ -457,8 +476,11 @@ class NotificationService {
   /// same as the block alarm, so it stays in sync without Dart needing to run.
   /// Tapping it (handled in [_handleResponse]) opens CheckinPage straight
   /// into the mood/energy dialog.
-  Future<void> scheduleCheckinAlarm(int minuteOfDay) async {
-    final triggerAt = nextInstanceOf(minuteOfDay);
+  Future<void> scheduleCheckinAlarm(
+    int minuteOfDay, {
+    bool restToday = false,
+  }) async {
+    final triggerAt = _firstTrigger(minuteOfDay, restToday: restToday);
     await _plugin.zonedSchedule(
       _checkinNotificationId,
       '체크인',

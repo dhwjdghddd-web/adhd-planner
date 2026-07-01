@@ -32,8 +32,9 @@ class FakeNotificationService extends NotificationService {
   @override
   Future<void> rescheduleAll(
     List<Segment> segments,
-    AppSettings settings,
-  ) async {
+    AppSettings settings, {
+    bool restToday = false,
+  }) async {
     rescheduleCalls.add(segments);
   }
 

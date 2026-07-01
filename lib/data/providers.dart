@@ -10,6 +10,7 @@ import 'models/memo.dart';
 import 'models/micro_step_move.dart';
 import 'models/micro_step_progress.dart';
 import 'models/mit.dart';
+import 'models/rest_day.dart';
 import 'models/segment.dart';
 import 'repositories/firestore/firestore_planner_repository.dart';
 import 'repositories/planner_repository.dart';
@@ -116,6 +117,13 @@ final microStepMovesProvider = StreamProvider<List<MicroStepMove>>(
   (ref) => _guardedStream(
     ref.watch(plannerRepositoryProvider),
     (r) => r.watchMicroStepMoves(),
+  ),
+);
+
+final restDaysProvider = StreamProvider<List<RestDay>>(
+  (ref) => _guardedStream(
+    ref.watch(plannerRepositoryProvider),
+    (r) => r.watchRestDays(),
   ),
 );
 

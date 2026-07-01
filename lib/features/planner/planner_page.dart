@@ -29,7 +29,12 @@ import '../segments/segment_icons.dart';
 import '../segments/segment_templates.dart';
 import '../segments/segments_controller.dart';
 import '../memos/quick_add_button.dart'
-    show MultiFabRow, GlobalQuickAddButton, fabAvoidingBottomInset;
+    show
+        MultiFabRow,
+        GlobalQuickAddButton,
+        fabAvoidingBottomInset,
+        showAppSnackBar;
+import '../rewards/rest_day_controller.dart';
 import '../settings/settings_controller.dart';
 import '../settings/settings_page.dart';
 import 'dial_painter.dart';
@@ -94,6 +99,9 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
     final mitSegmentIds = mitBlockIdsOn(mits);
     final settings = ref.watch(settingsProvider).value;
     final homeViewMode = settings?.homeViewMode ?? HomeViewMode.dial;
+    final isResting = isRestDayOn(
+      ref.watch(restDaysProvider).value ?? const [],
+    );
 
     return Scaffold(
       // 빠른메모 시트(모달, 별도 라우트)가 키보드와 함께 올라올 때 그 viewInsets가
@@ -169,162 +177,189 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
       body: Stack(
         children: [
           const Positioned.fill(child: _AmbientBackdrop()),
-          // Header, badges, dial, and the next-block countdown are ONE
-          // vertically-centred group, balanced within the space above the
-          // bottom quick-add FAB. Centring the whole group (rather than pinning
-          // header to the top and countdown to the bottom) keeps both reading as
-          // a calm cluster around the dial, and the LayoutBuilder sizing keeps
-          // that balance on any screen height. Reserving the FAB inset at the
-          // bottom guarantees nothing ever sits in the FAB's space.
-          Padding(
-            // Compact (cover): the FABs are a short corner row, so reserve
-            // only enough to clear them -- the dashboard then uses the whole
-            // short screen down to just above the camera, instead of a big
-            // full-width FAB band.
-            padding: EdgeInsets.only(
-              bottom: isCompactLayout(context)
-                  ? 56
-                  : fabAvoidingBottomInset(context),
-            ),
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                // Compact screen (foldable cover / small phone): the 24h dial
-                // is too cramped to read, so show a dedicated compact
-                // dashboard (current/next block card + streak + checklist),
-                // no dial -- regardless of the dial/next-action toggle.
-                if (isCompactLayout(context)) {
-                  return segmentsAsync.maybeWhen(
-                    data: (segments) => _CompactHome(
-                      segments: segments,
-                      currentMinute: _currentMinute,
-                      mitSegmentIds: mitSegmentIds,
-                    ),
-                    orElse: () =>
-                        const Center(child: CircularProgressIndicator()),
-                  );
-                }
+          // "오늘은 쉬기": the whole live dashboard is dimmed and a calm rest
+          // banner sits over it, so a rest day reads as visibly, deliberately
+          // different (taps still pass through -- resting is a soft state, not
+          // a lockout).
+          Opacity(
+            opacity: isResting ? 0.28 : 1.0,
+            child:
+                // Header, badges, dial, and the next-block countdown are ONE
+                // vertically-centred group, balanced within the space above the
+                // bottom quick-add FAB. Centring the whole group (rather than pinning
+                // header to the top and countdown to the bottom) keeps both reading as
+                // a calm cluster around the dial, and the LayoutBuilder sizing keeps
+                // that balance on any screen height. Reserving the FAB inset at the
+                // bottom guarantees nothing ever sits in the FAB's space.
+                Padding(
+                  // Compact (cover): the FABs are a short corner row, so reserve
+                  // only enough to clear them -- the dashboard then uses the whole
+                  // short screen down to just above the camera, instead of a big
+                  // full-width FAB band.
+                  padding: EdgeInsets.only(
+                    bottom: isCompactLayout(context)
+                        ? 56
+                        : fabAvoidingBottomInset(context),
+                  ),
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      // Compact screen (foldable cover / small phone): the 24h dial
+                      // is too cramped to read, so show a dedicated compact
+                      // dashboard (current/next block card + streak + checklist),
+                      // no dial -- regardless of the dial/next-action toggle.
+                      if (isCompactLayout(context)) {
+                        return segmentsAsync.maybeWhen(
+                          data: (segments) => _CompactHome(
+                            segments: segments,
+                            currentMinute: _currentMinute,
+                            mitSegmentIds: mitSegmentIds,
+                          ),
+                          orElse: () =>
+                              const Center(child: CircularProgressIndicator()),
+                        );
+                      }
 
-                // T6: dial, badges, and the countdown are all hidden in this
-                // mode -- just the current/next block and a big start button
-                // (or a calm empty message when there's neither).
-                if (homeViewMode == HomeViewMode.nextAction) {
-                  return segmentsAsync.maybeWhen(
-                    data: (segments) => _NextActionView(
-                      segments: segments,
-                      currentMinute: _currentMinute,
-                      mitSegmentIds: mitSegmentIds,
-                    ),
-                    orElse: () =>
-                        const Center(child: CircularProgressIndicator()),
-                  );
-                }
+                      // T6: dial, badges, and the countdown are all hidden in this
+                      // mode -- just the current/next block and a big start button
+                      // (or a calm empty message when there's neither).
+                      if (homeViewMode == HomeViewMode.nextAction) {
+                        return segmentsAsync.maybeWhen(
+                          data: (segments) => _NextActionView(
+                            segments: segments,
+                            currentMinute: _currentMinute,
+                            mitSegmentIds: mitSegmentIds,
+                          ),
+                          orElse: () =>
+                              const Center(child: CircularProgressIndicator()),
+                        );
+                      }
 
-                final isEmpty = segmentsAsync.value?.isEmpty ?? false;
+                      final isEmpty = segmentsAsync.value?.isEmpty ?? false;
 
-                // Empty case: there's no dialSize-style computed height to
-                // budget around (the starter chips' natural height isn't
-                // capped the way the dial's square size is), so this is laid
-                // out as a normal top-to-bottom Column with the content area
-                // left free to scroll -- on a short screen it scrolls instead
-                // of overflowing, rather than trying to force everything to
-                // fit via mainAxisSize.min like the non-empty layout below.
-                if (isEmpty) {
-                  return Column(
-                    children: [
-                      const SizedBox(height: 8),
-                      _HomeHeader(minuteOfDay: _currentMinute),
-                      const SizedBox(height: 12),
-                      const Wrap(
-                        spacing: 12,
-                        alignment: WrapAlignment.center,
-                        children: [StreakBadge(), DailyChecklistBadge()],
-                      ),
-                      Expanded(
-                        child: SingleChildScrollView(
-                          padding: const EdgeInsets.symmetric(vertical: 24),
-                          child: Center(
-                            child: ConstrainedBox(
-                              constraints: BoxConstraints(
-                                maxWidth: math.min(
-                                  constraints.maxWidth * 0.9,
-                                  420,
+                      // Empty case: there's no dialSize-style computed height to
+                      // budget around (the starter chips' natural height isn't
+                      // capped the way the dial's square size is), so this is laid
+                      // out as a normal top-to-bottom Column with the content area
+                      // left free to scroll -- on a short screen it scrolls instead
+                      // of overflowing, rather than trying to force everything to
+                      // fit via mainAxisSize.min like the non-empty layout below.
+                      if (isEmpty) {
+                        return Column(
+                          children: [
+                            const SizedBox(height: 8),
+                            _HomeHeader(minuteOfDay: _currentMinute),
+                            const SizedBox(height: 12),
+                            const Wrap(
+                              spacing: 12,
+                              alignment: WrapAlignment.center,
+                              children: [StreakBadge(), DailyChecklistBadge()],
+                            ),
+                            Expanded(
+                              child: SingleChildScrollView(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 24,
+                                ),
+                                child: Center(
+                                  child: ConstrainedBox(
+                                    constraints: BoxConstraints(
+                                      maxWidth: math.min(
+                                        constraints.maxWidth * 0.9,
+                                        420,
+                                      ),
+                                    ),
+                                    child: const _EmptyHomeStarter(),
+                                  ),
                                 ),
                               ),
-                              child: const _EmptyHomeStarter(),
+                            ),
+                          ],
+                        );
+                      }
+
+                      // Dial is kept a little narrower than the full width (so it
+                      // doesn't run edge-to-edge and crowd the texts). The gaps
+                      // above/below it scale with the screen height — generous on a
+                      // tall phone, tight on a short cover screen.
+                      final vGap = (constraints.maxHeight * 0.09).clamp(
+                        16.0,
+                        56.0,
+                      );
+                      final dialSize = math
+                          .min(
+                            constraints.maxWidth * 0.9,
+                            constraints.maxHeight - 200,
+                          )
+                          .clamp(140.0, constraints.maxWidth);
+                      final content = Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _HomeHeader(minuteOfDay: _currentMinute),
+                          const SizedBox(height: 12),
+                          const Wrap(
+                            spacing: 12,
+                            alignment: WrapAlignment.center,
+                            children: [StreakBadge(), DailyChecklistBadge()],
+                          ),
+                          SizedBox(height: vGap),
+                          SizedBox(
+                            width: dialSize,
+                            height: dialSize,
+                            child: segmentsAsync.when(
+                              data: (segments) => _Dial(
+                                segments: segments,
+                                currentMinute: _currentMinute,
+                                completedSegmentIds: completedSegmentIds,
+                                mitSegmentIds: mitSegmentIds,
+                              ),
+                              loading: () => const Center(
+                                child: CircularProgressIndicator(),
+                              ),
+                              error: errorView,
                             ),
                           ),
-                        ),
-                      ),
-                    ],
-                  );
-                }
+                          SizedBox(height: vGap),
+                          segmentsAsync.maybeWhen(
+                            data: (segments) => _NextBlockCountdown(
+                              segments: segments,
+                              currentMinute: _currentMinute,
+                            ),
+                            orElse: () => const SizedBox.shrink(),
+                          ),
+                        ],
+                      );
 
-                // Dial is kept a little narrower than the full width (so it
-                // doesn't run edge-to-edge and crowd the texts). The gaps
-                // above/below it scale with the screen height — generous on a
-                // tall phone, tight on a short cover screen.
-                final vGap = (constraints.maxHeight * 0.09).clamp(16.0, 56.0);
-                final dialSize = math
-                    .min(
-                      constraints.maxWidth * 0.9,
-                      constraints.maxHeight - 200,
-                    )
-                    .clamp(140.0, constraints.maxWidth);
-                final content = Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _HomeHeader(minuteOfDay: _currentMinute),
-                    const SizedBox(height: 12),
-                    const Wrap(
-                      spacing: 12,
-                      alignment: WrapAlignment.center,
-                      children: [StreakBadge(), DailyChecklistBadge()],
-                    ),
-                    SizedBox(height: vGap),
-                    SizedBox(
-                      width: dialSize,
-                      height: dialSize,
-                      child: segmentsAsync.when(
-                        data: (segments) => _Dial(
-                          segments: segments,
-                          currentMinute: _currentMinute,
-                          completedSegmentIds: completedSegmentIds,
-                          mitSegmentIds: mitSegmentIds,
+                      // On a normal phone the cluster fits, so it's a plain static
+                      // Center -- no scroll view, so it reads as a fixed backdrop
+                      // (no scroll bounce/jank). Only on a short screen (foldable
+                      // cover) does it fall back to scrolling to avoid overflow.
+                      const fitsThreshold = 560.0;
+                      if (constraints.maxHeight >= fitsThreshold) {
+                        return Center(child: content);
+                      }
+                      return SingleChildScrollView(
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(
+                            minHeight: constraints.maxHeight,
+                          ),
+                          child: Center(child: content),
                         ),
-                        loading: () =>
-                            const Center(child: CircularProgressIndicator()),
-                        error: errorView,
-                      ),
-                    ),
-                    SizedBox(height: vGap),
-                    segmentsAsync.maybeWhen(
-                      data: (segments) => _NextBlockCountdown(
-                        segments: segments,
-                        currentMinute: _currentMinute,
-                      ),
-                      orElse: () => const SizedBox.shrink(),
-                    ),
-                  ],
-                );
-
-                // On a normal phone the cluster fits, so it's a plain static
-                // Center -- no scroll view, so it reads as a fixed backdrop
-                // (no scroll bounce/jank). Only on a short screen (foldable
-                // cover) does it fall back to scrolling to avoid overflow.
-                const fitsThreshold = 560.0;
-                if (constraints.maxHeight >= fitsThreshold) {
-                  return Center(child: content);
-                }
-                return SingleChildScrollView(
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(
-                      minHeight: constraints.maxHeight,
-                    ),
-                    child: Center(child: content),
+                      );
+                    },
                   ),
-                );
-              },
+                ),
+          ),
+          if (isResting)
+            const Positioned.fill(
+              child: IgnorePointer(child: _RestDayBanner()),
             ),
+          Positioned(
+            right: 12,
+            bottom:
+                (isCompactLayout(context)
+                    ? 56
+                    : fabAvoidingBottomInset(context)) +
+                4,
+            child: _RestDayToggle(resting: isResting),
           ),
         ],
       ),
@@ -867,6 +902,75 @@ class _CenterSummary extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// The calm overlay shown over the dimmed home on a rest day ("오늘은 쉬기").
+class _RestDayBanner extends StatelessWidget {
+  const _RestDayBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.bedtime_rounded,
+            size: 48,
+            color: theme.colorScheme.primary,
+          ),
+          const SizedBox(height: 12),
+          Text('오늘은 쉬는 날', style: theme.textTheme.headlineSmall),
+          const SizedBox(height: 6),
+          Text(
+            '푹 쉬어요. 알람은 내일 다시 울려요.',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Bottom-right toggle for "오늘은 쉬기". Filled while resting (tap to resume),
+/// tonal otherwise (tap to rest). Toggling reschedules alarms via app.dart's
+/// _RestDayAlarmSync watching the same record.
+class _RestDayToggle extends ConsumerWidget {
+  const _RestDayToggle({required this.resting});
+
+  final bool resting;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    void toggle() {
+      final next = !resting;
+      unawaited(ref.read(restDayControllerProvider).setToday(next));
+      showAppSnackBar(
+        context,
+        Text(next ? '오늘은 쉬어요 🌙 오늘 알람을 껐어요.' : '다시 시작해요. 오늘 알람을 다시 켰어요.'),
+        duration: const Duration(seconds: 2),
+      );
+    }
+
+    return Semantics(
+      button: true,
+      label: resting ? '쉬는 날 해제' : '오늘은 쉬기',
+      child: resting
+          ? FilledButton.icon(
+              onPressed: toggle,
+              icon: const Icon(Icons.bedtime_rounded, size: 18),
+              label: const Text('쉬는 날'),
+            )
+          : FilledButton.tonalIcon(
+              onPressed: toggle,
+              icon: const Icon(Icons.bedtime_outlined, size: 18),
+              label: const Text('오늘은 쉬기'),
+            ),
     );
   }
 }

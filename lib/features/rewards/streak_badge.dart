@@ -26,6 +26,7 @@ class StreakBadge extends ConsumerWidget {
     final achievedDays = ref.watch(achievedDaysProvider).value ?? const [];
     final completionsAsync = ref.watch(completionsProvider);
     final progress = ref.watch(microStepProgressProvider).value ?? const [];
+    final restDays = ref.watch(restDaysProvider).value ?? const [];
     final theme = Theme.of(context);
 
     return completionsAsync.when(
@@ -35,6 +36,7 @@ class StreakBadge extends ConsumerWidget {
           segments: segments,
           completions: completions,
           progress: progress,
+          restDays: restDays,
         );
         final current = currentStreak(dateKeys);
         final best = longestStreak(dateKeys);
@@ -56,7 +58,11 @@ class StreakBadge extends ConsumerWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.local_fire_department, size: 16, color: theme.colorScheme.primary),
+              Icon(
+                Icons.local_fire_department,
+                size: 16,
+                color: theme.colorScheme.primary,
+              ),
               const SizedBox(width: 4),
               if (best > 0)
                 Text('최고 $best일', style: theme.textTheme.labelMedium)
@@ -66,13 +72,17 @@ class StreakBadge extends ConsumerWidget {
                 const SizedBox(width: 6),
                 Text(
                   '· 현재 $current일',
-                  style: theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ] else if (best > 0 && current == 0) ...[
                 const SizedBox(width: 6),
                 Text(
                   '· 다시 시작해도 좋아요',
-                  style: theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ],
             ],

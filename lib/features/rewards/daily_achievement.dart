@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import '../../data/models/achieved_day.dart';
 import '../../data/models/completion.dart';
 import '../../data/models/micro_step_progress.dart';
+import '../../data/models/rest_day.dart';
 import '../../data/models/segment.dart';
 
 /// A single calendar day's progress toward "achieved" status, counted from the
@@ -44,11 +45,17 @@ DailyAchievement dailyAchievementFor({
     if (p.dateKey != dateKey) continue;
     final s = byId[p.segmentId];
     if (s == null) continue;
-    checked += p.checkedIndices.where((i) => i >= 0 && i < s.microSteps.length).length;
+    checked += p.checkedIndices
+        .where((i) => i >= 0 && i < s.microSteps.length)
+        .length;
   }
 
   final hasAnyCompletion = completions.any((c) => c.dateKey == dateKey);
-  return DailyAchievement(checked: checked, total: total, hasAnyCompletion: hasAnyCompletion);
+  return DailyAchievement(
+    checked: checked,
+    total: total,
+    hasAnyCompletion: hasAnyCompletion,
+  );
 }
 
 /// Every calendar day (by [Completion]/[MicroStepProgress] date-key) that
@@ -90,6 +97,7 @@ Set<String> streakDateKeys({
   required List<Segment> segments,
   required List<Completion> completions,
   required List<MicroStepProgress> progress,
+  List<RestDay> restDays = const [],
   DateTime? now,
 }) {
   final todayKey = DateFormat('yyyy-MM-dd').format(now ?? DateTime.now());
@@ -98,6 +106,9 @@ Set<String> streakDateKeys({
     // record that may have been banked earlier today and since fallen back.
     for (final d in achievedDays)
       if (d.dateKey != todayKey) d.dateKey,
+    // Rest days ("오늘은 쉬기") count as part of the streak, past and present,
+    // so a deliberate day off never reads as a missed day (see RestDay).
+    for (final r in restDays) r.dateKey,
   };
   final todayAchieved = dailyAchievementFor(
     dateKey: todayKey,

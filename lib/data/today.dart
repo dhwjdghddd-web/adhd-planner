@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import 'models/alarm_skip.dart';
 import 'models/completion.dart';
 import 'models/mit.dart';
+import 'models/rest_day.dart';
 
 /// Helpers for "what's true about a block *today*", in one place so every
 /// screen draws the day boundary and reads per-day records the same way.
@@ -42,3 +43,15 @@ Set<String> mitBlockIdsOn(List<Mit> mits, {DateTime? now}) {
       if (m.dateKey == key) m.segmentId,
   };
 }
+
+/// Whether [now]'s day (defaults to today) is marked a rest day ("오늘은 쉬기").
+bool isRestDayOn(List<RestDay> restDays, {DateTime? now}) {
+  final key = dayKeyFor(now);
+  return restDays.any((r) => r.dateKey == key);
+}
+
+/// The "yyyy-MM-dd" keys of all rest days -- unioned into the streak's achieved
+/// set so a rest day never counts as a miss (see streakDateKeys).
+Set<String> restDateKeys(List<RestDay> restDays) => {
+  for (final r in restDays) r.dateKey,
+};
