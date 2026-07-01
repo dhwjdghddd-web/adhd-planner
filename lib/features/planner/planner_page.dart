@@ -175,14 +175,18 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
       // intentional calm space rather than an empty void — the same PDF 10
       // motif as the Focus rest screen. The dial and badges sit on top of it.
       body: Stack(
+        // Expand so the Stack fills the body even when resting hides the
+        // dashboard: otherwise the only non-positioned child (the Offstage
+        // content) collapses to zero and the Positioned.fill backdrop/banner
+        // fill a zero-size Stack -- a blank screen.
+        fit: StackFit.expand,
         children: [
           const Positioned.fill(child: _AmbientBackdrop()),
-          // "오늘은 쉬기": the whole live dashboard is dimmed and a calm rest
-          // banner sits over it, so a rest day reads as visibly, deliberately
-          // different (taps still pass through -- resting is a soft state, not
-          // a lockout).
-          Opacity(
-            opacity: isResting ? 0.28 : 1.0,
+          // "오늘은 쉬기": hide the live dashboard entirely (cleaner than dimming
+          // it behind the banner) so a rest day shows just the calm rest banner
+          // on the ambient backdrop.
+          Offstage(
+            offstage: isResting,
             child:
                 // Header, badges, dial, and the next-block countdown are ONE
                 // vertically-centred group, balanced within the space above the
@@ -349,14 +353,23 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
                 ),
           ),
           if (isResting)
-            const Positioned.fill(
+            Positioned.fill(
               child: IgnorePointer(
-                // Whole banner (moon + text) centred on the SCREEN. The body
-                // sits below the app bar, so nudge up a touch from body-centre
-                // to land on true screen-centre rather than just below it.
-                child: Align(
-                  alignment: Alignment(0, -0.1),
-                  child: _RestDayBanner(),
+                // Compact (cover): centre within the area ABOVE the bottom FAB
+                // corner row (reserve the same 56px the dashboard does), so the
+                // banner sits centred in the usable space rather than colliding
+                // with the FABs. Main screen: centre on the screen, nudged up a
+                // touch to offset the app bar.
+                child: Padding(
+                  padding: EdgeInsets.only(
+                    bottom: isCompactLayout(context) ? 56 : 0,
+                  ),
+                  child: Align(
+                    alignment: isCompactLayout(context)
+                        ? Alignment.center
+                        : const Alignment(0, -0.1),
+                    child: const _RestDayBanner(),
+                  ),
                 ),
               ),
             ),
