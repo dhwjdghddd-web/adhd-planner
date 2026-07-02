@@ -58,6 +58,25 @@ class _WaitingIllustrationState extends State<WaitingIllustration>
     return true;
   }
 
+  // The orbit is only painted when showOrbit is true (e.g. the Focus checklist
+  // header passes showOrbit:false). Running its 12s controller when it isn't
+  // drawn just burns a full-framerate repaint loop for nothing -- a real
+  // battery/heat cost while a Focus session sits open -- so gate it here.
+  bool get _shouldOrbit => _shouldAnimate && widget.showOrbit;
+
+  void _syncAnimations() {
+    if (_shouldAnimate) {
+      _breatheController.repeat(reverse: true);
+    } else {
+      _breatheController.stop();
+    }
+    if (_shouldOrbit) {
+      _orbitController.repeat();
+    } else {
+      _orbitController.stop();
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -77,23 +96,15 @@ class _WaitingIllustrationState extends State<WaitingIllustration>
       duration: const Duration(seconds: 12),
     );
 
-    if (_shouldAnimate) {
-      _breatheController.repeat(reverse: true);
-      _orbitController.repeat();
-    }
+    _syncAnimations();
   }
 
   @override
   void didUpdateWidget(covariant WaitingIllustration oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.reduceMotion != oldWidget.reduceMotion) {
-      if (_shouldAnimate) {
-        _breatheController.repeat(reverse: true);
-        _orbitController.repeat();
-      } else {
-        _breatheController.stop();
-        _orbitController.stop();
-      }
+    if (widget.reduceMotion != oldWidget.reduceMotion ||
+        widget.showOrbit != oldWidget.showOrbit) {
+      _syncAnimations();
     }
   }
 
