@@ -116,30 +116,33 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
           // for whichever view tapping it switches *to*, the same convention
           // a theme toggle uses. Remembered across launches via
           // AppSettings.homeViewMode rather than resetting to the dial every
-          // cold start.
-          IconButton(
-            icon: Icon(
-              homeViewMode == HomeViewMode.dial
-                  ? Icons.bolt
-                  : Icons.donut_large,
-            ),
-            tooltip: homeViewMode == HomeViewMode.dial
-                ? '다음 한 행동 보기'
-                : '다이얼 보기',
-            onPressed: settings == null
-                ? null
-                : () => unawaited(
-                    ref
-                        .read(settingsControllerProvider)
-                        .save(
-                          settings.copyWith(
-                            homeViewMode: homeViewMode == HomeViewMode.dial
-                                ? HomeViewMode.nextAction
-                                : HomeViewMode.dial,
+          // cold start. Hidden on compact (cover/small) screens: they always
+          // show the dedicated compact dashboard regardless of this mode, so
+          // the toggle would do nothing there.
+          if (!isCompactLayout(context))
+            IconButton(
+              icon: Icon(
+                homeViewMode == HomeViewMode.dial
+                    ? Icons.bolt
+                    : Icons.donut_large,
+              ),
+              tooltip: homeViewMode == HomeViewMode.dial
+                  ? '다음 한 행동 보기'
+                  : '다이얼 보기',
+              onPressed: settings == null
+                  ? null
+                  : () => unawaited(
+                      ref
+                          .read(settingsControllerProvider)
+                          .save(
+                            settings.copyWith(
+                              homeViewMode: homeViewMode == HomeViewMode.dial
+                                  ? HomeViewMode.nextAction
+                                  : HomeViewMode.dial,
+                            ),
                           ),
-                        ),
-                  ),
-          ),
+                    ),
+            ),
           IconButton(
             icon: const Icon(Icons.tune),
             tooltip: '구간 관리',

@@ -8,6 +8,14 @@ import 'package:flutter/material.dart';
 /// and generalises across makes.
 const double kCompactHeightDp = 560;
 
+/// A screen at least this tall (dp) is treated as a full/main display and is
+/// never compact -- even if [coverDisplayActive] is momentarily stale. That
+/// flag is refreshed from a native display query on fold/unfold, which can lag
+/// the actual display migration; without this ceiling a stale "on cover" flag
+/// kept the unfolded main screen stuck in the cover layout. No real cover
+/// screen is this tall (a Z Flip7 cover is ≈399dp), so nothing is lost.
+const double kMaxCoverHeightDp = 700;
+
 /// Set true while the app is showing on a non-primary built-in display -- a
 /// foldable cover screen (precise, OS-reported, size-independent signal; see
 /// [coverDisplayActive] / the native getDisplayInfo channel). Combined with
@@ -16,13 +24,18 @@ const double kCompactHeightDp = 560;
 /// the primary display) are still caught by height alone.
 final ValueNotifier<bool> coverDisplayActive = ValueNotifier<bool>(false);
 
-/// Pure decision used everywhere: compact when the OS says we're on a cover
-/// display, OR the usable height is below the compact breakpoint.
+/// Pure decision used everywhere. Height is the authoritative signal (it tracks
+/// fold/unfold instantly via MediaQuery); the OS "on a cover display" flag only
+/// breaks ties in the ambiguous mid-band, and is deliberately ignored for a
+/// clearly-large screen so a stale flag can't keep the unfolded main screen
+/// stuck compact.
 bool computeCompactLayout({
   required double heightDp,
   required bool onCoverDisplay,
 }) {
-  return onCoverDisplay || heightDp < kCompactHeightDp;
+  if (heightDp < kCompactHeightDp) return true; // cover-sized or small phone
+  if (heightDp >= kMaxCoverHeightDp) return false; // clearly a main display
+  return onCoverDisplay; // ambiguous band: trust the OS display signal
 }
 
 /// Whether the current screen should use the compact (cover/small-screen)

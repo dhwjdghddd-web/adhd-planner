@@ -4,8 +4,18 @@ import 'package:adhd_planner/core/screen_mode.dart';
 
 void main() {
   group('computeCompactLayout', () {
-    test('compact when on a cover display, whatever the height', () {
-      expect(computeCompactLayout(heightDp: 840, onCoverDisplay: true), true);
+    test('on-cover flag makes an ambiguous mid-height compact', () {
+      // Between the compact breakpoint and the main-display ceiling, the OS
+      // display signal decides.
+      expect(computeCompactLayout(heightDp: 600, onCoverDisplay: true), true);
+      expect(computeCompactLayout(heightDp: 600, onCoverDisplay: false), false);
+    });
+
+    test('a stale on-cover flag never keeps a tall main screen compact', () {
+      // Regression: after unfolding, coverDisplayActive can lag true for a
+      // moment; a clearly-tall screen (Z Flip7 main ≈ 840dp) must still drop
+      // back to the full layout rather than staying stuck in cover mode.
+      expect(computeCompactLayout(heightDp: 840, onCoverDisplay: true), false);
     });
 
     test(
