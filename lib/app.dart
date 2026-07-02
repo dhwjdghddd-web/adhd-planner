@@ -8,12 +8,14 @@ import 'core/error_view.dart';
 import 'core/minute_ticker.dart';
 import 'core/screen_mode.dart';
 import 'core/theme.dart';
+import 'data/micro_step_layout.dart';
 import 'data/models/achieved_day.dart';
 import 'data/models/app_settings.dart';
 import 'data/providers.dart';
 import 'data/today.dart';
 import 'features/checkin/checkin_page.dart';
 import 'features/focus/alarm_screen.dart';
+import 'features/focus/completions_controller.dart';
 import 'features/memos/quick_add_button.dart';
 import 'features/onboarding/onboarding_page.dart';
 import 'features/planner/planner_page.dart';
@@ -60,6 +62,7 @@ class App extends ConsumerWidget {
               const _CoverDisplayWatcher(),
               const _AccountAlarmSync(),
               const _RestDayAlarmSync(),
+              const _BlockCompletionReconciler(),
               const _AchievementRecorder(),
               const _CompletionCelebrator(),
             ],
@@ -493,6 +496,67 @@ class _RestDayAlarmSync extends ConsumerWidget {
 /// old live computation would have counted — freezing it once, from then on
 /// authoritative. Records are write-once and never removed: an earned day
 /// stays earned even if you later edit the routines behind it.
+/// Keeps each block's [Completion] (the ✓ on the home/오늘 screens, and what
+/// the daily celebration counts as "any completion") in sync with its
+/// *displayed* checklist items: a block is complete exactly when all the items
+/// shown under it today are checked. Runs reactively so it's correct no matter
+/// how the state got there -- checking the last item, un-checking one (which
+/// must clear the ✓), or "오늘만 여기서" moving the last unchecked item to
+/// another block (which leaves the source all-checked and the target with a new
+/// unchecked item). Blocks with no displayed items are left alone -- their
+/// completion is explicit (the 완료 button on a checklist-less block).
+class _BlockCompletionReconciler extends ConsumerWidget {
+  const _BlockCompletionReconciler();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final segmentsAsync = ref.watch(segmentsProvider);
+    final progressAsync = ref.watch(microStepProgressProvider);
+    final movesAsync = ref.watch(microStepMovesProvider);
+    final completionsAsync = ref.watch(completionsProvider);
+
+    // Same "wait until settled for the current account" guard the other
+    // reconcilers use, so an account switch mid-flight can't act on a mix of
+    // old/new data.
+    if (segmentsAsync.isLoading ||
+        progressAsync.isLoading ||
+        movesAsync.isLoading ||
+        completionsAsync.isLoading) {
+      return const SizedBox.shrink();
+    }
+    final segments = segmentsAsync.value;
+    final progress = progressAsync.value;
+    final moves = movesAsync.value;
+    final completions = completionsAsync.value;
+    if (segments == null ||
+        progress == null ||
+        moves == null ||
+        completions == null) {
+      return const SizedBox.shrink();
+    }
+
+    final plan = reconcileBlockCompletions(
+      segments: segments,
+      progress: progress,
+      moves: moves,
+      completions: completions,
+    );
+
+    if (plan.toComplete.isNotEmpty || plan.toUncomplete.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final controller = ref.read(completionsControllerProvider);
+        for (final id in plan.toComplete) {
+          unawaited(controller.complete(id));
+        }
+        for (final id in plan.toUncomplete) {
+          unawaited(controller.uncomplete(id));
+        }
+      });
+    }
+    return const SizedBox.shrink();
+  }
+}
+
 class _AchievementRecorder extends ConsumerStatefulWidget {
   const _AchievementRecorder();
 

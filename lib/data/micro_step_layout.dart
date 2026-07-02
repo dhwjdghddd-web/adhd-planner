@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 
+import 'models/completion.dart';
 import 'models/micro_step_move.dart';
+import 'models/micro_step_progress.dart';
 import 'models/segment.dart';
 import 'today.dart';
 
@@ -75,4 +77,56 @@ List<DisplayedStep> displayedStepsFor({
   }
 
   return result;
+}
+
+/// Which blocks' [Completion] should be flipped so each block is complete
+/// exactly when all its *displayed* items (after moves) are checked today.
+@immutable
+class CompletionReconciliation {
+  final Set<String> toComplete;
+  final Set<String> toUncomplete;
+  const CompletionReconciliation(this.toComplete, this.toUncomplete);
+}
+
+/// Computes the completion changes needed so a block's ✓ tracks its displayed
+/// checklist. Handles the two gaps the per-action logic missed: un-checking an
+/// item must clear the ✓, and moving the last unchecked item away ("오늘만
+/// 여기서") must leave the source block complete (and the target, now holding an
+/// unchecked item, not). Blocks with no displayed items are left untouched --
+/// their completion is explicit (the 완료 button on a checklist-less block).
+CompletionReconciliation reconcileBlockCompletions({
+  required List<Segment> segments,
+  required List<MicroStepProgress> progress,
+  required List<MicroStepMove> moves,
+  required List<Completion> completions,
+  DateTime? now,
+}) {
+  final todayKey = dayKeyFor(now);
+  final completed = completedBlockIdsOn(completions, now: now);
+  final checkedByHome = <String, Set<int>>{
+    for (final p in progress)
+      if (p.dateKey == todayKey) p.segmentId: p.checkedIndices.toSet(),
+  };
+
+  final toComplete = <String>{};
+  final toUncomplete = <String>{};
+  for (final block in segments) {
+    final displayed = displayedStepsFor(
+      block: block,
+      allSegments: segments,
+      moves: moves,
+      now: now,
+    );
+    if (displayed.isEmpty) continue;
+    final allChecked = displayed.every(
+      (d) => checkedByHome[d.homeSegmentId]?.contains(d.index) ?? false,
+    );
+    final isComplete = completed.contains(block.id);
+    if (allChecked && !isComplete) {
+      toComplete.add(block.id);
+    } else if (!allChecked && isComplete) {
+      toUncomplete.add(block.id);
+    }
+  }
+  return CompletionReconciliation(toComplete, toUncomplete);
 }
