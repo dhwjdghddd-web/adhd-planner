@@ -1,6 +1,7 @@
 package com.adhdplanner.adhd_planner
 
 import android.app.AlarmManager
+import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -23,16 +24,30 @@ import android.os.VibratorManager
 class VibrationAlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val pattern = intent.getLongArrayExtra(EXTRA_PATTERN) ?: return
-        val durationMs = intent.getLongExtra(EXTRA_DURATION_MS, 0L)
-        val repeatIntervalMs = intent.getLongExtra(EXTRA_REPEAT_INTERVAL_MS, 0L)
         val requestCode = intent.getIntExtra(EXTRA_REQUEST_CODE, 0)
 
-        startVibration(context, pattern, durationMs)
+        // A continuation of the in-alarm buzz loop (see below): keep buzzing in
+        // short cycles until the window ends OR the user removes the alarm
+        // notification. Checked every cycle so swiping the notification away
+        // stops the vibration within ~one cycle -- flutter_local_notifications
+        // gives no direct "dismissed" callback, so this is how deleting the
+        // heads-up alarm makes the buzzing stop.
+        if (intent.action == ACTION_BUZZ_LOOP) {
+            val buzzUntil = intent.getLongExtra(EXTRA_BUZZ_UNTIL_MS, 0L)
+            if (System.currentTimeMillis() >= buzzUntil) return
+            if (!isAlarmNotificationActive(context, requestCode)) return
+            startVibration(context, pattern, BUZZ_CYCLE_MS)
+            scheduleBuzzContinuation(context, requestCode, pattern, buzzUntil)
+            return
+        }
 
-        // Recurring (weekly) routine alarms re-arm themselves for next
-        // week right here -- mirrors how flutter_local_notifications'
-        // own matchDateTimeComponents reschedules itself, so this stays in
-        // sync without Dart having to be running when it fires.
+        val durationMs = intent.getLongExtra(EXTRA_DURATION_MS, 0L)
+        val repeatIntervalMs = intent.getLongExtra(EXTRA_REPEAT_INTERVAL_MS, 0L)
+
+        // Recurring (daily) routine alarms re-arm themselves for next day right
+        // here -- mirrors how flutter_local_notifications' own
+        // matchDateTimeComponents reschedules itself, so this stays in sync
+        // without Dart having to be running when it fires.
         if (repeatIntervalMs > 0L) {
             schedule(
                 context,
@@ -43,6 +58,18 @@ class VibrationAlarmReceiver : BroadcastReceiver() {
                 repeatIntervalMs,
             )
         }
+
+        // Buzz now, then hand off to the swipe-aware loop for the rest of the
+        // window (durationMs): short cycles that stop as soon as the alarm
+        // notification is gone.
+        startVibration(context, pattern, BUZZ_CYCLE_MS)
+        val window = if (durationMs > 0L) durationMs else BUZZ_CYCLE_MS
+        scheduleBuzzContinuation(
+            context,
+            requestCode,
+            pattern,
+            System.currentTimeMillis() + window,
+        )
     }
 
     companion object {
@@ -50,6 +77,18 @@ class VibrationAlarmReceiver : BroadcastReceiver() {
         private const val EXTRA_DURATION_MS = "durationMs"
         private const val EXTRA_REPEAT_INTERVAL_MS = "repeatIntervalMs"
         private const val EXTRA_REQUEST_CODE = "requestCode"
+        private const val EXTRA_BUZZ_UNTIL_MS = "buzzUntilMs"
+
+        // Marks the self-rescheduling in-alarm buzz continuations. A distinct
+        // action keeps its PendingIntent separate from the daily re-arm's
+        // (which has no action) even though both share the requestCode.
+        private const val ACTION_BUZZ_LOOP = "com.adhdplanner.adhd_planner.BUZZ_LOOP"
+
+        // How long each buzz cycle lasts and how often the loop re-checks that
+        // the alarm notification is still on screen. A swipe stops the buzzing
+        // within ~one interval.
+        private const val BUZZ_CYCLE_MS = 4500L
+        private const val LOOP_INTERVAL_MS = 5000L
 
         // Every requestCode this app currently has a Vibrator alarm armed for,
         // persisted so [cancelAll] can wipe them without the caller having to
@@ -96,8 +135,9 @@ class VibrationAlarmReceiver : BroadcastReceiver() {
             // Extras don't factor into PendingIntent equality (only the
             // Intent's action/component/data and this requestCode do), so
             // dummy values here still resolve to the same pending alarm.
-            val pendingIntent = pendingIntentFor(context, requestCode, longArrayOf(0), 0L, 0L)
-            alarmManager.cancel(pendingIntent)
+            alarmManager.cancel(pendingIntentFor(context, requestCode, longArrayOf(0), 0L, 0L))
+            // Also kill any in-flight buzz loop for this alarm.
+            alarmManager.cancel(buzzLoopPendingIntent(context, requestCode, longArrayOf(0), 0L))
             stopVibration(context)
             setActiveCodes(context, activeCodes(context).apply { remove(requestCode.toString()) })
         }
@@ -115,8 +155,8 @@ class VibrationAlarmReceiver : BroadcastReceiver() {
             val cancelled = ArrayList<Int>()
             for (code in activeCodes(context)) {
                 val requestCode = code.toIntOrNull() ?: continue
-                val pendingIntent = pendingIntentFor(context, requestCode, longArrayOf(0), 0L, 0L)
-                alarmManager.cancel(pendingIntent)
+                alarmManager.cancel(pendingIntentFor(context, requestCode, longArrayOf(0), 0L, 0L))
+                alarmManager.cancel(buzzLoopPendingIntent(context, requestCode, longArrayOf(0), 0L))
                 cancelled.add(requestCode)
             }
             setActiveCodes(context, emptySet())
@@ -126,6 +166,56 @@ class VibrationAlarmReceiver : BroadcastReceiver() {
 
         fun stopVibration(context: Context) {
             vibratorFor(context).cancel()
+        }
+
+        // True while the block alarm's notification (posted by
+        // flutter_local_notifications with id == requestCode) is still on
+        // screen. getActiveNotifications returns only this app's own
+        // notifications, so no special permission is needed and the id match is
+        // unambiguous.
+        private fun isAlarmNotificationActive(context: Context, id: Int): Boolean {
+            val nm =
+                context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            return nm.activeNotifications.any { it.id == id }
+        }
+
+        // Schedules the next buzz-loop cycle [LOOP_INTERVAL_MS] out. setAlarmClock
+        // (like the initial alarm) so it stays exact and fires even in doze,
+        // through the short buzz window.
+        private fun scheduleBuzzContinuation(
+            context: Context,
+            requestCode: Int,
+            pattern: LongArray,
+            buzzUntil: Long,
+        ) {
+            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            val pendingIntent =
+                buzzLoopPendingIntent(context, requestCode, pattern, buzzUntil)
+            val triggerAt = System.currentTimeMillis() + LOOP_INTERVAL_MS
+            alarmManager.setAlarmClock(
+                AlarmManager.AlarmClockInfo(triggerAt, pendingIntent),
+                pendingIntent,
+            )
+        }
+
+        private fun buzzLoopPendingIntent(
+            context: Context,
+            requestCode: Int,
+            pattern: LongArray,
+            buzzUntil: Long,
+        ): PendingIntent {
+            val intent = Intent(context, VibrationAlarmReceiver::class.java).apply {
+                action = ACTION_BUZZ_LOOP
+                putExtra(EXTRA_PATTERN, pattern)
+                putExtra(EXTRA_REQUEST_CODE, requestCode)
+                putExtra(EXTRA_BUZZ_UNTIL_MS, buzzUntil)
+            }
+            return PendingIntent.getBroadcast(
+                context,
+                requestCode,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
         }
 
         private fun startVibration(context: Context, pattern: LongArray, durationMs: Long) {
