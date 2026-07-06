@@ -66,6 +66,36 @@ void main() {
       },
     );
 
+    test('restToday flag rides along (default false, set true on rest days)', () {
+      final blocks = [
+        _block(id: 'a', name: '아침', startMinute: 600, endMinute: 660),
+      ];
+      final off =
+          jsonDecode(
+                buildChecklistJson(
+                  segments: blocks,
+                  progress: const [],
+                  moves: const [],
+                  now: now,
+                ),
+              )
+              as Map<String, dynamic>;
+      expect(off['restToday'], false);
+
+      final on =
+          jsonDecode(
+                buildChecklistJson(
+                  segments: blocks,
+                  progress: const [],
+                  moves: const [],
+                  restToday: true,
+                  now: now,
+                ),
+              )
+              as Map<String, dynamic>;
+      expect(on['restToday'], true);
+    });
+
     test('items carry home identity and TODAY\'s checked state only', () {
       final json = jsonDecode(
         buildChecklistJson(

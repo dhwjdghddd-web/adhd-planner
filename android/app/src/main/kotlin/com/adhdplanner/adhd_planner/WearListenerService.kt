@@ -15,8 +15,9 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/// Watch → phone: handles a check toggle sent from the watch and writes it to
-/// the same Firestore [MicroStepProgress] doc the app uses, natively. Runs even
+/// Watch → phone: handles a check toggle (and the "오늘은 쉬기" rest-day toggle)
+/// sent from the watch and writes it to the same Firestore docs the app uses,
+/// natively. Runs even
 /// when the Flutter app isn't foregrounded (Android starts this service for the
 /// Data Layer message); Firebase auto-initializes on process start and the
 /// signed-in user persists, so the write goes to the right account. When the
@@ -47,6 +48,7 @@ class WearListenerService : WearableListenerService() {
                         if (id in active) dismiss(id)
                     }
                 }
+                PATH_TOGGLE_REST -> setRestDay(String(event.data).toBoolean())
             }
         } catch (e: Exception) {
             android.util.Log.w("WearListener", "malformed wear message dropped", e)
@@ -62,6 +64,20 @@ class WearListenerService : WearableListenerService() {
         (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
             .cancel(requestCode)
         dismissedAt[requestCode] = SystemClock.elapsedRealtime()
+    }
+
+    // Watch → phone "오늘은 쉬기" toggle. Mirrors the Dart RestDayController:
+    // a rest day is just the presence of a restDays/{yyyy-MM-dd} doc. When the
+    // app is running its restDaysProvider listener re-pushes the checklist and
+    // reschedules today's alarms; when it's closed this native write persists
+    // and takes effect on next open.
+    private fun setRestDay(resting: Boolean) {
+        val uid = FirebaseAuth.getInstance().currentUser?.uid ?: return
+        val dateKey = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+        val doc = FirebaseFirestore.getInstance()
+            .collection("users").document(uid)
+            .collection("restDays").document(dateKey)
+        if (resting) doc.set(mapOf("dateKey" to dateKey)) else doc.delete()
     }
 
     private fun toggle(segmentId: String, index: Int, checked: Boolean) {
@@ -88,6 +104,7 @@ class WearListenerService : WearableListenerService() {
 
     companion object {
         private const val PATH_TOGGLE = "/toggle_item"
+        private const val PATH_TOGGLE_REST = "/toggle_rest"
         private const val PATH_ALARM_DISMISS_ALL = "/alarm_dismiss_all"
 
         // Ids the watch dismissed (id -> when), consumed by MainActivity's

@@ -3,13 +3,18 @@ package com.adhdplanner.adhd_planner.wear
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
+import androidx.wear.compose.material.CompactChip
 import androidx.wear.compose.material.Text
 import androidx.wear.compose.material.ToggleChip
 import androidx.wear.compose.material.ToggleChipDefaults
@@ -21,13 +26,14 @@ import com.google.android.gms.wearable.Wearable
 import org.json.JSONObject
 
 private const val PATH_TOGGLE = "/toggle_item"
+private const val PATH_TOGGLE_REST = "/toggle_rest"
 
 class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
     private val data = mutableStateOf(WatchData(emptyList()))
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { ChecklistScreen(data.value, ::onToggle) }
+        setContent { ChecklistScreen(data.value, ::onToggle, ::onToggleRest) }
         loadInitial()
     }
 
@@ -86,10 +92,19 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
             .put("checked", checked)
             .toString()
             .toByteArray()
+        sendToPhone(PATH_TOGGLE, payload)
+    }
+
+    private fun onToggleRest(resting: Boolean) {
+        // Optimistic; the phone writes it to Firestore (rest days) and re-pushes.
+        data.value = data.value.copy(restToday = resting)
+        sendToPhone(PATH_TOGGLE_REST, resting.toString().toByteArray())
+    }
+
+    private fun sendToPhone(path: String, payload: ByteArray) {
         Wearable.getNodeClient(this).connectedNodes.addOnSuccessListener { nodes ->
             for (node in nodes) {
-                Wearable.getMessageClient(this)
-                    .sendMessage(node.id, PATH_TOGGLE, payload)
+                Wearable.getMessageClient(this).sendMessage(node.id, path, payload)
             }
         }
     }
@@ -99,10 +114,45 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
 fun ChecklistScreen(
     data: WatchData,
     onToggle: (String, Int, Boolean) -> Unit,
+    onToggleRest: (Boolean) -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxSize()) {
+        // Top-fixed rest-day toggle (doesn't scroll with the checklist).
+        CompactChip(
+            onClick = { onToggleRest(!data.restToday) },
+            label = {
+                Text(if (data.restToday) "쉬는 날 해제" else "오늘은 쉬기")
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp, vertical = 2.dp),
+        )
+        if (data.restToday) {
+            Box(
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    "쉬는 날 😴\n푹 쉬어요",
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(16.dp),
+                )
+            }
+        } else {
+            ChecklistItems(data, onToggle, modifier = Modifier.weight(1f))
+        }
+    }
+}
+
+@androidx.compose.runtime.Composable
+private fun ChecklistItems(
+    data: WatchData,
+    onToggle: (String, Int, Boolean) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     // The block(s) in progress right now -- one, or several when they overlap.
     val current = data.currentBlocks()
-    ScalingLazyColumn {
+    ScalingLazyColumn(modifier = modifier) {
         if (current.isEmpty()) {
             item {
                 Text(

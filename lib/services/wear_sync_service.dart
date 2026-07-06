@@ -24,12 +24,13 @@ Future<void> pushChecklistToWatch(String json) async {
 /// Serialises today's blocks and their (post-"오늘만 여기서") checklist items with
 /// their checked state, in the shape the watch renders and echoes back on
 /// toggle. Each item carries its home (segmentId, index) identity so a toggle
-/// from the watch writes to the right [MicroStepProgress] doc. Blocks with no
-/// displayed items are omitted.
+/// from the watch writes to the right [MicroStepProgress] doc. [restToday] tells
+/// the watch to show its "쉬는 날" screen instead of the checklist.
 String buildChecklistJson({
   required List<Segment> segments,
   required List<MicroStepProgress> progress,
   required List<MicroStepMove> moves,
+  bool restToday = false,
   DateTime? now,
 }) {
   final todayKey = dayKeyFor(now);
@@ -74,5 +75,9 @@ String buildChecklistJson({
     });
   }
 
-  return jsonEncode({'dateKey': todayKey, 'blocks': blocks});
+  return jsonEncode({
+    'dateKey': todayKey,
+    'restToday': restToday,
+    'blocks': blocks,
+  });
 }

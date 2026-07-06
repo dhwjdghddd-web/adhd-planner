@@ -29,7 +29,10 @@ data class WatchBlock(
     }
 }
 
-data class WatchData(val blocks: List<WatchBlock>) {
+data class WatchData(
+    val blocks: List<WatchBlock>,
+    val restToday: Boolean = false,
+) {
     // Computed from the WATCH's own clock, so it's correct at the exact alarm
     // moment regardless of when the phone last pushed (block times are static).
     fun currentBlocks(nowMinute: Int = nowMinute()): List<WatchBlock> =
@@ -78,7 +81,7 @@ object ChecklistData {
                 )
             }
         }
-        return WatchData(blocks)
+        return WatchData(blocks, root.optBoolean("restToday", false))
     }
 
     fun readLatest(context: Context, onResult: (WatchData?) -> Unit) {

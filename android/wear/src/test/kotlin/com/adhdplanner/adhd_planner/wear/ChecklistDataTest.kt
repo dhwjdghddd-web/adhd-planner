@@ -57,4 +57,11 @@ class ChecklistDataTest {
         val zero = WatchBlock("z", "빈", 300, 300, emptyList())
         assertFalse(zero.contains(300))
     }
+
+    @Test
+    fun `restToday defaults false and parses when present`() {
+        assertFalse(ChecklistData.parse(sample).restToday)
+        val rest = """{"dateKey":"2026-07-06","restToday":true,"blocks":[]}"""
+        assertTrue(ChecklistData.parse(rest).restToday)
+    }
 }
