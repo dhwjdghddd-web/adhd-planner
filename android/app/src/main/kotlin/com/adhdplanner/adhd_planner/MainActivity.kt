@@ -261,7 +261,6 @@ class MainActivity : FlutterActivity() {
         val durationMs = (call.argument<Number>("durationMs"))!!.toLong()
         val repeatIntervalMs = (call.argument<Number>("repeatIntervalMs"))!!.toLong()
         val watchAlarm = call.argument<Boolean>("watchAlarm") ?: false
-        val name = call.argument<String>("name") ?: ""
 
         VibrationAlarmReceiver.schedule(
             applicationContext,
@@ -271,7 +270,6 @@ class MainActivity : FlutterActivity() {
             durationMs,
             repeatIntervalMs,
             watchAlarm,
-            name,
         )
         result.success(null)
     }

@@ -44,7 +44,6 @@ class VibrationAlarmReceiver : BroadcastReceiver() {
         val durationMs = intent.getLongExtra(EXTRA_DURATION_MS, 0L)
         val repeatIntervalMs = intent.getLongExtra(EXTRA_REPEAT_INTERVAL_MS, 0L)
         val watchAlarm = intent.getBooleanExtra(EXTRA_WATCH_ALARM, false)
-        val name = intent.getStringExtra(EXTRA_NAME) ?: ""
 
         // Recurring (daily) routine alarms re-arm themselves for next day right
         // here -- mirrors how flutter_local_notifications' own
@@ -59,7 +58,6 @@ class VibrationAlarmReceiver : BroadcastReceiver() {
                 durationMs,
                 repeatIntervalMs,
                 watchAlarm,
-                name,
             )
         }
 
@@ -79,7 +77,7 @@ class VibrationAlarmReceiver : BroadcastReceiver() {
         // (short-lived) process alive while the Data Layer message is sent.
         if (watchAlarm) {
             val pending = goAsync()
-            WearAlarmMessenger.sendRing(context, requestCode, name) { pending.finish() }
+            WearAlarmMessenger.sendRing(context) { pending.finish() }
         }
     }
 
@@ -90,7 +88,6 @@ class VibrationAlarmReceiver : BroadcastReceiver() {
         private const val EXTRA_REQUEST_CODE = "requestCode"
         private const val EXTRA_BUZZ_UNTIL_MS = "buzzUntilMs"
         private const val EXTRA_WATCH_ALARM = "watchAlarm"
-        private const val EXTRA_NAME = "name"
 
         // Marks the self-rescheduling in-alarm buzz continuations. A distinct
         // action keeps its PendingIntent separate from the daily re-arm's
@@ -139,11 +136,10 @@ class VibrationAlarmReceiver : BroadcastReceiver() {
             durationMs: Long,
             repeatIntervalMs: Long,
             watchAlarm: Boolean = false,
-            name: String = "",
         ) {
             val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
             val pendingIntent = pendingIntentFor(
-                context, requestCode, pattern, durationMs, repeatIntervalMs, watchAlarm, name,
+                context, requestCode, pattern, durationMs, repeatIntervalMs, watchAlarm,
             )
             val info = AlarmManager.AlarmClockInfo(triggerAtMillis, pendingIntent)
             alarmManager.setAlarmClock(info, pendingIntent)
@@ -317,7 +313,6 @@ class VibrationAlarmReceiver : BroadcastReceiver() {
             durationMs: Long,
             repeatIntervalMs: Long,
             watchAlarm: Boolean,
-            name: String = "",
         ): PendingIntent {
             val intent = Intent(context, VibrationAlarmReceiver::class.java).apply {
                 putExtra(EXTRA_PATTERN, pattern)
@@ -325,7 +320,6 @@ class VibrationAlarmReceiver : BroadcastReceiver() {
                 putExtra(EXTRA_REPEAT_INTERVAL_MS, repeatIntervalMs)
                 putExtra(EXTRA_REQUEST_CODE, requestCode)
                 putExtra(EXTRA_WATCH_ALARM, watchAlarm)
-                putExtra(EXTRA_NAME, name)
             }
             return PendingIntent.getBroadcast(
                 context,

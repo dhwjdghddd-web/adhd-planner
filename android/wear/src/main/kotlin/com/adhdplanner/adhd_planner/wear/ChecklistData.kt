@@ -87,9 +87,14 @@ object ChecklistData {
                 var data: WatchData? = null
                 for (item in buffer) {
                     if (item.uri.path == PATH_CHECKLIST) {
-                        DataMapItem.fromDataItem(item).dataMap
-                            .getString("json")
-                            ?.let { data = parse(it) }
+                        // A malformed payload (version-skewed phone build) must
+                        // never crash the watch -- just ignore that item.
+                        try {
+                            DataMapItem.fromDataItem(item).dataMap
+                                .getString("json")
+                                ?.let { data = parse(it) }
+                        } catch (_: Exception) {
+                        }
                     }
                 }
                 buffer.release()

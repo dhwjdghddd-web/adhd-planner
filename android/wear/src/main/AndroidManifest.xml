@@ -5,7 +5,7 @@
 
     <application
         android:allowBackup="true"
-        android:icon="@android:drawable/sym_def_app_icon"
+        android:icon="@drawable/ic_launcher"
         android:label="ADHD 체크리스트"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.DeviceDefault">

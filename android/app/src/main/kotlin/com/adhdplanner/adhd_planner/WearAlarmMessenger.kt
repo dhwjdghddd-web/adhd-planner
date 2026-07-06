@@ -2,26 +2,22 @@ package com.adhdplanner.adhd_planner
 
 import android.content.Context
 import com.google.android.gms.wearable.Wearable
-import org.json.JSONObject
 
 /// Phone → watch alarm signalling over the Data Layer:
-///  - "/alarm_ring": a block alarm just fired -> the watch pops its alarm screen.
+///  - "/alarm_ring": a block alarm just fired -> the watch pops its alarm screen
+///    (which reads the ringing block names from the synced checklist, so the
+///    message itself carries no payload).
 ///  - "/alarm_stop": the alarm ended on the phone (dismissed/cancelled) -> the
 ///    watch closes that screen.
-/// Best-effort: no watch nearby / not paired just means nothing happens.
+/// Best-effort fire-and-forget: MessageClient doesn't queue for a disconnected
+/// node, so a watch out of range at the alarm moment simply doesn't ring --
+/// a known, accepted limitation (the phone alarm is the primary).
 object WearAlarmMessenger {
     private const val PATH_RING = "/alarm_ring"
     private const val PATH_STOP = "/alarm_stop"
 
-    fun sendRing(
-        context: Context,
-        requestCode: Int,
-        name: String,
-        onComplete: (() -> Unit)? = null,
-    ) {
-        val json = JSONObject().put("rc", requestCode).put("name", name).toString()
-        send(context, PATH_RING, json.toByteArray(), onComplete)
-    }
+    fun sendRing(context: Context, onComplete: (() -> Unit)? = null) =
+        send(context, PATH_RING, ByteArray(0), onComplete)
 
     fun sendStop(context: Context, onComplete: (() -> Unit)? = null) =
         send(context, PATH_STOP, ByteArray(0), onComplete)

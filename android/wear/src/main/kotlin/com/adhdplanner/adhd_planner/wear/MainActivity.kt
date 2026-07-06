@@ -47,9 +47,13 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
             if (event.type == DataEvent.TYPE_CHANGED &&
                 event.dataItem.uri.path == PATH_CHECKLIST
             ) {
-                DataMapItem.fromDataItem(event.dataItem).dataMap
-                    .getString("json")
-                    ?.let { data.value = ChecklistData.parse(it) }
+                // Malformed payload (version skew) -> ignore, never crash.
+                try {
+                    DataMapItem.fromDataItem(event.dataItem).dataMap
+                        .getString("json")
+                        ?.let { data.value = ChecklistData.parse(it) }
+                } catch (_: Exception) {
+                }
             }
         }
     }

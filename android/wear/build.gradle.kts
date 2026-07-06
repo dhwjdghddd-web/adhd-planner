@@ -55,4 +55,9 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("androidx.core:core-ktx:1.13.1")
+
+    testImplementation("junit:junit:4.13.2")
+    // Real org.json on the JVM (the android.jar one is a no-op stub under
+    // plain unit tests), so ChecklistData.parse is testable without a device.
+    testImplementation("org.json:json:20240303")
 }

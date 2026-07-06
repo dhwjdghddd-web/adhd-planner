@@ -7,7 +7,9 @@ import java.util.concurrent.ConcurrentHashMap
 import com.google.android.gms.wearable.MessageEvent
 import com.google.android.gms.wearable.WearableListenerService
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.SetOptions
 import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -22,26 +24,32 @@ import java.util.Locale
 /// back to the watch (and reconciles block completion).
 class WearListenerService : WearableListenerService() {
     override fun onMessageReceived(event: MessageEvent) {
-        when (event.path) {
-            PATH_TOGGLE -> {
-                val payload = JSONObject(String(event.data))
-                toggle(
-                    payload.getString("segmentId"),
-                    payload.getInt("index"),
-                    payload.getBoolean("checked"),
-                )
-            }
-            PATH_ALARM_DISMISS -> dismiss(String(event.data).toIntOrNull() ?: return)
-            PATH_ALARM_DISMISS_ALL -> {
-                // The watch's 끄기 silences EVERY currently-ringing alarm (robust
-                // when several overlap), not just one id: cancel each armed alarm
-                // whose notification is still on screen.
-                val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                val active = nm.activeNotifications.map { it.id }.toSet()
-                for (id in VibrationAlarmReceiver.armedCodes(applicationContext)) {
-                    if (id in active) dismiss(id)
+        // A malformed payload (e.g. a version-skewed watch build) must never
+        // crash the phone process -- drop the message instead.
+        try {
+            when (event.path) {
+                PATH_TOGGLE -> {
+                    val payload = JSONObject(String(event.data))
+                    toggle(
+                        payload.getString("segmentId"),
+                        payload.getInt("index"),
+                        payload.getBoolean("checked"),
+                    )
+                }
+                PATH_ALARM_DISMISS_ALL -> {
+                    // The watch's 끄기 silences EVERY currently-ringing alarm
+                    // (robust when several overlap): cancel each armed alarm
+                    // whose notification is still on screen.
+                    val nm =
+                        getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                    val active = nm.activeNotifications.map { it.id }.toSet()
+                    for (id in VibrationAlarmReceiver.armedCodes(applicationContext)) {
+                        if (id in active) dismiss(id)
+                    }
                 }
             }
+        } catch (e: Exception) {
+            android.util.Log.w("WearListener", "malformed wear message dropped", e)
         }
     }
 
@@ -63,26 +71,23 @@ class WearListenerService : WearableListenerService() {
             .collection("users").document(uid)
             .collection("microStepProgress").document("${dateKey}_$segmentId")
 
-        // Read-modify-write the checked set (add or remove this index).
-        doc.get().addOnSuccessListener { snap ->
-            val current = (snap.get("checkedIndices") as? List<*>)
-                ?.mapNotNull { (it as? Number)?.toInt() }
-                ?.toMutableSet()
-                ?: mutableSetOf()
-            if (checked) current.add(index) else current.remove(index)
-            doc.set(
-                mapOf(
-                    "dateKey" to dateKey,
-                    "segmentId" to segmentId,
-                    "checkedIndices" to current.sorted(),
-                ),
-            )
-        }
+        // Atomic arrayUnion/arrayRemove (not read-modify-write): two rapid
+        // toggles can't race each other and lose an update. Order in the array
+        // doesn't matter -- every reader consumes checkedIndices as a Set.
+        doc.set(
+            mapOf(
+                "dateKey" to dateKey,
+                "segmentId" to segmentId,
+                "checkedIndices" to
+                    if (checked) FieldValue.arrayUnion(index)
+                    else FieldValue.arrayRemove(index),
+            ),
+            SetOptions.merge(),
+        )
     }
 
     companion object {
         private const val PATH_TOGGLE = "/toggle_item"
-        private const val PATH_ALARM_DISMISS = "/alarm_dismiss"
         private const val PATH_ALARM_DISMISS_ALL = "/alarm_dismiss_all"
 
         // Ids the watch dismissed (id -> when), consumed by MainActivity's

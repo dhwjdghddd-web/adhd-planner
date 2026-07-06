@@ -4,6 +4,8 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
@@ -33,6 +35,7 @@ import com.google.android.gms.wearable.Wearable
 /// phone to silence everything ringing, then hands off to the checklist.
 class AlarmActivity : ComponentActivity() {
     private val names: MutableState<List<String>> = mutableStateOf(emptyList())
+    private val timeoutHandler = Handler(Looper.getMainLooper())
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -45,6 +48,10 @@ class AlarmActivity : ComponentActivity() {
         startVibration()
         loadNames()
         setContent { AlarmScreen(names.value, onDismiss = ::onDismiss) }
+        // Auto-close when the buzz window ends: with FLAG_KEEP_SCREEN_ON an
+        // ignored alarm would otherwise keep the watch screen on indefinitely
+        // (a real battery drain if the watch is off-wrist).
+        timeoutHandler.postDelayed({ finish() }, WINDOW_MS)
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -80,6 +87,7 @@ class AlarmActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        timeoutHandler.removeCallbacksAndMessages(null)
         // Only the current instance stops the vibration, so a stale re-created
         // instance's teardown can't cut a fresh alarm's buzzing short.
         if (active === this) {
@@ -127,8 +135,6 @@ class AlarmActivity : ComponentActivity() {
     }
 
     companion object {
-        const val EXTRA_REQUEST_CODE = "requestCode"
-        const val EXTRA_NAME = "name"
         private const val PATH_ALARM_DISMISS_ALL = "/alarm_dismiss_all"
         private const val WINDOW_MS = 60_000L
         private val BASE_PATTERN = longArrayOf(0, 600, 400)
