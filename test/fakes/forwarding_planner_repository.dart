@@ -29,6 +29,9 @@ abstract class ForwardingPlannerRepository implements PlannerRepository {
   Future<void> upsertSegment(Segment s) => inner.upsertSegment(s);
   @override
   Future<void> deleteSegment(String id) => inner.deleteSegment(id);
+  @override
+  Future<void> saveNotificationIds(String segmentId, List<int> ids) =>
+      inner.saveNotificationIds(segmentId, ids);
 
   @override
   Stream<List<Memo>> watchMemos() => inner.watchMemos();

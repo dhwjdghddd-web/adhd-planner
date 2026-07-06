@@ -21,6 +21,12 @@ abstract class PlannerRepository {
   Future<void> upsertSegment(Segment s);
   Future<void> deleteSegment(String id);
 
+  // Merge-writes ONLY a block's scheduled notification ids -- bookkeeping done
+  // after every reschedule. Kept separate from upsertSegment (a full-doc
+  // overwrite) so it can't clobber a concurrent edit (e.g. a just-changed start
+  // time) with stale segment data read a moment earlier.
+  Future<void> saveNotificationIds(String segmentId, List<int> ids);
+
   // Memos
   Stream<List<Memo>> watchMemos();
   Future<void> addMemo(Memo m);

@@ -46,6 +46,12 @@ class FirestorePlannerRepository implements PlannerRepository {
   Future<void> deleteSegment(String id) =>
       _collection('segments').doc(id).delete();
 
+  @override
+  Future<void> saveNotificationIds(String segmentId, List<int> ids) =>
+      _collection('segments').doc(segmentId).set({
+        'notificationIds': ids,
+      }, SetOptions(merge: true));
+
   // Memos
   @override
   Stream<List<Memo>> watchMemos() => _watchAll('memos', Memo.fromMap);

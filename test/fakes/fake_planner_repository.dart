@@ -71,6 +71,14 @@ class FakePlannerRepository implements PlannerRepository {
   }
 
   @override
+  Future<void> saveNotificationIds(String segmentId, List<int> ids) async {
+    final existing = _segments[segmentId];
+    if (existing == null) return; // merge-only; nothing to update
+    _segments[segmentId] = existing.copyWith(notificationIds: ids);
+    _segmentsStream.add(_segments.values.toList());
+  }
+
+  @override
   Stream<List<Memo>> watchMemos() => _memosStream.stream;
 
   @override
