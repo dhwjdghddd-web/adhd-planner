@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -77,6 +78,23 @@ void main() {
   setUp(() {
     pendingAlarmAlert.value = null;
     alarmScreenOpen.value = false;
+    // The alarm launcher asks native whether the watch already dismissed the
+    // alarm before showing it (see _openIfPending). Stub it to "no" so the
+    // full-screen alarm still opens under test.
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+          const MethodChannel('com.adhdplanner.adhd_planner/screen'),
+          (call) async =>
+              call.method == 'consumeAlarmDismiss' ? false : null,
+        );
+  });
+
+  tearDown(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+          const MethodChannel('com.adhdplanner.adhd_planner/screen'),
+          null,
+        );
   });
 
   testWidgets('App boots and shows the circular planner home', (tester) async {

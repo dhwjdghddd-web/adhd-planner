@@ -69,6 +69,11 @@ class _FocusPageState extends ConsumerState<FocusPage> {
   // than stomping local taps on every rebuild.
   String? _hydratedDay;
   final Set<String> _hydratedHomes = {};
+  // The progress list instance last hydrated from. A new emission (e.g. a check
+  // toggled on the watch, or any external write) has a different instance, which
+  // invalidates the per-home cache so the checklist re-reads it instead of
+  // showing stale local state until the screen is rebuilt.
+  List<MicroStepProgress>? _lastHydratedProgress;
   late final ConfettiController _confettiController;
   bool _celebrating = false;
   // Picked once per screen entry so the routine-less rest screen shows a fresh
@@ -340,6 +345,13 @@ class _FocusPageState extends ConsumerState<FocusPage> {
     if (_hydratedDay != dateKey) {
       _hydratedDay = dateKey;
       _checkedByHome.clear();
+      _hydratedHomes.clear();
+    }
+    // A fresh emission from storage invalidates the cache so external writes
+    // (a check ticked on the watch) are picked up. Our own taps save first, so
+    // the echo that arrives here already includes them -- no local stomp.
+    if (!identical(allProgress, _lastHydratedProgress)) {
+      _lastHydratedProgress = allProgress;
       _hydratedHomes.clear();
     }
     for (final homeId in homeIds) {

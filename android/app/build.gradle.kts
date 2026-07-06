@@ -52,4 +52,15 @@ flutter {
 
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+    // Wearable Data Layer: push today's checklist to the watch companion and
+    // receive check toggles back.
+    implementation("com.google.android.gms:play-services-wearable:18.2.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.1")
+    // Firebase Auth/Firestore are pulled at runtime by the Flutter plugins but
+    // aren't on the compile classpath -- declare them so WearListenerService can
+    // write the toggle to Firestore natively. The BoM keeps versions aligned
+    // with the plugins' (Gradle dedups to a single resolved version).
+    implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
+    implementation("com.google.firebase:firebase-auth")
+    implementation("com.google.firebase:firebase-firestore")
 }

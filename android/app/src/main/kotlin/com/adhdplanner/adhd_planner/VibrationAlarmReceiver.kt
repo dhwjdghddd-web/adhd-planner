@@ -43,6 +43,8 @@ class VibrationAlarmReceiver : BroadcastReceiver() {
 
         val durationMs = intent.getLongExtra(EXTRA_DURATION_MS, 0L)
         val repeatIntervalMs = intent.getLongExtra(EXTRA_REPEAT_INTERVAL_MS, 0L)
+        val watchAlarm = intent.getBooleanExtra(EXTRA_WATCH_ALARM, false)
+        val name = intent.getStringExtra(EXTRA_NAME) ?: ""
 
         // Recurring (daily) routine alarms re-arm themselves for next day right
         // here -- mirrors how flutter_local_notifications' own
@@ -56,6 +58,8 @@ class VibrationAlarmReceiver : BroadcastReceiver() {
                 pattern,
                 durationMs,
                 repeatIntervalMs,
+                watchAlarm,
+                name,
             )
         }
 
@@ -70,6 +74,13 @@ class VibrationAlarmReceiver : BroadcastReceiver() {
             pattern,
             System.currentTimeMillis() + window,
         )
+
+        // Block alarms also ring the watch companion. goAsync keeps this
+        // (short-lived) process alive while the Data Layer message is sent.
+        if (watchAlarm) {
+            val pending = goAsync()
+            WearAlarmMessenger.sendRing(context, requestCode, name) { pending.finish() }
+        }
     }
 
     companion object {
@@ -78,6 +89,8 @@ class VibrationAlarmReceiver : BroadcastReceiver() {
         private const val EXTRA_REPEAT_INTERVAL_MS = "repeatIntervalMs"
         private const val EXTRA_REQUEST_CODE = "requestCode"
         private const val EXTRA_BUZZ_UNTIL_MS = "buzzUntilMs"
+        private const val EXTRA_WATCH_ALARM = "watchAlarm"
+        private const val EXTRA_NAME = "name"
 
         // Marks the self-rescheduling in-alarm buzz continuations. A distinct
         // action keeps its PendingIntent separate from the daily re-arm's
@@ -107,6 +120,10 @@ class VibrationAlarmReceiver : BroadcastReceiver() {
             return HashSet(prefs.getStringSet(KEY_ACTIVE, emptySet()) ?: emptySet())
         }
 
+        /// Every requestCode this app currently has a Vibrator alarm armed for.
+        fun armedCodes(context: Context): List<Int> =
+            activeCodes(context).mapNotNull { it.toIntOrNull() }
+
         private fun setActiveCodes(context: Context, codes: Set<String>) {
             context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
                 .edit()
@@ -121,10 +138,13 @@ class VibrationAlarmReceiver : BroadcastReceiver() {
             pattern: LongArray,
             durationMs: Long,
             repeatIntervalMs: Long,
+            watchAlarm: Boolean = false,
+            name: String = "",
         ) {
             val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-            val pendingIntent =
-                pendingIntentFor(context, requestCode, pattern, durationMs, repeatIntervalMs)
+            val pendingIntent = pendingIntentFor(
+                context, requestCode, pattern, durationMs, repeatIntervalMs, watchAlarm, name,
+            )
             val info = AlarmManager.AlarmClockInfo(triggerAtMillis, pendingIntent)
             alarmManager.setAlarmClock(info, pendingIntent)
             setActiveCodes(context, activeCodes(context).apply { add(requestCode.toString()) })
@@ -135,11 +155,15 @@ class VibrationAlarmReceiver : BroadcastReceiver() {
             // Extras don't factor into PendingIntent equality (only the
             // Intent's action/component/data and this requestCode do), so
             // dummy values here still resolve to the same pending alarm.
-            alarmManager.cancel(pendingIntentFor(context, requestCode, longArrayOf(0), 0L, 0L))
+            alarmManager.cancel(
+                pendingIntentFor(context, requestCode, longArrayOf(0), 0L, 0L, false),
+            )
             // Also kill any in-flight buzz loop for this alarm.
             alarmManager.cancel(buzzLoopPendingIntent(context, requestCode, longArrayOf(0), 0L))
             stopVibration(context)
             setActiveCodes(context, activeCodes(context).apply { remove(requestCode.toString()) })
+            // Tell the watch to close its alarm screen (this alarm is over).
+            WearAlarmMessenger.sendStop(context)
         }
 
         /// Cancels every Vibrator alarm this app has armed, by requestCode, from
@@ -155,12 +179,19 @@ class VibrationAlarmReceiver : BroadcastReceiver() {
             val cancelled = ArrayList<Int>()
             for (code in activeCodes(context)) {
                 val requestCode = code.toIntOrNull() ?: continue
-                alarmManager.cancel(pendingIntentFor(context, requestCode, longArrayOf(0), 0L, 0L))
+                alarmManager.cancel(
+                    pendingIntentFor(context, requestCode, longArrayOf(0), 0L, 0L, false),
+                )
                 alarmManager.cancel(buzzLoopPendingIntent(context, requestCode, longArrayOf(0), 0L))
                 cancelled.add(requestCode)
             }
             setActiveCodes(context, emptySet())
             stopVibration(context)
+            // NB: no WearAlarmMessenger.sendStop here -- cancelAll runs during
+            // routine rescheduleAll (incl. the fullScreenIntent cold start when
+            // an alarm fires), and telling the watch to stop then would kill a
+            // legitimately-ringing alarm. Only the explicit single cancel()
+            // (a real dismiss) signals the watch.
             return cancelled
         }
 
@@ -285,12 +316,16 @@ class VibrationAlarmReceiver : BroadcastReceiver() {
             pattern: LongArray,
             durationMs: Long,
             repeatIntervalMs: Long,
+            watchAlarm: Boolean,
+            name: String = "",
         ): PendingIntent {
             val intent = Intent(context, VibrationAlarmReceiver::class.java).apply {
                 putExtra(EXTRA_PATTERN, pattern)
                 putExtra(EXTRA_DURATION_MS, durationMs)
                 putExtra(EXTRA_REPEAT_INTERVAL_MS, repeatIntervalMs)
                 putExtra(EXTRA_REQUEST_CODE, requestCode)
+                putExtra(EXTRA_WATCH_ALARM, watchAlarm)
+                putExtra(EXTRA_NAME, name)
             }
             return PendingIntent.getBroadcast(
                 context,

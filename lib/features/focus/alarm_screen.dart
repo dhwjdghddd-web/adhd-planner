@@ -11,6 +11,7 @@ import '../../data/models/app_settings.dart';
 import '../../data/models/segment.dart';
 import '../../data/providers.dart';
 import '../../services/notification_service.dart';
+import '../../services/screen_wake_service.dart';
 import 'alarm_skip_controller.dart';
 import 'focus_page.dart';
 
@@ -21,6 +22,10 @@ import 'focus_page.dart';
 const _alarmGuardChannel = MethodChannel(
   'com.adhdplanner.adhd_planner/alarm_sound',
 );
+
+/// Route name for the full-screen alarm, so a single dismiss can pop every
+/// stacked alarm screen at once (see app.dart's `_showAlarmScreen`).
+const alarmRouteName = 'alarm-screen';
 
 /// Full-screen alarm takeover — pushed as a route (not a small dialog) by
 /// app.dart's `_showAlarmScreen` when a block's start alarm fires, including the
@@ -56,9 +61,18 @@ class AlarmScreen extends ConsumerStatefulWidget {
 }
 
 class _AlarmScreenState extends ConsumerState<AlarmScreen> {
+  // Polls whether the watch dismissed this alarm (끄기 on the wrist), so this
+  // full-screen alarm closes itself -- it can't be reached otherwise while it
+  // covers a locked phone.
+  Timer? _dismissPoll;
+
   @override
   void initState() {
     super.initState();
+    _dismissPoll = Timer.periodic(
+      const Duration(seconds: 2),
+      (_) => _closeIfDismissed(),
+    );
     // While this alarm is up, have native treat a power-button press (which
     // turns the screen off) as "dismiss the alarm" -- the standard alarm-clock
     // gesture for silencing it without unlocking. Native silences the
@@ -83,8 +97,20 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
     return null;
   }
 
+  Future<void> _closeIfDismissed() async {
+    final dismissed = await consumeAlarmDismissedFromWatch(widget.notificationId);
+    if (dismissed && mounted) {
+      // Close ALL stacked alarm screens (two blocks starting at once, or a
+      // leftover) in one go, not just this one.
+      Navigator.of(
+        context,
+      ).popUntil((route) => route.settings.name != alarmRouteName);
+    }
+  }
+
   @override
   void dispose() {
+    _dismissPoll?.cancel();
     _alarmGuardChannel.setMethodCallHandler(null);
     _alarmGuardChannel.invokeMethod('stopScreenOffGuard').catchError((
       Object e,

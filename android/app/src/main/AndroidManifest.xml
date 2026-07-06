@@ -58,6 +58,18 @@
         <!-- Direct Vibrator trigger alongside the alarm notification.
              See VibrationAlarmReceiver.kt for why this exists. -->
         <receiver android:exported="false" android:name=".VibrationAlarmReceiver" />
+
+        <!-- Watch companion: receives check toggles from the Wear app over the
+             Data Layer, even when the Flutter app isn't foregrounded. -->
+        <service
+            android:name=".WearListenerService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
+                <data android:scheme="wear" android:host="*" android:pathPrefix="/toggle_item" />
+                <data android:scheme="wear" android:host="*" android:pathPrefix="/alarm_dismiss" />
+            </intent-filter>
+        </service>
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

@@ -67,6 +67,14 @@ class MainActivity : FlutterActivity() {
                         }
                         result.success(null)
                     }
+                    "consumeAlarmDismiss" -> {
+                        // Whether the watch just dismissed this alarm -- lets the
+                        // full-screen AlarmScreen close itself even when it was
+                        // covering a locked phone (no resume event) and the
+                        // notification was already gone.
+                        val id = call.argument<Int>("id") ?: -1
+                        result.success(WearListenerService.consumeWatchDismiss(id))
+                    }
                     "getDisplayInfo" -> {
                         // Which physical display this activity is currently on.
                         // A foldable cover screen is a non-default built-in
@@ -87,6 +95,20 @@ class MainActivity : FlutterActivity() {
                                 "isDefault" to (id == Display.DEFAULT_DISPLAY),
                             ),
                         )
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+
+        // Watch companion: Flutter pushes today's checklist JSON here whenever
+        // it changes, and we relay it onto the Wearable Data Layer.
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "com.adhdplanner.adhd_planner/wear")
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "pushChecklist" -> {
+                        val json = call.argument<String>("json") ?: "{}"
+                        WearBridge.pushChecklist(applicationContext, json)
+                        result.success(null)
                     }
                     else -> result.notImplemented()
                 }
@@ -238,6 +260,8 @@ class MainActivity : FlutterActivity() {
             .toLongArray()
         val durationMs = (call.argument<Number>("durationMs"))!!.toLong()
         val repeatIntervalMs = (call.argument<Number>("repeatIntervalMs"))!!.toLong()
+        val watchAlarm = call.argument<Boolean>("watchAlarm") ?: false
+        val name = call.argument<String>("name") ?: ""
 
         VibrationAlarmReceiver.schedule(
             applicationContext,
@@ -246,6 +270,8 @@ class MainActivity : FlutterActivity() {
             pattern,
             durationMs,
             repeatIntervalMs,
+            watchAlarm,
+            name,
         )
         result.success(null)
     }

@@ -384,6 +384,8 @@ class NotificationService {
         pattern: vibrationPatternFor(settings.vibrationPattern),
         durationMs: _alarmRepeatMs,
         repeatInterval: const Duration(days: 1),
+        watchAlarm: true,
+        name: spec.title,
       );
     }
 
@@ -410,7 +412,13 @@ class NotificationService {
       // rescheduleAll before runApp), hang an offline launch on a black screen
       // for no benefit. The local cache updates synchronously, so cancelBlock
       // Alarms still reads the right ids.
-      unawaited(repo.upsertSegment(segment.copyWith(notificationIds: ids)));
+      //
+      // Merge-writes ONLY notificationIds (not a full upsert of `segment`):
+      // `segments` here was read a moment ago and may be stale, so overwriting
+      // the whole doc would clobber a concurrent edit -- e.g. saving a new start
+      // time triggers this reschedule, which would otherwise write the old time
+      // straight back over it.
+      unawaited(repo.saveNotificationIds(segment.id, ids));
     }
   }
 
@@ -562,6 +570,8 @@ class NotificationService {
       pattern: vibrationPatternFor(settings.vibrationPattern),
       durationMs: _alarmRepeatMs,
       repeatInterval: Duration.zero,
+      watchAlarm: true,
+      name: segment.name,
     );
   }
 
@@ -620,6 +630,12 @@ class NotificationService {
     required Int64List pattern,
     required int durationMs,
     required Duration repeatInterval,
+    // Block alarms only: when this fires natively, also ring the watch
+    // companion's alarm screen (see VibrationAlarmReceiver). Off for the
+    // gentler check-in / timer alarms so they don't pop a full alarm on the wrist.
+    bool watchAlarm = false,
+    // Block name shown on the watch alarm screen.
+    String name = '',
   }) async {
     try {
       await _alarmChannelChannel.invokeMethod('scheduleVibrationAlarm', {
@@ -632,6 +648,8 @@ class NotificationService {
         'pattern': pattern.toList(),
         'durationMs': durationMs,
         'repeatIntervalMs': repeatInterval.inMilliseconds,
+        'watchAlarm': watchAlarm,
+        'name': name,
       });
     } catch (e) {
       // No platform channel available (e.g. under flutter test).

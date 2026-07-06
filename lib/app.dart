@@ -24,6 +24,7 @@ import 'features/rewards/daily_achievement.dart';
 import 'features/rewards/streak.dart';
 import 'services/notification_service.dart';
 import 'services/screen_wake_service.dart';
+import 'services/wear_sync_service.dart';
 
 /// Root widget. Theme mode and font scale follow [AppSettings] live (see
 /// `settingsProvider`), so changing them in the settings screen is
@@ -62,6 +63,7 @@ class App extends ConsumerWidget {
               const _CoverDisplayWatcher(),
               const _AccountAlarmSync(),
               const _RestDayAlarmSync(),
+              const _WearSync(),
               const _BlockCompletionReconciler(),
               const _AchievementRecorder(),
               const _CompletionCelebrator(),
@@ -95,6 +97,7 @@ void _showAlarmScreen({
       .push(
         MaterialPageRoute<void>(
           fullscreenDialog: true,
+          settings: const RouteSettings(name: alarmRouteName),
           builder: (_) =>
               AlarmScreen(segmentId: segmentId, notificationId: notificationId),
         ),
@@ -187,10 +190,16 @@ class _AlarmAlertLauncherState extends State<_AlarmAlertLauncher> {
     if (pending == null) return;
     if (appNavigatorKey.currentContext == null) return;
     pendingAlarmAlert.value = null;
-    _showAlarmScreen(
-      segmentId: pending.segmentId,
-      notificationId: pending.notificationId,
-    );
+    // If the alarm was already dismissed from the watch, don't pop its
+    // slide-to-dismiss full-screen when the phone is next opened -- it's off.
+    consumeAlarmDismissedFromWatch(pending.notificationId).then((dismissed) {
+      if (dismissed) return;
+      if (appNavigatorKey.currentContext == null) return;
+      _showAlarmScreen(
+        segmentId: pending.segmentId,
+        notificationId: pending.notificationId,
+      );
+    });
   }
 
   @override
@@ -479,6 +488,61 @@ class _RestDayAlarmSync extends ConsumerWidget {
         logSwallowed('쉬는 날 토글 후 알람 재스케줄', e);
       }
     });
+    return const SizedBox.shrink();
+  }
+}
+
+/// No visual presence — pushes today's checklist to the Galaxy Watch companion
+/// (via the native Data Layer bridge) whenever the underlying data changes, so
+/// the watch mirrors the phone. De-duplicated by the serialized JSON so an
+/// unrelated rebuild doesn't re-push. The watch echoes toggles back through
+/// [WearListenerService], which updates Firestore -> this re-pushes the result.
+class _WearSync extends ConsumerStatefulWidget {
+  const _WearSync();
+
+  @override
+  ConsumerState<_WearSync> createState() => _WearSyncState();
+}
+
+class _WearSyncState extends ConsumerState<_WearSync> {
+  String? _lastPushed;
+  // Re-evaluate each minute so the "current block" the watch shows follows the
+  // clock even when no data changed (a block boundary passing changes what's
+  // relevant without any provider emission).
+  late final MinuteTicker _ticker;
+
+  @override
+  void initState() {
+    super.initState();
+    _ticker = MinuteTicker(() {
+      if (mounted) setState(() {});
+    })..start();
+  }
+
+  @override
+  void dispose() {
+    _ticker.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final segments = ref.watch(segmentsProvider).value;
+    final progress = ref.watch(microStepProgressProvider).value;
+    final moves = ref.watch(microStepMovesProvider).value;
+    if (segments != null && progress != null && moves != null) {
+      final json = buildChecklistJson(
+        segments: segments,
+        progress: progress,
+        moves: moves,
+      );
+      if (json != _lastPushed) {
+        _lastPushed = json;
+        WidgetsBinding.instance.addPostFrameCallback(
+          (_) => unawaited(pushChecklistToWatch(json)),
+        );
+      }
+    }
     return const SizedBox.shrink();
   }
 }
