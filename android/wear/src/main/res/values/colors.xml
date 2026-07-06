@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Same adaptive-icon background as the phone app (ic_launcher). -->
+    <color name="ic_launcher_background">#161B22</color>
+</resources>
