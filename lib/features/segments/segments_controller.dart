@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/models/segment.dart';
 import '../../data/providers.dart';
-import '../../data/today.dart';
 import '../../services/notification_service.dart';
 
 final segmentsControllerProvider = Provider<SegmentsController>(
@@ -69,10 +68,10 @@ class SegmentsController {
     final repo = _ref.read(plannerRepositoryProvider)!;
     final segments = await repo.watchSegments().first;
     final settings = await repo.watchSettings().first;
-    final restDays = await repo.watchRestDays().first;
+    // 쉬는 날 여부는 rescheduleAll이 스스로 읽는다.
     await _ref
         .read(notificationServiceProvider)
-        .rescheduleAll(segments, settings, restToday: isRestDayOn(restDays));
+        .rescheduleAll(segments, settings);
   }
 
   /// Persists a new ordering by rewriting the `order` field of every

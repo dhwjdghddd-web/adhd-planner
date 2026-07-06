@@ -477,13 +477,11 @@ class _RestDayAlarmSync extends ConsumerWidget {
       final settings = ref.read(settingsProvider).value;
       if (segments == null || settings == null) return;
       try {
+        // 쉬는 날 여부는 rescheduleAll이 스스로 읽는다(방금 바뀐 값 포함 --
+        // Fake/Firestore 모두 로컬 캐시가 동기적으로 갱신돼 있다).
         await ref
             .read(notificationServiceProvider)
-            .rescheduleAll(
-              segments,
-              settings,
-              restToday: isRestDayOn(restDays),
-            );
+            .rescheduleAll(segments, settings);
       } catch (e) {
         logSwallowed('쉬는 날 토글 후 알람 재스케줄', e);
       }

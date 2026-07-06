@@ -13,6 +13,7 @@ import '../data/models/app_settings.dart';
 import '../data/models/segment.dart';
 import '../data/providers.dart';
 import '../data/repositories/planner_repository.dart';
+import '../data/today.dart';
 import 'notification_schedule.dart';
 // The pure scheduling logic lives in notification_schedule.dart; re-export it
 // so existing importers of this file (and notification_service_test) keep
@@ -308,12 +309,22 @@ class NotificationService {
 
   Future<void> rescheduleAll(
     List<Segment> segments,
-    AppSettings settings, {
-    bool restToday = false,
-  }) async {
+    AppSettings settings,
+  ) async {
     final repo = _repository;
     if (repo == null) return; // auth 전환 중 — 알람 재스케줄 건너뜀
     await _ensureChannels(settings);
+
+    // "오늘은 쉬기"를 여기서 직접 읽는다 -- 호출부가 플래그를 넘기는 방식은
+    // 호출부가 늘 때마다 누락 버그를 낳았다(설정 변경/계정 전환 경로가 쉬는
+    // 날을 무시하고 오늘 알람을 되살리던 실버그). 이제 어떤 경로로 재스케줄
+    // 되든 쉬는 날이 항상 반영된다.
+    var restToday = false;
+    try {
+      restToday = isRestDayOn(await repo.watchRestDays().first);
+    } catch (e) {
+      logSwallowed('쉬는 날 조회(재스케줄)', e); // 조회 실패 → 쉬는 날 아님으로 진행
+    }
 
     // 기존 알람을 전부 비우고 아래에서 현재 blocks만 다시 건다.
     // 네이티브가 자체 보관하는 requestCode 집합으로 진동 알람을 전부 취소하고
@@ -385,7 +396,6 @@ class NotificationService {
         durationMs: _alarmRepeatMs,
         repeatInterval: const Duration(days: 1),
         watchAlarm: true,
-        name: spec.title,
       );
     }
 
@@ -571,7 +581,6 @@ class NotificationService {
       durationMs: _alarmRepeatMs,
       repeatInterval: Duration.zero,
       watchAlarm: true,
-      name: segment.name,
     );
   }
 
@@ -632,10 +641,10 @@ class NotificationService {
     required Duration repeatInterval,
     // Block alarms only: when this fires natively, also ring the watch
     // companion's alarm screen (see VibrationAlarmReceiver). Off for the
-    // gentler check-in / timer alarms so they don't pop a full alarm on the wrist.
+    // gentler check-in / timer alarms so they don't pop a full alarm on the
+    // wrist. (No name payload: the watch reads the ringing block names from
+    // its synced checklist.)
     bool watchAlarm = false,
-    // Block name shown on the watch alarm screen.
-    String name = '',
   }) async {
     try {
       await _alarmChannelChannel.invokeMethod('scheduleVibrationAlarm', {
@@ -649,7 +658,6 @@ class NotificationService {
         'durationMs': durationMs,
         'repeatIntervalMs': repeatInterval.inMilliseconds,
         'watchAlarm': watchAlarm,
-        'name': name,
       });
     } catch (e) {
       // No platform channel available (e.g. under flutter test).
