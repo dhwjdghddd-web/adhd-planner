@@ -45,12 +45,14 @@ kotlin {
 }
 
 dependencies {
-    implementation(platform("androidx.compose:compose-bom:2024.09.03"))
-    implementation("androidx.compose.ui:ui")
-    implementation("androidx.compose.foundation:foundation")
+    // Wear Compose Material 3 (M3 Expressive) drives the Compose version:
+    // material3 1.6.2 requires Compose 1.9.0, so pin the base libs to match
+    // rather than a BOM that lags behind.
+    implementation("androidx.compose.ui:ui:1.9.0")
+    implementation("androidx.compose.foundation:foundation:1.9.0")
     implementation("androidx.activity:activity-compose:1.9.3")
-    implementation("androidx.wear.compose:compose-material:1.4.1")
-    implementation("androidx.wear.compose:compose-foundation:1.4.1")
+    implementation("androidx.wear.compose:compose-material3:1.6.2")
+    implementation("androidx.wear.compose:compose-foundation:1.6.2")
     implementation("com.google.android.gms:play-services-wearable:18.2.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")

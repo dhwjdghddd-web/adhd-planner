@@ -4,20 +4,23 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
-import androidx.wear.compose.material.CompactChip
-import androidx.wear.compose.material.Text
-import androidx.wear.compose.material.ToggleChip
-import androidx.wear.compose.material.ToggleChipDefaults
+import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
+import androidx.wear.compose.material3.CheckboxButton
+import androidx.wear.compose.material3.CompactButton
+import androidx.wear.compose.material3.ListHeader
+import androidx.wear.compose.material3.MaterialTheme
+import androidx.wear.compose.material3.ScreenScaffold
+import androidx.wear.compose.material3.Text
 import com.google.android.gms.wearable.DataClient
 import com.google.android.gms.wearable.DataEvent
 import com.google.android.gms.wearable.DataEventBuffer
@@ -116,74 +119,74 @@ fun ChecklistScreen(
     onToggle: (String, Int, Boolean) -> Unit,
     onToggleRest: (Boolean) -> Unit,
 ) {
-    Column(modifier = Modifier.fillMaxSize()) {
-        // Top-fixed rest-day toggle (doesn't scroll with the checklist).
-        CompactChip(
-            onClick = { onToggleRest(!data.restToday) },
-            label = {
-                Text(if (data.restToday) "쉬는 날 해제" else "오늘은 쉬기")
-            },
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp, vertical = 2.dp),
-        )
-        if (data.restToday) {
-            Box(
-                modifier = Modifier.fillMaxWidth().weight(1f),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    "쉬는 날 😴\n푹 쉬어요",
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(16.dp),
-                )
-            }
-        } else {
-            ChecklistItems(data, onToggle, modifier = Modifier.weight(1f))
-        }
-    }
-}
-
-@androidx.compose.runtime.Composable
-private fun ChecklistItems(
-    data: WatchData,
-    onToggle: (String, Int, Boolean) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    // The block(s) in progress right now -- one, or several when they overlap.
-    val current = data.currentBlocks()
-    ScalingLazyColumn(modifier = modifier) {
-        if (current.isEmpty()) {
-            item {
-                Text(
-                    "지금 진행 중인\n구간이 없어요",
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth().padding(16.dp),
-                )
-            }
-        } else {
-            for (block in current) {
-                item {
-                    Text(
-                        block.name,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp),
-                    )
-                }
-                for (item in block.items) {
+    MaterialTheme {
+        val listState = rememberScalingLazyListState()
+        // No AppScaffold/TimeText: the watch face already shows the time, so a
+        // clock inside this quick-glance checklist adds little. ScreenScaffold
+        // still gives the M3 position scroll indicator.
+        ScreenScaffold(scrollState = listState) { contentPadding ->
+            Box(modifier = Modifier.fillMaxSize()) {
+                ScalingLazyColumn(
+                    state = listState,
+                    contentPadding = contentPadding,
+                    autoCentering = null, // first item hugs the top, not centred
+                    modifier = Modifier.fillMaxSize(),
+                ) {
+                    // The rest-day toggle is ALWAYS the same item 0 (only its
+                    // label flips), so "오늘은 쉬기" and "쉬는 날 해제" sit in the
+                    // exact same place. Scrolls with the list.
                     item {
-                        ToggleChip(
-                            checked = item.checked,
-                            onCheckedChange = { onToggle(item.segmentId, item.index, it) },
-                            label = { Text(item.text) },
-                            toggleControl = {
-                                ToggleChipDefaults.checkboxIcon(checked = item.checked)
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 8.dp, vertical = 2.dp),
-                        )
+                        // Fixed width so "오늘은 쉬기" and "쉬는 날 해제" (which has
+                        // an extra space) render the exact same size.
+                        CompactButton(
+                            onClick = { onToggleRest(!data.restToday) },
+                            modifier = Modifier.width(150.dp),
+                        ) {
+                            Text(
+                                if (data.restToday) "🌙 쉬는 날 해제" else "😴 오늘은 쉬기",
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
                     }
+                    if (!data.restToday) {
+                        val current = data.currentBlocks()
+                        if (current.isEmpty()) {
+                            item {
+                                Text(
+                                    "지금 진행 중인\n구간이 없어요",
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.fillMaxWidth().padding(8.dp),
+                                )
+                            }
+                        } else {
+                            for (block in current) {
+                                item { ListHeader { Text(block.name) } }
+                                for (item in block.items) {
+                                    item {
+                                        CheckboxButton(
+                                            checked = item.checked,
+                                            onCheckedChange = {
+                                                onToggle(item.segmentId, item.index, it)
+                                            },
+                                            label = { Text(item.text) },
+                                            modifier = Modifier.fillMaxWidth(),
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                // Rest day: message dead-centre of the whole screen, overlaid so
+                // it's independent of the toggle's position above.
+                if (data.restToday) {
+                    Text(
+                        "쉬는 날 😴\n푹 쉬어요",
+                        textAlign = TextAlign.Center,
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.align(Alignment.Center).padding(16.dp),
+                    )
                 }
             }
         }
