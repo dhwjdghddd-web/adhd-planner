@@ -250,4 +250,97 @@ void main() {
       expect(pendingAlarmAlert.value, isNull);
     });
   });
+
+  group('rest-day suppression', () {
+    // A fixed evening "now" (local zone is UTC here, see setUpAll) so these
+    // never depend on when the suite happens to run -- offsets from the real
+    // clock go wrong near midnight, where +5 minutes is already tomorrow.
+    //
+    // A function, not a `final` in the group body: group bodies run while the
+    // suite is still being collected, before setUpAll has called
+    // setLocalLocation, so touching tz.local out here throws
+    // "Field '_local' has not been initialized".
+    tz.TZDateTime bedtime() => tz.TZDateTime(tz.local, 2026, 6, 18, 23, 0);
+    const morningAlarm = 7 * 60; // 07:00 -- already passed, next fire tomorrow
+    const lateTonight = 23 * 60 + 30; // 23:30 -- still ahead today
+
+    test("firesLaterToday separates today's alarms from tomorrow's", () {
+      expect(firesLaterToday(lateTonight, now: bedtime()), isTrue);
+      expect(firesLaterToday(morningAlarm, now: bedtime()), isFalse);
+    });
+
+    test('nothing is suppressed when neither day is a rest day', () {
+      for (final m in [lateTonight, morningAlarm]) {
+        expect(
+          restDaySuppresses(
+            m,
+            restToday: false,
+            restTomorrow: false,
+            now: bedtime(),
+          ),
+          isFalse,
+        );
+      }
+    });
+
+    test('오늘은 쉬기 drops only what is still ahead today', () {
+      expect(
+        restDaySuppresses(
+          lateTonight,
+          restToday: true,
+          restTomorrow: false,
+          now: bedtime(),
+        ),
+        isTrue,
+      );
+      // The morning alarm already passed today, so its next fire is tomorrow --
+      // not a rest day here, so it stays armed as usual.
+      expect(
+        restDaySuppresses(
+          morningAlarm,
+          restToday: true,
+          restTomorrow: false,
+          now: bedtime(),
+        ),
+        isFalse,
+      );
+    });
+
+    test('내일 쉬기 drops tomorrow morning while tonight carries on', () {
+      // The whole point of the feature: set at bedtime, the morning alarm never
+      // fires. "오늘은 쉬기" cannot do this -- 07:00 already passed today.
+      expect(
+        restDaySuppresses(
+          morningAlarm,
+          restToday: false,
+          restTomorrow: true,
+          now: bedtime(),
+        ),
+        isTrue,
+      );
+      expect(
+        restDaySuppresses(
+          lateTonight,
+          restToday: false,
+          restTomorrow: true,
+          now: bedtime(),
+        ),
+        isFalse,
+      );
+    });
+
+    test('both days off suppresses every alarm', () {
+      for (final m in [lateTonight, morningAlarm]) {
+        expect(
+          restDaySuppresses(
+            m,
+            restToday: true,
+            restTomorrow: true,
+            now: bedtime(),
+          ),
+          isTrue,
+        );
+      }
+    });
+  });
 }

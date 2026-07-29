@@ -8,6 +8,7 @@ import 'package:adhd_planner/data/models/completion.dart';
 import 'package:adhd_planner/data/models/mit.dart';
 import 'package:adhd_planner/data/models/segment.dart';
 import 'package:adhd_planner/data/providers.dart';
+import 'package:adhd_planner/data/today.dart';
 import 'package:adhd_planner/features/checkin/checkin_page.dart';
 import 'package:adhd_planner/features/focus/focus_page.dart';
 import 'package:adhd_planner/features/planner/dial_painter.dart';
@@ -492,19 +493,17 @@ void main() {
     );
   });
 
-  group('오늘은 쉬기 (rest day)', () {
-    testWidgets('the toggle FAB is shown and off by default', (tester) async {
-      final repo = FakePlannerRepository();
-      await repo.upsertSegment(_block(name: '하루'));
-
-      await tester.pumpWidget(wrap(repo, debugNowMinuteOfDay: 12 * 60));
+  group('쉬는 날 (rest day)', () {
+    /// Opens the 오늘/내일 chooser from the home FAB.
+    Future<void> openRestDaySheet(WidgetTester tester) async {
+      await tester.tap(find.byTooltip(kRestDayFabTooltip));
       await tester.pumpAndSettle();
+    }
 
-      expect(find.byTooltip('오늘은 쉬기'), findsOneWidget);
-      expect(find.text('오늘은 쉬는 날'), findsNothing); // no rest banner yet
-    });
+    SwitchListTile switchTitled(WidgetTester tester, String title) => tester
+        .widget<SwitchListTile>(find.widgetWithText(SwitchListTile, title));
 
-    testWidgets('tapping it marks today a rest day and shows the rest banner', (
+    testWidgets('the FAB is shown and both days are off by default', (
       tester,
     ) async {
       final repo = FakePlannerRepository();
@@ -513,18 +512,41 @@ void main() {
       await tester.pumpWidget(wrap(repo, debugNowMinuteOfDay: 12 * 60));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byTooltip('오늘은 쉬기'));
+      expect(find.byTooltip(kRestDayFabTooltip), findsOneWidget);
+      expect(find.text('오늘은 쉬는 날'), findsNothing); // no rest banner yet
+
+      await openRestDaySheet(tester);
+      expect(switchTitled(tester, '오늘 쉬기').value, false);
+      expect(switchTitled(tester, '내일 쉬기').value, false);
+    });
+
+    testWidgets('오늘 쉬기 marks today a rest day and shows the rest banner', (
+      tester,
+    ) async {
+      final repo = FakePlannerRepository();
+      await repo.upsertSegment(_block(name: '하루'));
+
+      await tester.pumpWidget(wrap(repo, debugNowMinuteOfDay: 12 * 60));
       await tester.pumpAndSettle();
+
+      await openRestDaySheet(tester);
+      await tester.tap(find.widgetWithText(SwitchListTile, '오늘 쉬기'));
+      await tester.pumpAndSettle();
+
+      // The sheet stays open (so 내일 can be set in the same visit) and the
+      // switch reflects the new state straight from restDaysProvider.
+      expect(switchTitled(tester, '오늘 쉬기').value, true);
 
       final restDays = await repo.watchRestDays().first;
-      expect(restDays.length, 1);
-      // Home now reads as a rest day: banner shows + the FAB flips state.
+      expect(restDays.single.dateKey, dayKeyFor());
+
+      // Home behind the sheet now reads as a rest day.
+      await tester.tapAt(const Offset(10, 10)); // dismiss the sheet (barrier)
+      await tester.pumpAndSettle();
       expect(find.text('오늘은 쉬는 날'), findsOneWidget);
-      expect(find.byTooltip('쉬는 날 해제'), findsOneWidget);
-      expect(find.byTooltip('오늘은 쉬기'), findsNothing);
     });
 
-    testWidgets('tapping again resumes the day (removes the rest mark)', (
+    testWidgets('내일 쉬기 marks tomorrow only -- today keeps its alarms', (
       tester,
     ) async {
       final repo = FakePlannerRepository();
@@ -533,17 +555,41 @@ void main() {
       await tester.pumpWidget(wrap(repo, debugNowMinuteOfDay: 12 * 60));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byTooltip('오늘은 쉬기'));
-      await tester.pumpAndSettle();
-      // Let the confirmation SnackBar auto-dismiss (it can sit over the FAB).
-      await tester.pump(const Duration(seconds: 3));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('쉬는 날 해제'));
+      await openRestDaySheet(tester);
+      await tester.tap(find.widgetWithText(SwitchListTile, '내일 쉬기'));
       await tester.pumpAndSettle();
 
-      expect(await repo.watchRestDays().first, isEmpty);
+      expect(switchTitled(tester, '내일 쉬기').value, true);
+      expect(switchTitled(tester, '오늘 쉬기').value, false);
+
+      final restDays = await repo.watchRestDays().first;
+      expect(restDays.single.dateKey, dayKeyFor(tomorrowOf()));
+
+      // Today is untouched: no rest banner, the day carries on as normal.
+      await tester.tapAt(const Offset(10, 10));
+      await tester.pumpAndSettle();
       expect(find.text('오늘은 쉬는 날'), findsNothing);
-      expect(find.byTooltip('오늘은 쉬기'), findsOneWidget);
+    });
+
+    testWidgets('toggling 오늘 쉬기 off again resumes the day', (tester) async {
+      final repo = FakePlannerRepository();
+      await repo.upsertSegment(_block(name: '하루'));
+
+      await tester.pumpWidget(wrap(repo, debugNowMinuteOfDay: 12 * 60));
+      await tester.pumpAndSettle();
+
+      await openRestDaySheet(tester);
+      await tester.tap(find.widgetWithText(SwitchListTile, '오늘 쉬기'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(SwitchListTile, '오늘 쉬기'));
+      await tester.pumpAndSettle();
+
+      expect(switchTitled(tester, '오늘 쉬기').value, false);
+      expect(await repo.watchRestDays().first, isEmpty);
+
+      await tester.tapAt(const Offset(10, 10));
+      await tester.pumpAndSettle();
+      expect(find.text('오늘은 쉬는 날'), findsNothing);
     });
   });
 }

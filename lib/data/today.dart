@@ -44,11 +44,27 @@ Set<String> mitBlockIdsOn(List<Mit> mits, {DateTime? now}) {
   };
 }
 
+/// Midnight of the day *after* [now] (defaults to today), in local time. Built
+/// by incrementing the day field -- which DateTime normalises across month/year
+/// ends -- rather than adding 24h, so it lands on the right calendar day even
+/// on a DST shift (a 23h or 25h day).
+DateTime tomorrowOf([DateTime? now]) {
+  final n = now ?? DateTime.now();
+  return DateTime(n.year, n.month, n.day + 1);
+}
+
 /// Whether [now]'s day (defaults to today) is marked a rest day ("오늘은 쉬기").
 bool isRestDayOn(List<RestDay> restDays, {DateTime? now}) {
   final key = dayKeyFor(now);
   return restDays.any((r) => r.dateKey == key);
 }
+
+/// Whether the day *after* [now] (defaults to tomorrow) is marked a rest day
+/// ("내일 쉬기" -- set the night before so the morning's alarms stay silent).
+/// Same records as [isRestDayOn]: a rest day is just a date key, so tomorrow's
+/// mark simply becomes today's once the date rolls over.
+bool isRestDayTomorrow(List<RestDay> restDays, {DateTime? now}) =>
+    isRestDayOn(restDays, now: tomorrowOf(now));
 
 /// The "yyyy-MM-dd" keys of all rest days -- unioned into the streak's achieved
 /// set so a rest day never counts as a miss (see streakDateKeys).

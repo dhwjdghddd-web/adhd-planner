@@ -63,6 +63,7 @@ class App extends ConsumerWidget {
               const _CoverDisplayWatcher(),
               const _AccountAlarmSync(),
               const _RestDayAlarmSync(),
+              const _DayRolloverAlarmSync(),
               const _WearSync(),
               const _BlockCompletionReconciler(),
               const _AchievementRecorder(),
@@ -488,6 +489,80 @@ class _RestDayAlarmSync extends ConsumerWidget {
     });
     return const SizedBox.shrink();
   }
+}
+
+/// No visual presence — reschedules every alarm once the local calendar date
+/// rolls over (checked each minute while running, and again on resume so a
+/// rollover that happened while backgrounded is caught the moment the app is
+/// reopened).
+///
+/// This is what makes 쉬는 날 self-healing. A rest day's alarms are suppressed
+/// by leaving them *unscheduled* (rescheduleAll's restToday/restTomorrow skip
+/// -- a `matchDateTimeComponents.time` daily repeat can't skip a single
+/// occurrence), so without a re-arm they'd stay silent past the rest day too:
+/// set "내일 쉬기" tonight and tomorrow's morning alarm is dropped, but so is
+/// the day-after's, until something reschedules. A date change is exactly when
+/// "which days are rest days" shifts under those alarms, so it's exactly when
+/// they need rebuilding.
+class _DayRolloverAlarmSync extends ConsumerStatefulWidget {
+  const _DayRolloverAlarmSync();
+
+  @override
+  ConsumerState<_DayRolloverAlarmSync> createState() =>
+      _DayRolloverAlarmSyncState();
+}
+
+class _DayRolloverAlarmSyncState extends ConsumerState<_DayRolloverAlarmSync>
+    with WidgetsBindingObserver {
+  late final MinuteTicker _ticker;
+  // Seeded with today's key rather than null so mounting never counts as a
+  // rollover -- main() already scheduled for today, and firing here on mount
+  // would hit the platform channel under widget tests.
+  String _lastDayKey = dayKeyFor();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _ticker = MinuteTicker(_check)..start();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _check();
+  }
+
+  void _check() {
+    final key = dayKeyFor();
+    if (key == _lastDayKey) return;
+    _lastDayKey = key;
+    unawaited(_reschedule());
+  }
+
+  Future<void> _reschedule() async {
+    final segments = ref.read(segmentsProvider).value;
+    final settings = ref.read(settingsProvider).value;
+    if (segments == null || settings == null) return;
+    try {
+      // 쉬는 날 여부는 rescheduleAll이 스스로 읽는다 -- 날짜가 바뀌었으니
+      // 어제의 "내일 쉬기"가 오늘의 "오늘은 쉬기"로 자연히 넘어간다.
+      await ref
+          .read(notificationServiceProvider)
+          .rescheduleAll(segments, settings);
+    } catch (e) {
+      logSwallowed('날짜 전환 후 알람 재스케줄', e);
+    }
+  }
+
+  @override
+  void dispose() {
+    _ticker.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => const SizedBox.shrink();
 }
 
 /// No visual presence — pushes today's checklist to the Galaxy Watch companion

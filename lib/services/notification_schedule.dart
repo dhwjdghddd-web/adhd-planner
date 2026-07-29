@@ -116,13 +116,48 @@ List<ScheduledSpec> buildSchedule(List<Segment> segments, {int leadMinutes = 10}
 /// Next moment (today if it's still ahead, otherwise tomorrow) at [minuteOfDay]
 /// in the local timezone. Used as the anchor for a daily recurring
 /// `zonedSchedule`.
-tz.TZDateTime nextInstanceOf(int minuteOfDay) {
-  final now = tz.TZDateTime.now(tz.local);
+/// [now] defaults to the current moment; pass it only to make a test
+/// independent of the wall clock (offsets from a real "now" go wrong near
+/// midnight, where +5 minutes is already tomorrow).
+tz.TZDateTime nextInstanceOf(int minuteOfDay, {tz.TZDateTime? now}) {
+  final from = now ?? tz.TZDateTime.now(tz.local);
   var scheduled = tz.TZDateTime(
-    tz.local, now.year, now.month, now.day, minuteOfDay ~/ 60, minuteOfDay % 60,
+    tz.local, from.year, from.month, from.day, minuteOfDay ~/ 60, minuteOfDay % 60,
   );
-  if (!scheduled.isAfter(now)) {
+  if (!scheduled.isAfter(from)) {
     scheduled = scheduled.add(const Duration(days: 1));
   }
   return scheduled;
 }
+
+/// Whether [minuteOfDay]'s next occurrence lands later TODAY (as opposed to
+/// having already passed, so its next fire is tomorrow) — i.e. which calendar
+/// day [nextInstanceOf] just picked.
+bool firesLaterToday(int minuteOfDay, {tz.TZDateTime? now}) {
+  final from = now ?? tz.TZDateTime.now(tz.local);
+  final trigger = nextInstanceOf(minuteOfDay, now: from);
+  return trigger.year == from.year &&
+      trigger.month == from.month &&
+      trigger.day == from.day;
+}
+
+/// Whether an alarm at [minuteOfDay] must be left **unscheduled** because its
+/// next fire lands on a rest day.
+///
+/// A daily alarm's next fire is either later today or tomorrow, so those two
+/// flags between them cover every alarm: "오늘은 쉬기" silences the ones still
+/// ahead today, and "내일 쉬기" — set the night before, when today's alarms
+/// have all passed already — silences exactly the ones that would next fire
+/// tomorrow morning.
+///
+/// Suppression has to mean *not scheduled at all*: the `matchDateTimeComponents
+/// .time` daily repeat re-anchors to the next matching *time* regardless of the
+/// scheduled date, so a would-be rest-day alarm can't simply be pushed to the
+/// day after. It's left off the device and re-armed by the next reschedule
+/// (see app.dart's _DayRolloverAlarmSync, which runs on every date change).
+bool restDaySuppresses(
+  int minuteOfDay, {
+  required bool restToday,
+  required bool restTomorrow,
+  tz.TZDateTime? now,
+}) => firesLaterToday(minuteOfDay, now: now) ? restToday : restTomorrow;

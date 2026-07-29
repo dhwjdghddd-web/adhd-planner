@@ -293,20 +293,6 @@ class NotificationService {
   /// ones [segments] now call for (one start-of-block alarm per alarm-enabled
   /// block), using [settings]'s current sound and vibration choice. Call this
   /// again whenever blocks or that choice change so it takes effect immediately.
-  /// Whether [minuteOfDay]'s next occurrence lands later TODAY (vs already
-  /// passed, so its next fire is tomorrow). On a rest day these are the alarms
-  /// to skip -- the `matchDateTimeComponents.time` daily repeat re-anchors to
-  /// the next matching *time* regardless of the scheduled date, so a would-be
-  /// today alarm can't be "moved" to tomorrow; it has to be left unscheduled,
-  /// and the next launch's rescheduleAll re-arms the normal daily repeat.
-  bool _firesToday(int minuteOfDay) {
-    final trigger = nextInstanceOf(minuteOfDay);
-    final now = tz.TZDateTime.now(tz.local);
-    return trigger.year == now.year &&
-        trigger.month == now.month &&
-        trigger.day == now.day;
-  }
-
   Future<void> rescheduleAll(
     List<Segment> segments,
     AppSettings settings,
@@ -320,8 +306,11 @@ class NotificationService {
     // 날을 무시하고 오늘 알람을 되살리던 실버그). 이제 어떤 경로로 재스케줄
     // 되든 쉬는 날이 항상 반영된다.
     var restToday = false;
+    var restTomorrow = false;
     try {
-      restToday = isRestDayOn(await repo.watchRestDays().first);
+      final restDays = await repo.watchRestDays().first;
+      restToday = isRestDayOn(restDays);
+      restTomorrow = isRestDayTomorrow(restDays);
     } catch (e) {
       logSwallowed('쉬는 날 조회(재스케줄)', e); // 조회 실패 → 쉬는 날 아님으로 진행
     }
@@ -340,11 +329,15 @@ class NotificationService {
 
     final specs = buildSchedule(segments, leadMinutes: settings.leadMinutes);
     for (final spec in specs) {
-      // "오늘은 쉬기": leave today's remaining alarms unscheduled entirely (see
-      // _firesToday) so nothing fires today -- no sound AND no popup. Alarms
-      // that already passed today still schedule normally (their next fire is
-      // tomorrow, so they stay armed for every following day).
-      if (restToday && _firesToday(spec.minuteOfDay)) continue;
+      // 쉬는 날(오늘/내일): leave that day's alarms unscheduled entirely so
+      // nothing fires -- no sound AND no popup. See restDaySuppresses.
+      if (restDaySuppresses(
+        spec.minuteOfDay,
+        restToday: restToday,
+        restTomorrow: restTomorrow,
+      )) {
+        continue;
+      }
       final triggerAt = nextInstanceOf(spec.minuteOfDay);
       if (spec.isLeadWarning) {
         // Quiet heads-up only -- no native Vibrator call, no alarmClock
@@ -406,6 +399,7 @@ class NotificationService {
       await scheduleCheckinAlarm(
         settings.checkinAlarmMinuteOfDay,
         restToday: restToday,
+        restTomorrow: restTomorrow,
       );
     }
 
@@ -501,10 +495,17 @@ class NotificationService {
   Future<void> scheduleCheckinAlarm(
     int minuteOfDay, {
     bool restToday = false,
+    bool restTomorrow = false,
   }) async {
-    // "오늘은 쉬기": if today's reminder hasn't fired yet, leave it unscheduled
-    // so it stays silent today (same reasoning as the block alarms).
-    if (restToday && _firesToday(minuteOfDay)) return;
+    // 쉬는 날: if the reminder's next fire lands on one, leave it unscheduled so
+    // it stays silent that day (same reasoning as the block alarms).
+    if (restDaySuppresses(
+      minuteOfDay,
+      restToday: restToday,
+      restTomorrow: restTomorrow,
+    )) {
+      return;
+    }
     final triggerAt = nextInstanceOf(minuteOfDay);
     await _plugin.zonedSchedule(
       _checkinNotificationId,

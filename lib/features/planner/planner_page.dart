@@ -29,11 +29,7 @@ import '../segments/segment_icons.dart';
 import '../segments/segment_templates.dart';
 import '../segments/segments_controller.dart';
 import '../memos/quick_add_button.dart'
-    show
-        MultiFabRow,
-        GlobalQuickAddButton,
-        fabAvoidingBottomInset,
-        showAppSnackBar;
+    show MultiFabRow, GlobalQuickAddButton, fabAvoidingBottomInset;
 import '../rewards/rest_day_controller.dart';
 import '../settings/settings_controller.dart';
 import '../settings/settings_page.dart';
@@ -99,9 +95,9 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
     final mitSegmentIds = mitBlockIdsOn(mits);
     final settings = ref.watch(settingsProvider).value;
     final homeViewMode = settings?.homeViewMode ?? HomeViewMode.dial;
-    final isResting = isRestDayOn(
-      ref.watch(restDaysProvider).value ?? const [],
-    );
+    final restDays = ref.watch(restDaysProvider).value ?? const [];
+    final isResting = isRestDayOn(restDays);
+    final isRestingTomorrow = isRestDayTomorrow(restDays);
 
     return Scaffold(
       // 빠른메모 시트(모달, 별도 라우트)가 키보드와 함께 올라올 때 그 viewInsets가
@@ -401,7 +397,11 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
                   ),
                 ),
                 const SizedBox(width: 12),
-                _RestDayFab(resting: isResting, small: true),
+                _RestDayFab(
+                  resting: isResting,
+                  restingTomorrow: isRestingTomorrow,
+                  small: true,
+                ),
               ],
             )
           : MultiFabRow(
@@ -422,7 +422,10 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
                     ),
                   ),
                   const SizedBox(width: 12),
-                  _RestDayFab(resting: isResting),
+                  _RestDayFab(
+                    resting: isResting,
+                    restingTomorrow: isRestingTomorrow,
+                  ),
                 ],
               ),
             ),
@@ -933,12 +936,17 @@ class _CenterSummary extends StatelessWidget {
 }
 
 /// The calm overlay shown over the dimmed home on a rest day ("오늘은 쉬기").
-class _RestDayBanner extends StatelessWidget {
+class _RestDayBanner extends ConsumerWidget {
   const _RestDayBanner();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
+    // "알람은 내일 다시" would be a lie when 내일도 쉬는 날 -- the whole point of
+    // 내일 쉬기 is that tomorrow stays silent too.
+    final restingTomorrow = isRestDayTomorrow(
+      ref.watch(restDaysProvider).value ?? const [],
+    );
     // Smaller on a compact (cover/small) screen so the moon + text don't crowd
     // the tiny dashboard behind it. No Center here -- the caller positions the
     // whole cluster (a Center would fill the overlay and pin it to the middle).
@@ -960,7 +968,7 @@ class _RestDayBanner extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            '푹 쉬어요. 알람은 내일 다시 울려요.',
+            restingTomorrow ? '푹 쉬어요. 내일도 쉬는 날이에요.' : '푹 쉬어요. 알람은 내일 다시 울려요.',
             textAlign: TextAlign.center,
             style: (compact ? theme.textTheme.bodySmall : theme.textTheme.bodyMedium)
                 ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
@@ -971,51 +979,123 @@ class _RestDayBanner extends StatelessWidget {
   }
 }
 
-/// Icon-only FAB for "오늘은 쉬기", sitting in the home FAB row next to 구간
-/// 추가. Highlighted (primary fill) while resting, plain otherwise. Toggling
-/// reschedules alarms via app.dart's _RestDayAlarmSync watching the same record.
-class _RestDayFab extends ConsumerWidget {
-  const _RestDayFab({required this.resting, this.small = false});
+/// Tooltip/label of the 쉬는 날 FAB. A single stable string (rather than one
+/// per state) because the button now opens the 오늘/내일 chooser instead of
+/// toggling one specific day -- the current state is shown by the fill/badge.
+const String kRestDayFabTooltip = '쉬는 날';
+
+/// Icon-only FAB for 쉬는 날, sitting in the home FAB row next to 구간 추가.
+/// Opens [_RestDaySheet] (오늘/내일). Filled while today is a rest day, and
+/// badged while tomorrow is marked, so both states read at a glance.
+class _RestDayFab extends StatelessWidget {
+  const _RestDayFab({
+    required this.resting,
+    required this.restingTomorrow,
+    this.small = false,
+  });
 
   final bool resting;
+  final bool restingTomorrow;
   final bool small;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
 
-    void toggle() {
-      final next = !resting;
-      unawaited(ref.read(restDayControllerProvider).setToday(next));
-      showAppSnackBar(
-        context,
-        Text(next ? '오늘은 쉬어요 🌙 오늘 알람을 껐어요.' : '다시 시작해요. 오늘 알람을 다시 켰어요.'),
-        duration: const Duration(seconds: 2),
-      );
-    }
-
-    final icon = Icon(resting ? Icons.bedtime_rounded : Icons.bedtime_outlined);
-    final tooltip = resting ? '쉬는 날 해제' : '오늘은 쉬기';
-    // Highlight the FAB while a rest day is active so its "on" state is obvious.
+    final icon = Icon(
+      resting || restingTomorrow ? Icons.bedtime_rounded : Icons.bedtime_outlined,
+    );
+    // A plain dot (no count) marking "내일도 예약돼 있음" -- the fill below only
+    // says something about *today*, so without this a 내일 쉬기 set last night
+    // would leave the button looking completely untouched.
+    final child = restingTomorrow
+        ? Badge(
+            backgroundColor: scheme.tertiary,
+            smallSize: 8,
+            child: icon,
+          )
+        : icon;
+    // Highlight the FAB while today is a rest day so its "on" state is obvious.
     final background = resting ? scheme.primary : null;
     final foreground = resting ? scheme.onPrimary : null;
+
+    void open() => unawaited(_showRestDaySheet(context));
 
     return small
         ? FloatingActionButton.small(
             heroTag: 'planner-rest-day',
-            tooltip: tooltip,
+            tooltip: kRestDayFabTooltip,
             backgroundColor: background,
             foregroundColor: foreground,
-            onPressed: toggle,
-            child: icon,
+            onPressed: open,
+            child: child,
           )
         : FloatingActionButton(
             heroTag: 'planner-rest-day',
-            tooltip: tooltip,
+            tooltip: kRestDayFabTooltip,
             backgroundColor: background,
             foregroundColor: foreground,
-            onPressed: toggle,
-            child: icon,
+            onPressed: open,
+            child: child,
           );
+  }
+}
+
+Future<void> _showRestDaySheet(BuildContext context) =>
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) => const _RestDaySheet(),
+    );
+
+/// The 쉬는 날 chooser: 오늘 and 내일 as two independent switches.
+///
+/// 내일 is the one you set the night before -- by bedtime today's alarms have
+/// all passed, so "오늘은 쉬기" can no longer silence the morning that's
+/// actually coming. Both are the same record (a date key), so tomorrow's mark
+/// simply becomes today's at midnight.
+///
+/// Stays open after a toggle (it watches restDaysProvider, so the switches
+/// update in place) -- both days can be set in one visit.
+class _RestDaySheet extends ConsumerWidget {
+  const _RestDaySheet();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final restDays = ref.watch(restDaysProvider).value ?? const [];
+    final controller = ref.read(restDayControllerProvider);
+
+    return SafeArea(
+      // Scrollable so the sheet can't overflow a foldable cover screen, where
+      // the whole display is only ~399dp tall.
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 0, 24, 4),
+              child: Text('쉬는 날', style: theme.textTheme.titleMedium),
+            ),
+            SwitchListTile(
+              secondary: const Icon(Icons.today_rounded),
+              title: const Text('오늘 쉬기'),
+              subtitle: const Text('오늘 남은 알람을 모두 꺼요.'),
+              value: isRestDayOn(restDays),
+              onChanged: (v) => unawaited(controller.setToday(v)),
+            ),
+            SwitchListTile(
+              secondary: const Icon(Icons.event_rounded),
+              title: const Text('내일 쉬기'),
+              subtitle: const Text('자기 전에 켜두면 내일 아침 알람부터 안 울려요.'),
+              value: isRestDayTomorrow(restDays),
+              onChanged: (v) => unawaited(controller.setTomorrow(v)),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
   }
 }
