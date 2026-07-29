@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/screen_mode.dart';
 import '../../data/models/memo.dart';
 import '../../services/speech_service.dart';
 import 'memos_controller.dart';
@@ -19,12 +20,7 @@ Future<void> showQuickAddSheet(BuildContext context) {
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
-    builder: (sheetContext) => Padding(
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.of(sheetContext).viewInsets.bottom,
-      ),
-      child: const QuickAddSheet(),
-    ),
+    builder: (_) => const _KeyboardAvoiding(child: QuickAddSheet()),
   ).whenComplete(() => quickAddSheetOpen.value = false);
 }
 
@@ -35,13 +31,36 @@ Future<void> showEditMemoSheet(BuildContext context, Memo memo) {
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
-    builder: (sheetContext) => Padding(
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.of(sheetContext).viewInsets.bottom,
-      ),
-      child: QuickAddSheet(existing: memo),
-    ),
+    builder: (_) => _KeyboardAvoiding(child: QuickAddSheet(existing: memo)),
   ).whenComplete(() => quickAddSheetOpen.value = false);
+}
+
+/// Lifts the sheet above the on-screen keyboard *and* keeps it scrollable in
+/// whatever height is left.
+///
+/// The lift alone (a bottom [Padding] of `viewInsets.bottom`) is what every
+/// keyboard-aware bottom sheet does, but on a foldable cover screen -- ~399dp
+/// tall in total -- the keyboard eats over half the display, leaving the sheet
+/// far less room than its content needs. The [Column] inside then blew past its
+/// constraints and painted the yellow/black overflow stripes over the memo
+/// field. Scrolling the leftover space (rather than overflowing it) is what
+/// makes the sheet usable there; [QuickAddSheet] additionally shrinks its own
+/// controls on a compact screen so it usually fits without any scrolling.
+class _KeyboardAvoiding extends StatelessWidget {
+  const _KeyboardAvoiding({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+      // The sheet's own max height already accounts for the space above it;
+      // this just makes the content yield instead of overflowing when the
+      // keyboard has taken most of it.
+      child: SingleChildScrollView(child: child),
+    );
+  }
 }
 
 /// Bottom sheet for capturing a stray thought in one tap: a text field plus
@@ -132,9 +151,16 @@ class _QuickAddSheetState extends ConsumerState<QuickAddSheet> {
   @override
   Widget build(BuildContext context) {
     final canSave = _controller.text.trim().isNotEmpty;
+    // On a cover screen the keyboard leaves only ~150dp for this sheet, so the
+    // full-size layout (a 64px mic FAB, a 4-line field) can't fit no matter how
+    // it's laid out. Trimming it here is what keeps the memo field visible
+    // while typing; _KeyboardAvoiding's scroll is the backstop for the rest.
+    final compact = isCompactLayout(context);
+    final micSize = compact ? 44.0 : 64.0;
+    final gap = compact ? 8.0 : 12.0;
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+      padding: EdgeInsets.fromLTRB(16, compact ? 12 : 16, 16, compact ? 12 : 24),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -143,25 +169,25 @@ class _QuickAddSheetState extends ConsumerState<QuickAddSheet> {
             widget.existing != null ? '메모 수정' : '빠른 메모',
             style: Theme.of(context).textTheme.titleMedium,
           ),
-          const SizedBox(height: 12),
+          SizedBox(height: gap),
           TextField(
             controller: _controller,
             autofocus: true,
             minLines: 1,
-            maxLines: 4,
+            maxLines: compact ? 2 : 4,
             decoration: const InputDecoration(
               hintText: '무슨 생각이 떠올랐나요?',
               border: OutlineInputBorder(),
             ),
             onChanged: (_) => setState(() {}),
           ),
-          const SizedBox(height: 12),
+          SizedBox(height: gap),
           Row(
             children: [
               if (_speechAvailable)
                 SizedBox(
-                  width: 64,
-                  height: 64,
+                  width: micSize,
+                  height: micSize,
                   child: FloatingActionButton(
                     heroTag: 'quick-add-mic',
                     backgroundColor: _listening
@@ -172,7 +198,7 @@ class _QuickAddSheetState extends ConsumerState<QuickAddSheet> {
                     child: Icon(_listening ? Icons.stop : Icons.mic),
                   ),
                 ),
-              const SizedBox(width: 12),
+              SizedBox(width: gap),
               Expanded(
                 child: FilledButton(
                   onPressed: canSave ? _save : null,
