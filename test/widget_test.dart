@@ -116,6 +116,31 @@ void main() {
   });
 
   testWidgets(
+    'with no account yet, the app waits instead of showing onboarding',
+    (tester) async {
+      // 오프라인으로 시작해 로그인이 실패한 상태 = repository 없음.
+      // 이때 settingsProvider는 AppSettings.defaults()(onboardingComplete:
+      // false)를 흘리므로, 이를 그대로 믿으면 몇 달 쓴 사용자가 온보딩 화면을
+      // 보게 된다 -- 기록이 전부 날아간 것처럼. 계정이 붙을 때까지 기다려야 한다.
+      // null로 override -- 그래야 auth provider들이 빌드되지 않아 테스트가
+      // Firebase를 건드리지 않는다(providers.dart의 테스트 불변식 참고).
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [plannerRepositoryProvider.overrideWithValue(null)],
+          child: const App(),
+        ),
+      );
+      // pumpAndSettle이 아니라 pump -- 이 화면의 CircularProgressIndicator는
+      // 끝나지 않는 애니메이션이라 settle이 영원히 오지 않는다.
+      await tester.pump();
+
+      expect(find.text('계정을 연결하는 중이에요'), findsOneWidget);
+      expect(find.text('구간으로 하루 나누기'), findsNothing); // 온보딩 아님
+      expect(find.text('오늘'), findsNothing);
+    },
+  );
+
+  testWidgets(
     'a fresh user sees onboarding first, then the home screen once finished',
     (tester) async {
       final repo = FakePlannerRepository();
