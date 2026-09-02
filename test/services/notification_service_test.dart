@@ -121,6 +121,49 @@ void main() {
         expect(ids.length, specs.length);
       },
     );
+
+    test('isRestDay true suppresses workDaysOnly blocks and keeps restDaysOnly blocks', () {
+      final workBlock = _block(id: 'w1').copyWith(
+        scheduleTarget: SegmentScheduleTarget.workDaysOnly,
+      );
+      final restBlock = _block(id: 'r1').copyWith(
+        scheduleTarget: SegmentScheduleTarget.restDaysOnly,
+      );
+      final everyBlock = _block(id: 'e1').copyWith(
+        scheduleTarget: SegmentScheduleTarget.everyday,
+      );
+
+      final holidaySpecs = buildSchedule(
+        [workBlock, restBlock, everyBlock],
+        isRestDay: true,
+      );
+      final holidayIds = holidaySpecs.map((s) => s.segmentId).toList();
+      expect(holidayIds, contains('r1'));
+      expect(holidayIds, contains('e1'));
+      expect(holidayIds, isNot(contains('w1')));
+
+      final workDaySpecs = buildSchedule(
+        [workBlock, restBlock, everyBlock],
+        isRestDay: false,
+      );
+      final workDayIds = workDaySpecs.map((s) => s.segmentId).toList();
+      expect(workDayIds, contains('w1'));
+      expect(workDayIds, contains('e1'));
+      expect(workDayIds, isNot(contains('r1')));
+    });
+
+    test('gentle and hapticOnly alarmTypes are passed correctly to ScheduledSpec', () {
+      final gentleBlock = _block(id: 'g1').copyWith(
+        alarmType: SegmentAlarmType.gentle,
+      );
+      final hapticBlock = _block(id: 'h1').copyWith(
+        alarmType: SegmentAlarmType.hapticOnly,
+      );
+
+      final specs = buildSchedule([gentleBlock, hapticBlock]);
+      expect(specs.firstWhere((s) => s.segmentId == 'g1').alarmType, SegmentAlarmType.gentle);
+      expect(specs.firstWhere((s) => s.segmentId == 'h1').alarmType, SegmentAlarmType.hapticOnly);
+    });
   });
 
   group('notificationIdFor', () {

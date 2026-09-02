@@ -73,7 +73,7 @@ void main() {
     expect(saved.microSteps, contains('물 마시기'));
   });
 
-  testWidgets('toggling the alarm off and saving persists alarmEnabled = false',
+  testWidgets('selecting 알람 끔 and saving persists alarmType = none (alarmEnabled = false)',
       (tester) async {
     final repo = FakePlannerRepository();
     await repo.upsertSegment(_block(alarmEnabled: true));
@@ -81,19 +81,18 @@ void main() {
     await tester.pumpWidget(wrap(repo, existing: _block(alarmEnabled: true)));
     await tester.pumpAndSettle();
 
-    // Disambiguated: the new 전환 예고 switch (visible whenever 알람 is on,
-    // as it is here) made find.byType(SwitchListTile) ambiguous.
-    await tester.tap(find.widgetWithText(SwitchListTile, '알람'));
+    await tester.tap(find.text('🚫 알람 끔'));
     await tester.pumpAndSettle();
 
     await tester.tap(find.widgetWithText(FilledButton, '저장'));
     await tester.pumpAndSettle();
 
     final saved = (await repo.watchSegments().first).firstWhere((s) => s.id == 's1');
+    expect(saved.alarmType, SegmentAlarmType.none);
     expect(saved.alarmEnabled, isFalse);
   });
 
-  testWidgets('전환 예고 toggle is hidden once the main alarm is off', (tester) async {
+  testWidgets('전환 예고 and scheduleTarget are hidden once 알람 끔 is selected', (tester) async {
     final repo = FakePlannerRepository();
     await repo.upsertSegment(_block(alarmEnabled: true));
 
@@ -101,15 +100,16 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('전환 예고'), findsOneWidget);
+    expect(find.text('울리는 날짜 조건'), findsOneWidget);
 
-    await tester.tap(find.widgetWithText(SwitchListTile, '알람'));
+    await tester.tap(find.text('🚫 알람 끔'));
     await tester.pumpAndSettle();
 
-    // Meaningless without the main alarm -- hidden, not just disabled.
     expect(find.text('전환 예고'), findsNothing);
+    expect(find.text('울리는 날짜 조건'), findsNothing);
   });
 
-  testWidgets('toggling 전환 예고 off and saving persists leadWarning = false',
+  testWidgets('selecting 예고 없음 and saving persists leadWarning = false (leadWarningMinutes = 0)',
       (tester) async {
     final repo = FakePlannerRepository();
     await repo.upsertSegment(_block(alarmEnabled: true));
@@ -117,13 +117,31 @@ void main() {
     await tester.pumpWidget(wrap(repo, existing: _block(alarmEnabled: true)));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.widgetWithText(SwitchListTile, '전환 예고'));
+    await tester.tap(find.text('예고 없음'));
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, '저장'));
     await tester.pumpAndSettle();
 
     final saved = (await repo.watchSegments().first).firstWhere((s) => s.id == 's1');
+    expect(saved.leadWarningMinutes, 0);
     expect(saved.leadWarning, isFalse);
+  });
+
+  testWidgets('selecting 근무일에만 persists scheduleTarget = workDaysOnly',
+      (tester) async {
+    final repo = FakePlannerRepository();
+    await repo.upsertSegment(_block(alarmEnabled: true));
+
+    await tester.pumpWidget(wrap(repo, existing: _block(alarmEnabled: true)));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('🏢 근무일에만'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, '저장'));
+    await tester.pumpAndSettle();
+
+    final saved = (await repo.watchSegments().first).firstWhere((s) => s.id == 's1');
+    expect(saved.scheduleTarget, SegmentScheduleTarget.workDaysOnly);
   });
 
   testWidgets('an existing block prefills its items', (tester) async {

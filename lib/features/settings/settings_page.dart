@@ -15,6 +15,7 @@ import '../../services/auth_service.dart';
 import '../../services/notification_service.dart';
 import '../help/help_page.dart';
 import '../memos/quick_add_button.dart';
+import 'rest_day_calendar_sheet.dart';
 import 'settings_controller.dart';
 
 /// Permission status, theme/font/motion controls, and an anonymous-account
@@ -437,6 +438,13 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                 ),
             ],
           ),
+        ),
+        ListTile(
+          leading: const Icon(Icons.calendar_month_outlined),
+          title: const Text('쉬는 날(휴일) 캘린더 관리'),
+          subtitle: const Text('불규칙한 휴무일을 등록하고 알람을 맞춤 제어해요.'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => RestDayCalendarSheet.show(context),
         ),
         const Divider(),
         const _SectionHeader('체크인 알림'),

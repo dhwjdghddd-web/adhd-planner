@@ -131,8 +131,6 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
       }
     }
 
-    final settings =
-        ref.watch(settingsProvider).value ?? const AppSettings.defaults();
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
 
@@ -221,33 +219,72 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
                           ),
                           textAlign: TextAlign.center,
                         ),
-                        SizedBox(height: compact ? 24 : 48),
+                        if (segment.microSteps.isNotEmpty) ...[
+                          SizedBox(height: compact ? 12 : 20),
+                          Card(
+                            elevation: 0,
+                            color: theme.colorScheme.primaryContainer.withValues(alpha: 0.4),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                              child: Row(
+                                children: [
+                                  Icon(Icons.check_circle_outline, color: theme.colorScheme.primary, size: 22),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          '👉 첫 번째 할 일',
+                                          style: theme.textTheme.labelSmall?.copyWith(
+                                            color: theme.colorScheme.primary,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          segment.microSteps.first,
+                                          style: theme.textTheme.bodyMedium?.copyWith(
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                        SizedBox(height: compact ? 20 : 36),
                         _SlideToDismiss(
-                          label: '밀어서 끄기',
+                          label: '밀어서 끄고 시작하기',
                           onDismiss: () => _dismiss(segment!),
                         ),
-                        SizedBox(height: compact ? 8 : 20),
-                        // Two lighter exits below the slide track (never
-                        // overlapping it) -- "지금은 못 함"의 출구. A bare 해제 was
-                        // the only response before; these turn the alarm into
-                        // something you can actually answer instead of just
-                        // silencing and ignoring.
+                        SizedBox(height: compact ? 12 : 20),
+                        Text('지금 하기 어렵다면', style: theme.textTheme.labelSmall?.copyWith(color: mutedColor)),
+                        const SizedBox(height: 6),
                         Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                           children: [
-                            Expanded(
-                              child: TextButton(
-                                onPressed: () =>
-                                    _snooze(segment!, settings.snoozeMinutes),
-                                child: Text('${settings.snoozeMinutes}분 뒤 다시'),
-                              ),
+                            OutlinedButton(
+                              onPressed: () => _snooze(segment!, 5),
+                              child: const Text('+5분'),
                             ),
-                            Expanded(
-                              child: TextButton(
-                                onPressed: () => _skipToday(segment!),
-                                child: const Text('오늘은 건너뛰기'),
-                              ),
+                            OutlinedButton(
+                              onPressed: () => _snooze(segment!, 15),
+                              child: const Text('+15분'),
+                            ),
+                            OutlinedButton(
+                              onPressed: () => _snooze(segment!, 30),
+                              child: const Text('+30분'),
                             ),
                           ],
+                        ),
+                        const SizedBox(height: 6),
+                        TextButton(
+                          onPressed: () => _skipToday(segment!),
+                          child: const Text('오늘은 건너뛰기'),
                         ),
                       ],
                     ),

@@ -158,19 +158,29 @@ void main() {
     expect(find.byType(FocusPage), findsOneWidget);
   });
 
-  testWidgets('shows the two lighter exits below the slide, labelled with the '
-      "configured snooze minutes", (tester) async {
+  testWidgets('shows the first microStep when present', (tester) async {
     final repo = FakePlannerRepository();
-    await repo.upsertSegment(_block());
-    await repo.saveSettings(const AppSettings.defaults().copyWith(snoozeMinutes: 15));
+    await repo.upsertSegment(_block().copyWith(microSteps: ['💊 비타민 챙겨먹기', '물 마시기']));
 
     await openAlarm(tester, repo);
 
-    expect(find.text('15분 뒤 다시'), findsOneWidget);
+    expect(find.text('👉 첫 번째 할 일'), findsOneWidget);
+    expect(find.text('💊 비타민 챙겨먹기'), findsOneWidget);
+  });
+
+  testWidgets('shows the multi-snooze exits (+5, +15, +30분) and skip exit below the slide', (tester) async {
+    final repo = FakePlannerRepository();
+    await repo.upsertSegment(_block());
+
+    await openAlarm(tester, repo);
+
+    expect(find.text('+5분'), findsOneWidget);
+    expect(find.text('+15분'), findsOneWidget);
+    expect(find.text('+30분'), findsOneWidget);
     expect(find.text('오늘은 건너뛰기'), findsOneWidget);
   });
 
-  testWidgets("tapping '다시' closes the alarm screen without opening Focus or "
+  testWidgets("tapping snooze button closes the alarm screen without opening Focus or "
       'recording a completion (a snooze is "later", not "starting now")',
       (tester) async {
     final repo = FakePlannerRepository();
@@ -179,7 +189,7 @@ void main() {
     repo.watchCompletions().listen(snapshots.add);
 
     await openAlarm(tester, repo);
-    await tester.tap(find.textContaining('분 뒤 다시'));
+    await tester.tap(find.text('+15분'));
     await tester.pumpAndSettle();
 
     expect(find.byType(AlarmScreen), findsNothing);
@@ -188,16 +198,14 @@ void main() {
   });
 
   testWidgets(
-      "tapping '다시' cancels today's ring before arming the snooze, even when "
-      'cancelling is the slower of the two (regression: firing both unawaited '
-      "and unsequenced let a slow cancel land *after* schedule and silently "
-      "wipe out the just-armed snooze alarm)", (tester) async {
+      "tapping '+5분' cancels today's ring before arming the snooze, even when "
+      'cancelling is the slower of the two', (tester) async {
     final repo = FakePlannerRepository();
     await repo.upsertSegment(_block());
     final service = _OrderRecordingNotificationService();
 
     await openAlarm(tester, repo, notificationService: service);
-    await tester.tap(find.textContaining('분 뒤 다시'));
+    await tester.tap(find.text('+5분'));
     await tester.pumpAndSettle();
 
     expect(service.order, ['cancel', 'schedule']);

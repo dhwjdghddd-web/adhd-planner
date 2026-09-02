@@ -44,8 +44,9 @@ class _SegmentFormPageState extends ConsumerState<SegmentFormPage> {
   late String _iconKey;
   late int _startMinute;
   late int _endMinute;
-  late bool _alarmEnabled;
-  late bool _leadWarning;
+  late SegmentAlarmType _alarmType;
+  late SegmentScheduleTarget _scheduleTarget;
+  late int _leadWarningMinutes;
   late List<String> _microSteps;
   // Parallel to _microSteps, one stable id per item so ReorderableListView can
   // track each item's identity across reorders -- the items are plain strings
@@ -66,8 +67,9 @@ class _SegmentFormPageState extends ConsumerState<SegmentFormPage> {
     _iconKey = existing?.iconKey ?? kSegmentIcons.keys.first;
     _startMinute = existing?.startMinute ?? 6 * 60;
     _endMinute = existing?.endMinute ?? 12 * 60;
-    _alarmEnabled = existing?.alarmEnabled ?? true;
-    _leadWarning = existing?.leadWarning ?? true;
+    _alarmType = existing?.alarmType ?? SegmentAlarmType.fullScreen;
+    _scheduleTarget = existing?.scheduleTarget ?? SegmentScheduleTarget.everyday;
+    _leadWarningMinutes = existing?.leadWarningMinutes ?? 10;
     _microSteps = [...(existing?.microSteps ?? const <String>[])];
     _microStepKeyIds = List.generate(
       _microSteps.length,
@@ -148,8 +150,9 @@ class _SegmentFormPageState extends ConsumerState<SegmentFormPage> {
       order: widget.existing?.order ?? segments.length,
       note: _noteController.text.trim(),
       microSteps: _microSteps,
-      alarmEnabled: _alarmEnabled,
-      leadWarning: _leadWarning,
+      alarmType: _alarmType,
+      scheduleTarget: _scheduleTarget,
+      leadWarningMinutes: _leadWarningMinutes,
       notificationIds: widget.existing?.notificationIds ?? const [],
     );
 
@@ -364,24 +367,110 @@ class _SegmentFormPageState extends ConsumerState<SegmentFormPage> {
               ),
             ),
             const SizedBox(height: 16),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('알람'),
-              subtitle: const Text('시작 시각에 알려줘요'),
-              value: _alarmEnabled,
-              onChanged: (value) => setState(() => _alarmEnabled = value),
+            const Text('알람 강도 / 유형', style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                ChoiceChip(
+                  label: const Text('🚨 강력 알람'),
+                  selected: _alarmType == SegmentAlarmType.fullScreen,
+                  onSelected: (selected) {
+                    if (selected) setState(() => _alarmType = SegmentAlarmType.fullScreen);
+                  },
+                ),
+                ChoiceChip(
+                  label: const Text('🔔 부드러운 알림'),
+                  selected: _alarmType == SegmentAlarmType.gentle,
+                  onSelected: (selected) {
+                    if (selected) setState(() => _alarmType = SegmentAlarmType.gentle);
+                  },
+                ),
+                ChoiceChip(
+                  label: const Text('📳 진동만'),
+                  selected: _alarmType == SegmentAlarmType.hapticOnly,
+                  onSelected: (selected) {
+                    if (selected) setState(() => _alarmType = SegmentAlarmType.hapticOnly);
+                  },
+                ),
+                ChoiceChip(
+                  label: const Text('🚫 알람 끔'),
+                  selected: _alarmType == SegmentAlarmType.none,
+                  onSelected: (selected) {
+                    if (selected) setState(() => _alarmType = SegmentAlarmType.none);
+                  },
+                ),
+              ],
             ),
-            // Meaningless without the main alarm above (no alarm of any kind
-            // fires for this block when it's off), so hidden rather than shown
-            // disabled.
-            if (_alarmEnabled)
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('전환 예고'),
-                subtitle: const Text('시작 10분 전에 조용히 미리 알려줘요'),
-                value: _leadWarning,
-                onChanged: (value) => setState(() => _leadWarning = value),
+            const SizedBox(height: 4),
+            Text(
+              switch (_alarmType) {
+                SegmentAlarmType.fullScreen => '잠금화면을 덮는 전체화면 알람 + 1분간 반복 벨소리/진동',
+                SegmentAlarmType.gentle => '상단 배너 푸시 알림 + 1회 알림음',
+                SegmentAlarmType.hapticOnly => '소리 없이 햅틱 진동만 1회',
+                SegmentAlarmType.none => '알람 없이 다이얼에만 표시',
+              },
+              style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            ),
+            if (_alarmType != SegmentAlarmType.none) ...[
+              const SizedBox(height: 16),
+              const Text('울리는 날짜 조건', style: TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  ChoiceChip(
+                    label: const Text('🔄 매일'),
+                    selected: _scheduleTarget == SegmentScheduleTarget.everyday,
+                    onSelected: (selected) {
+                      if (selected) setState(() => _scheduleTarget = SegmentScheduleTarget.everyday);
+                    },
+                  ),
+                  ChoiceChip(
+                    label: const Text('🏢 근무일에만'),
+                    selected: _scheduleTarget == SegmentScheduleTarget.workDaysOnly,
+                    onSelected: (selected) {
+                      if (selected) setState(() => _scheduleTarget = SegmentScheduleTarget.workDaysOnly);
+                    },
+                  ),
+                  ChoiceChip(
+                    label: const Text('🏖️ 쉬는 날(휴일)에만'),
+                    selected: _scheduleTarget == SegmentScheduleTarget.restDaysOnly,
+                    onSelected: (selected) {
+                      if (selected) setState(() => _scheduleTarget = SegmentScheduleTarget.restDaysOnly);
+                    },
+                  ),
+                ],
               ),
+              const SizedBox(height: 4),
+              Text(
+                switch (_scheduleTarget) {
+                  SegmentScheduleTarget.everyday => '쉬는 날 여부와 관계없이 매일 울려요.',
+                  SegmentScheduleTarget.workDaysOnly => '쉬는 날(휴일 캘린더 등록일)에는 자동으로 울리지 않아요.',
+                  SegmentScheduleTarget.restDaysOnly => '쉬는 날(휴일 캘린더 등록일)에만 특별히 울려요.',
+                },
+                style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+              ),
+              const SizedBox(height: 16),
+              const Text('전환 예고', style: TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final mins in const [0, 5, 10, 15, 30])
+                    ChoiceChip(
+                      label: Text(mins == 0 ? '예고 없음' : '$mins분 전'),
+                      selected: _leadWarningMinutes == mins,
+                      onSelected: (selected) {
+                        if (selected) setState(() => _leadWarningMinutes = mins);
+                      },
+                    ),
+                ],
+              ),
+            ],
             const SizedBox(height: 16),
             const Text('루틴', style: TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 4),

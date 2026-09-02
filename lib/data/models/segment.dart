@@ -3,16 +3,27 @@ import 'package:flutter/material.dart';
 import '../../core/constants.dart';
 import '../../core/time_geometry.dart';
 
+/// Intensity and UI presentation of the block's alarm.
+enum SegmentAlarmType {
+  fullScreen, // 🚨 강력 알람: 잠금화면 위 전체화면 + 1분간 반복 알람/진동
+  gentle,     // 🔔 부드러운 알림: 상단 배너 푸시 + 1회 알림음
+  hapticOnly, // 📳 조용한 진동: 무음 햅틱 진동만 1회
+  none,       // 🚫 알람 없음: 다이얼에만 표시
+}
+
+/// Work-day vs Rest-day (holiday) condition for when this block rings.
+enum SegmentScheduleTarget {
+  everyday,     // 🔄 매일 항상 울림
+  workDaysOnly, // 🏢 근무일에만 울림 (쉬는 날/휴일에는 알람 억제)
+  restDaysOnly, // 🏖️ 쉬는 날(휴일)에만 울림 (근무일에는 알람 억제)
+}
+
 /// A block of the day: a time range (rendered as a coloured arc on the dial)
 /// that also carries its own checklist of tasks ("루틴" in the UI) and an
 /// optional start-of-block alarm. This is the app's single scheduled entity --
 /// there is no separate per-task entity. [startMinute]/[endMinute] are
 /// minute-of-day (0~1440); a range that wraps past midnight is valid
 /// (e.g. start=1320 end=120 means 22:00~02:00).
-///
-/// The alarm, when [alarmEnabled], fires once at [startMinute]. Blocks recur
-/// every day (no weekday selection). [microSteps] are the checklist items the
-/// Focus/checklist screens tick off; they drive completion and the streak.
 @immutable
 class Segment {
   final String id;
@@ -23,19 +34,15 @@ class Segment {
   final int endMinute;
   final int order;
   final String note;
-  // Checklist items shown to the user as "루틴". Ticking them off drives
-  // completion and the daily-achievement streak (see daily_achievement.dart).
+  // Checklist items shown to the user as "루틴".
   final List<String> microSteps;
-  // Whether this block rings at [startMinute]. Off for blocks like 수면.
-  final bool alarmEnabled;
-  // Whether a quiet "전환 예고" heads-up notification fires
-  // AppSettings.leadMinutes before [startMinute], in addition to the main
-  // alarm. Per-block opt-out of the app-wide default (on); meaningless when
-  // [alarmEnabled] is false (no alarm of any kind for this block then).
-  final bool leadWarning;
-  // Notification ids this block currently has scheduled, kept so a routine
-  // delete/reschedule can cancel exactly what it created (see
-  // NotificationService). Same role it had on the old Routine entity.
+  // Alarm intensity and UI takeover mode (fullScreen, gentle, hapticOnly, none).
+  final SegmentAlarmType alarmType;
+  // Target days when this block's alarm is active (everyday, workDaysOnly, restDaysOnly).
+  final SegmentScheduleTarget scheduleTarget;
+  // Minutes before [startMinute] to fire a quiet transition warning (0 = disabled, 5, 10, 15, 30).
+  final int leadWarningMinutes;
+  // Notification ids this block currently has scheduled.
   final List<int> notificationIds;
 
   const Segment({
@@ -48,10 +55,24 @@ class Segment {
     required this.order,
     this.note = '',
     this.microSteps = const [],
-    this.alarmEnabled = true,
-    this.leadWarning = true,
+    SegmentAlarmType? alarmType,
+    this.scheduleTarget = SegmentScheduleTarget.everyday,
+    int? leadWarningMinutes,
+    bool? alarmEnabled,
+    bool? leadWarning,
     this.notificationIds = const [],
-  });
+  }) : alarmType = alarmType ??
+           (alarmEnabled != null
+               ? (alarmEnabled ? SegmentAlarmType.fullScreen : SegmentAlarmType.none)
+               : SegmentAlarmType.fullScreen),
+       leadWarningMinutes = leadWarningMinutes ??
+           (leadWarning != null ? (leadWarning ? 10 : 0) : 10);
+
+  /// Backward-compatible getter for whether any alarm is active.
+  bool get alarmEnabled => alarmType != SegmentAlarmType.none;
+
+  /// Backward-compatible getter for lead warning.
+  bool get leadWarning => leadWarningMinutes > 0 && alarmEnabled;
 
   Color get color => Color(colorValue);
 
@@ -84,8 +105,6 @@ class Segment {
     return false;
   }
 
-  /// Splits a (possibly midnight-wrapping) range into one or two
-  /// non-wrapping half-open intervals for overlap comparison.
   List<_SegmentInterval> get _intervals {
     if (startMinute == endMinute) return const [];
     if (startMinute < endMinute) {
@@ -106,6 +125,9 @@ class Segment {
     int? order,
     String? note,
     List<String>? microSteps,
+    SegmentAlarmType? alarmType,
+    SegmentScheduleTarget? scheduleTarget,
+    int? leadWarningMinutes,
     bool? alarmEnabled,
     bool? leadWarning,
     List<int>? notificationIds,
@@ -120,8 +142,9 @@ class Segment {
       order: order ?? this.order,
       note: note ?? this.note,
       microSteps: microSteps ?? this.microSteps,
-      alarmEnabled: alarmEnabled ?? this.alarmEnabled,
-      leadWarning: leadWarning ?? this.leadWarning,
+      alarmType: alarmType ?? (alarmEnabled != null ? (alarmEnabled ? SegmentAlarmType.fullScreen : SegmentAlarmType.none) : this.alarmType),
+      scheduleTarget: scheduleTarget ?? this.scheduleTarget,
+      leadWarningMinutes: leadWarningMinutes ?? (leadWarning != null ? (leadWarning ? 10 : 0) : this.leadWarningMinutes),
       notificationIds: notificationIds ?? this.notificationIds,
     );
   }
@@ -136,16 +159,14 @@ class Segment {
         'order': order,
         'note': note,
         'microSteps': microSteps,
+        'alarmType': alarmType.name,
+        'scheduleTarget': scheduleTarget.name,
+        'leadWarningMinutes': leadWarningMinutes,
         'alarmEnabled': alarmEnabled,
         'leadWarning': leadWarning,
         'notificationIds': notificationIds,
       };
 
-  /// Defensive against malformed stored data so one bad document can't error
-  /// the whole segments stream: numbers tolerate num/missing, times are clamped
-  /// to a valid minute-of-day (0~1440 -- an out-of-range value would otherwise
-  /// break the dial painter / containsMinute), and list elements of the wrong
-  /// type are dropped rather than throwing.
   factory Segment.fromMap(Map<String, dynamic> map) {
     int intOr(Object? v, int fallback) => v is num ? v.toInt() : fallback;
     final start = intOr(
@@ -153,6 +174,36 @@ class Segment {
       0,
     ).clamp(0, TimeGeometry.minutesPerDay);
     final end = intOr(map['endMinute'], 0).clamp(0, TimeGeometry.minutesPerDay);
+
+    // Backward compatibility for alarmType
+    SegmentAlarmType alarmType;
+    if (map['alarmType'] is String) {
+      alarmType = SegmentAlarmType.values.firstWhere(
+        (e) => e.name == map['alarmType'],
+        orElse: () => SegmentAlarmType.fullScreen,
+      );
+    } else {
+      final enabled = (map['alarmEnabled'] as bool?) ?? true;
+      alarmType = enabled ? SegmentAlarmType.fullScreen : SegmentAlarmType.none;
+    }
+
+    // Backward compatibility for scheduleTarget
+    SegmentScheduleTarget scheduleTarget = SegmentScheduleTarget.everyday;
+    if (map['scheduleTarget'] is String) {
+      scheduleTarget = SegmentScheduleTarget.values.firstWhere(
+        (e) => e.name == map['scheduleTarget'],
+        orElse: () => SegmentScheduleTarget.everyday,
+      );
+    }
+
+    // Backward compatibility for leadWarningMinutes
+    int leadWarningMinutes = 10;
+    if (map['leadWarningMinutes'] is num) {
+      leadWarningMinutes = (map['leadWarningMinutes'] as num).toInt();
+    } else if (map['leadWarning'] is bool) {
+      leadWarningMinutes = (map['leadWarning'] as bool) ? 10 : 0;
+    }
+
     return Segment(
       id: (map['id'] as String?) ?? '',
       name: (map['name'] as String?) ?? '',
@@ -165,8 +216,9 @@ class Segment {
       microSteps: (map['microSteps'] as List? ?? const [])
           .whereType<String>()
           .toList(),
-      alarmEnabled: (map['alarmEnabled'] as bool?) ?? true,
-      leadWarning: (map['leadWarning'] as bool?) ?? true,
+      alarmType: alarmType,
+      scheduleTarget: scheduleTarget,
+      leadWarningMinutes: leadWarningMinutes,
       notificationIds: (map['notificationIds'] as List? ?? const [])
           .whereType<num>()
           .map((n) => n.toInt())

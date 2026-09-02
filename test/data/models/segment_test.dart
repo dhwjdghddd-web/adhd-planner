@@ -29,19 +29,23 @@ void main() {
       expect(s.notificationIds, isEmpty);
     });
 
-    test('toMap/fromMap round-trips the block fields', () {
+    test('toMap/fromMap round-trips the block fields including alarmType and scheduleTarget', () {
       final s = _segment(startMinute: 0, endMinute: 60).copyWith(
         note: 'memo',
         microSteps: ['a', 'b'],
-        alarmEnabled: false,
-        leadWarning: false,
+        alarmType: SegmentAlarmType.gentle,
+        scheduleTarget: SegmentScheduleTarget.workDaysOnly,
+        leadWarningMinutes: 15,
         notificationIds: [1, 2, 3],
       );
       final restored = Segment.fromMap(s.toMap());
       expect(restored.note, 'memo');
       expect(restored.microSteps, ['a', 'b']);
-      expect(restored.alarmEnabled, false);
-      expect(restored.leadWarning, false);
+      expect(restored.alarmType, SegmentAlarmType.gentle);
+      expect(restored.scheduleTarget, SegmentScheduleTarget.workDaysOnly);
+      expect(restored.leadWarningMinutes, 15);
+      expect(restored.alarmEnabled, true);
+      expect(restored.leadWarning, true);
       expect(restored.notificationIds, [1, 2, 3]);
     });
 
@@ -54,18 +58,24 @@ void main() {
         'startMinute': 0,
         'endMinute': 60,
         'order': 0,
+        'alarmEnabled': true,
+        'leadWarning': false,
       });
       expect(restored.note, '');
       expect(restored.microSteps, isEmpty);
+      expect(restored.alarmType, SegmentAlarmType.fullScreen);
+      expect(restored.scheduleTarget, SegmentScheduleTarget.everyday);
+      expect(restored.leadWarningMinutes, 0);
       expect(restored.alarmEnabled, true);
-      expect(restored.leadWarning, true);
+      expect(restored.leadWarning, false);
       expect(restored.notificationIds, isEmpty);
     });
 
     test('copyWith leaves untouched fields as they were', () {
       final s = _segment(startMinute: 0, endMinute: 60)
-          .copyWith(microSteps: ['x'], alarmEnabled: false);
+          .copyWith(microSteps: ['x'], alarmType: SegmentAlarmType.none);
       expect(s.copyWith(note: 'n').microSteps, ['x']);
+      expect(s.copyWith(note: 'n').alarmType, SegmentAlarmType.none);
       expect(s.copyWith(note: 'n').alarmEnabled, false);
     });
   });

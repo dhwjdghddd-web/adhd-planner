@@ -182,16 +182,53 @@ const AndroidNotificationDetails _checkinAndroidDetails =
       fullScreenIntent: false,
     );
 
-// T10: public access to every channel id this app schedules under, so the
-// settings screen can deep-link into each one's own system notification
-// settings (sound/importance/vibration override) -- this app's own UI never
-// exposes those per-channel, only the broad app-level choices that feed into
-// them. The main alarm channel's id depends on the current sound+vibration
-// choice (see _channelSuffix), so it needs [settings]; the rest are fixed.
+// Gentle (Banner + 1-shot sound) channel
+const _gentleChannelId = 'routine_gentle_v1';
+const _gentleChannelName = '구간 부드러운 알림';
+AndroidNotificationDetails _gentleAndroidDetailsFor(AppSettings settings) {
+  final sound = _soundFor(settings);
+  final vibrationPattern = vibrationPatternFor(settings.vibrationPattern);
+  return AndroidNotificationDetails(
+    _gentleChannelId,
+    _gentleChannelName,
+    channelDescription: '부드럽게 상단 배너와 1회 알림음으로 알려드려요',
+    importance: Importance.high,
+    priority: Priority.high,
+    enableVibration: true,
+    vibrationPattern: vibrationPattern,
+    sound: sound,
+    playSound: true,
+    category: AndroidNotificationCategory.reminder,
+    fullScreenIntent: false,
+  );
+}
+
+// Haptic-only (Silent vibration) channel
+const _hapticChannelId = 'routine_haptic_v1';
+const _hapticChannelName = '구간 진동 알림';
+final AndroidNotificationDetails _hapticAndroidDetails =
+    AndroidNotificationDetails(
+      _hapticChannelId,
+      _hapticChannelName,
+      channelDescription: '소리 없이 햅틱 진동으로만 알려드려요',
+      importance: Importance.high,
+      priority: Priority.high,
+      enableVibration: true,
+      vibrationPattern: vibrationPatternFor(
+        AlarmVibrationPattern.defaultPattern,
+      ),
+      playSound: false,
+      category: AndroidNotificationCategory.reminder,
+      fullScreenIntent: false,
+    );
+
+// T10: public access to every channel id this app schedules under
 String alarmChannelId(AppSettings settings) => _alarmChannelId(settings);
 const String leadWarningChannelId = _leadChannelId;
 const String focusTimerChannelId = _timerChannelId;
 const String checkinChannelId = _checkinChannelId;
+const String gentleChannelId = _gentleChannelId;
+const String hapticChannelId = _hapticChannelId;
 
 // Talks to MainActivity.kt's "ensureAlarmChannel" handler — see the long
 // comment there for why this can't just be
@@ -327,7 +364,11 @@ class NotificationService {
     }
     await _plugin.cancelAll();
 
-    final specs = buildSchedule(segments, leadMinutes: settings.leadMinutes);
+    final specs = buildSchedule(
+      segments,
+      isRestDay: restToday,
+      leadMinutes: settings.leadMinutes,
+    );
     for (final spec in specs) {
       // 쉬는 날(오늘/내일): leave that day's alarms unscheduled entirely so
       // nothing fires -- no sound AND no popup. See restDaySuppresses.
@@ -358,38 +399,52 @@ class NotificationService {
         );
         continue;
       }
+
+      final AndroidNotificationDetails details;
+      final AndroidScheduleMode scheduleMode;
+
+      switch (spec.alarmType) {
+        case SegmentAlarmType.fullScreen:
+          details = _androidDetailsFor(settings);
+          scheduleMode = AndroidScheduleMode.alarmClock;
+        case SegmentAlarmType.gentle:
+          details = _gentleAndroidDetailsFor(settings);
+          scheduleMode = AndroidScheduleMode.exactAllowWhileIdle;
+        case SegmentAlarmType.hapticOnly:
+          details = _hapticAndroidDetails;
+          scheduleMode = AndroidScheduleMode.exactAllowWhileIdle;
+        case SegmentAlarmType.none:
+          continue;
+      }
+
       await _plugin.zonedSchedule(
         spec.id,
         spec.title,
         spec.body,
         triggerAt,
-        NotificationDetails(android: _androidDetailsFor(settings)),
+        NotificationDetails(android: details),
         uiLocalNotificationDateInterpretation:
             UILocalNotificationDateInterpretation.absoluteTime,
-        // alarmClock (AlarmManager.setAlarmClock under the hood), not just
-        // exactAllowWhileIdle: Samsung OneUI's "무음" ringer mode appears to
-        // suppress vibration on a plain notification even with USAGE_ALARM set
-        // on its channel, but alarms registered this way get the same "real
-        // alarm clock" treatment as the stock clock app's alarms -- bypassing
-        // ringer mode/DND. Trade-off: a permanent alarm-clock icon shows in
-        // the status bar whenever one of these is pending.
-        androidScheduleMode: AndroidScheduleMode.alarmClock,
+        androidScheduleMode: scheduleMode,
         matchDateTimeComponents: DateTimeComponents.time,
         payload: spec.payload,
       );
-      // The notification's own vibration is what 무음 ringer mode silences
-      // (see VibrationAlarmReceiver.kt) -- this directly-triggered Vibrator
-      // call alongside it is the part that actually buzzes in that mode.
-      // Re-arms itself daily on the native side, so it stays in sync with
-      // matchDateTimeComponents above without Dart needing to be running.
-      await _scheduleVibrationAlarm(
-        requestCode: spec.id,
-        triggerAt: triggerAt,
-        pattern: vibrationPatternFor(settings.vibrationPattern),
-        durationMs: _alarmRepeatMs,
-        repeatInterval: const Duration(days: 1),
-        watchAlarm: true,
-      );
+
+      if (spec.alarmType == SegmentAlarmType.fullScreen) {
+        // The notification's own vibration is what 무음 ringer mode silences
+        // (see VibrationAlarmReceiver.kt) -- this directly-triggered Vibrator
+        // call alongside it is the part that actually buzzes in that mode.
+        // Re-arms itself daily on the native side, so it stays in sync with
+        // matchDateTimeComponents above without Dart needing to be running.
+        await _scheduleVibrationAlarm(
+          requestCode: spec.id,
+          triggerAt: triggerAt,
+          pattern: vibrationPatternFor(settings.vibrationPattern),
+          durationMs: _alarmRepeatMs,
+          repeatInterval: const Duration(days: 1),
+          watchAlarm: true,
+        );
+      }
     }
 
     // The cancelAll above already wiped any previously-scheduled checkin
