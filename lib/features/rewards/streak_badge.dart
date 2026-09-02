@@ -55,37 +55,43 @@ class StreakBadge extends ConsumerWidget {
 
         return Semantics(
           label: label,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.local_fire_department,
-                size: 16,
-                color: theme.colorScheme.primary,
+          child: MediaQuery.withClampedTextScaling(
+            maxScaleFactor: 1.4,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.local_fire_department,
+                    size: 16,
+                    color: theme.colorScheme.primary,
+                  ),
+                  const SizedBox(width: 4),
+                  if (best > 0)
+                    Text('최고 $best일', style: theme.textTheme.labelMedium)
+                  else
+                    Text('오늘 하나라도 했으면 충분해요', style: theme.textTheme.labelMedium),
+                  if (best > 0 && current > 0) ...[
+                    const SizedBox(width: 6),
+                    Text(
+                      '· 현재 $current일',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ] else if (best > 0 && current == 0) ...[
+                    const SizedBox(width: 6),
+                    Text(
+                      '· 다시 시작해도 좋아요',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ],
               ),
-              const SizedBox(width: 4),
-              if (best > 0)
-                Text('최고 $best일', style: theme.textTheme.labelMedium)
-              else
-                Text('오늘 하나라도 했으면 충분해요', style: theme.textTheme.labelMedium),
-              if (best > 0 && current > 0) ...[
-                const SizedBox(width: 6),
-                Text(
-                  '· 현재 $current일',
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ] else if (best > 0 && current == 0) ...[
-                const SizedBox(width: 6),
-                Text(
-                  '· 다시 시작해도 좋아요',
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ],
+            ),
           ),
         );
       },

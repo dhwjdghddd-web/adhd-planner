@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
@@ -212,32 +214,40 @@ class _SlideView extends StatelessWidget {
     // cover) the centred icon+title+body would overflow. Centre when it fits,
     // scroll when it doesn't.
     return LayoutBuilder(
-      builder: (context, constraints) => SingleChildScrollView(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(minHeight: constraints.maxHeight),
-          child: Padding(
-            padding: const EdgeInsets.all(32),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(slide.icon, size: 96, color: theme.colorScheme.primary),
-                const SizedBox(height: 24),
-                Text(
-                  slide.title,
-                  style: theme.textTheme.headlineSmall,
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  slide.body,
-                  style: theme.textTheme.bodyLarge,
-                  textAlign: TextAlign.center,
-                ),
-              ],
+      builder: (context, constraints) {
+        final iconSize = math
+            .min(96.0, constraints.maxHeight * 0.24)
+            .clamp(48.0, 96.0);
+        final gap1 = (constraints.maxHeight * 0.05).clamp(12.0, 24.0);
+        final gap2 = (constraints.maxHeight * 0.025).clamp(8.0, 12.0);
+
+        return SingleChildScrollView(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(slide.icon, size: iconSize, color: theme.colorScheme.primary),
+                  SizedBox(height: gap1),
+                  Text(
+                    slide.title,
+                    style: theme.textTheme.headlineSmall,
+                    textAlign: TextAlign.center,
+                  ),
+                  SizedBox(height: gap2),
+                  Text(
+                    slide.body,
+                    style: theme.textTheme.bodyLarge,
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }

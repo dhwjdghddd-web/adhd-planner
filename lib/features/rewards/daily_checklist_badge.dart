@@ -56,17 +56,23 @@ class DailyChecklistBadge extends ConsumerWidget {
         ),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                achievement.isAchieved ? Icons.local_fire_department : Icons.checklist_rtl,
-                size: 16,
-                color: theme.colorScheme.primary,
+          child: MediaQuery.withClampedTextScaling(
+            maxScaleFactor: 1.4,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    achievement.isAchieved ? Icons.local_fire_department : Icons.checklist_rtl,
+                    size: 16,
+                    color: theme.colorScheme.primary,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(label, style: theme.textTheme.labelMedium),
+                ],
               ),
-              const SizedBox(width: 4),
-              Text(label, style: theme.textTheme.labelMedium),
-            ],
+            ),
           ),
         ),
       ),

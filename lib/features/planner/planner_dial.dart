@@ -27,7 +27,9 @@ class _Dial extends StatelessWidget {
         // Extra breathing room so the east/west hour labels ("18시" etc.),
         // which sit further out to clear the tick marks, still don't bleed past
         // the screen edge under larger accessibility text scales.
-        final side = math.min(constraints.maxWidth, constraints.maxHeight) - 56;
+        final rawSide = math.min(constraints.maxWidth, constraints.maxHeight) - 56;
+        final side = math.max(100.0, rawSide);
+        final centerDiameter = math.min(160.0, side * 0.52).clamp(90.0, 160.0);
         return Center(
           child: Semantics(
             // The arcs are painted, not focusable, so a screen reader has no
@@ -66,6 +68,7 @@ class _Dial extends StatelessWidget {
                     _CenterSummary(
                       status: status,
                       currentMinute: currentMinute,
+                      diameter: centerDiameter,
                     ),
                   ],
                 ),

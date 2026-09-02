@@ -279,27 +279,33 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
                         );
                       }
 
-                      // Dial is kept a little narrower than the full width (so it
-                      // doesn't run edge-to-edge and crowd the texts). The gaps
-                      // above/below it scale with the screen height — generous on a
-                      // tall phone, tight on a short cover screen.
-                      final vGap = (constraints.maxHeight * 0.09).clamp(
-                        16.0,
-                        56.0,
-                      );
+                      // Non-dial vertical elements budget: header (~44) + gap (10) +
+                      // badges (~32) + countdown (~28) + min gaps = ~140-150dp.
+                      const reservedHeight = 150.0;
+                      final availableForDial = (constraints.maxHeight - reservedHeight)
+                          .clamp(120.0, double.infinity);
+
+                      // Dial is kept narrower than the full width and capped at
+                      // 440dp so on large unfolded screens it doesn't inflate
+                      // excessively. It is strictly bounded by available height.
                       final dialSize = math
                           .min(
-                            constraints.maxWidth * 0.9,
-                            constraints.maxHeight - 200,
+                            math.min(constraints.maxWidth * 0.88, 440.0),
+                            availableForDial,
                           )
                           .clamp(140.0, constraints.maxWidth);
+
+                      final rawGap = (constraints.maxHeight - dialSize - 124.0) / 2;
+                      final vGap = rawGap.clamp(8.0, 48.0);
+
                       final content = Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           _HomeHeader(minuteOfDay: _currentMinute),
-                          const SizedBox(height: 12),
+                          const SizedBox(height: 10),
                           const Wrap(
                             spacing: 12,
+                            runSpacing: 6,
                             alignment: WrapAlignment.center,
                             children: [StreakBadge(), DailyChecklistBadge()],
                           ),
@@ -331,15 +337,11 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
                         ],
                       );
 
-                      // On a normal phone the cluster fits, so it's a plain static
-                      // Center -- no scroll view, so it reads as a fixed backdrop
-                      // (no scroll bounce/jank). Only on a short screen (foldable
-                      // cover) does it fall back to scrolling to avoid overflow.
-                      const fitsThreshold = 560.0;
-                      if (constraints.maxHeight >= fitsThreshold) {
-                        return Center(child: content);
-                      }
+                      // ConstrainedBox with minHeight ensures content is neatly
+                      // centered when it fits, while SingleChildScrollView ensures
+                      // it never overflows under extreme font scales or short viewports.
                       return SingleChildScrollView(
+                        physics: const ClampingScrollPhysics(),
                         child: ConstrainedBox(
                           constraints: BoxConstraints(
                             minHeight: constraints.maxHeight,
@@ -848,10 +850,15 @@ class _NextBlockCountdown extends StatelessWidget {
 }
 
 class _CenterSummary extends StatelessWidget {
-  const _CenterSummary({required this.status, required this.currentMinute});
+  const _CenterSummary({
+    required this.status,
+    required this.currentMinute,
+    this.diameter,
+  });
 
   final BlockStatus status;
   final int currentMinute;
+  final double? diameter;
 
   @override
   Widget build(BuildContext context) {
@@ -859,11 +866,13 @@ class _CenterSummary extends StatelessWidget {
     final segment = status.segment;
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final size = diameter ?? 160.0;
+    final padding = (size * 0.075).clamp(8.0, 14.0);
 
     return Container(
-      width: 160,
-      height: 160,
-      padding: const EdgeInsets.all(12),
+      width: size,
+      height: size,
+      padding: EdgeInsets.all(padding),
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         color: AppTheme.surface3(context),
