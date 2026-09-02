@@ -29,7 +29,7 @@ void main() {
       ),
     );
     await repo.saveCheckin(
-      const Checkin(dateKey: '2026-06-30', mood: 3, energy: 3),
+      Checkin(dateKey: '2026-06-30', mood: 3, energy: 3),
     );
 
     expect(await repo.watchSegments().first, isNotEmpty);

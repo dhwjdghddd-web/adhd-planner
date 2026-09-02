@@ -55,10 +55,10 @@ abstract class PlannerRepository {
   Future<void> saveMit(Mit m);
   Future<void> removeMit(String dateKey, String segmentId);
 
-  // Check-ins (mood/energy, one per day -- not tied to any block)
+  // Check-ins (mood/energy -- not tied to any block)
   Stream<List<Checkin>> watchCheckins();
   Future<void> saveCheckin(Checkin c);
-  Future<void> removeCheckin(String dateKey);
+  Future<void> removeCheckin(String id);
 
   // Micro-step moves ("오늘만 여기서" -- per block item, per day: show a
   // checklist item under a different block just for today)

@@ -167,8 +167,8 @@ class FakePlannerRepository implements PlannerRepository {
   }
 
   @override
-  Future<void> removeCheckin(String dateKey) async {
-    _checkins.remove(dateKey);
+  Future<void> removeCheckin(String id) async {
+    _checkins.remove(id);
     _checkinsStream.add(_checkins.values.toList());
   }
 

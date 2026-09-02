@@ -147,8 +147,8 @@ class FirestorePlannerRepository implements PlannerRepository {
       _collection('checkins').doc(c.id).set(c.toMap());
 
   @override
-  Future<void> removeCheckin(String dateKey) =>
-      _collection('checkins').doc(dateKey).delete();
+  Future<void> removeCheckin(String id) =>
+      _collection('checkins').doc(id).delete();
 
   // Micro-step moves ("오늘만 여기서") -- per item, per day; same recent-window
   // reasoning as the other date-keyed collections.

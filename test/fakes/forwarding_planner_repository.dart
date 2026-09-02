@@ -80,7 +80,7 @@ abstract class ForwardingPlannerRepository implements PlannerRepository {
   @override
   Future<void> saveCheckin(Checkin c) => inner.saveCheckin(c);
   @override
-  Future<void> removeCheckin(String dateKey) => inner.removeCheckin(dateKey);
+  Future<void> removeCheckin(String id) => inner.removeCheckin(id);
 
   @override
   Stream<List<MicroStepMove>> watchMicroStepMoves() =>

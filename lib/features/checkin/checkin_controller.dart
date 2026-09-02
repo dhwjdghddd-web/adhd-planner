@@ -7,25 +7,45 @@ final checkinControllerProvider = Provider<CheckinController>(
   (ref) => CheckinController(ref),
 );
 
-/// Thin write-side wrapper around [PlannerRepository] for T8's daily
-/// mood/energy check-in, mirroring `MitController`/`MemosController`.
+/// Thin write-side wrapper around [PlannerRepository] for T8's mood/energy
+/// check-in, mirroring `MitController`/`MemosController`.
 class CheckinController {
   CheckinController(this._ref);
 
   final Ref _ref;
 
-  /// Saves (or overwrites) today's check-in -- one per day, so doing this
-  /// again today just updates the same record rather than creating another.
-  Future<void> save({required int mood, required int energy, String? note}) {
+  /// Saves a new check-in or updates an existing one when [id] is provided.
+  Future<void> save({
+    String? id,
+    required int mood,
+    required int energy,
+    String? note,
+    DateTime? at,
+    String? dateKey,
+    String? createdAtIso,
+  }) {
     final repo = _ref.read(plannerRepositoryProvider)!;
+    if (id != null) {
+      final now = at ?? DateTime.now();
+      return repo.saveCheckin(
+        Checkin(
+          id: id,
+          dateKey: dateKey ?? Checkin.today(mood: mood, energy: energy, at: now).dateKey,
+          mood: mood,
+          energy: energy,
+          note: note,
+          createdAtIso: createdAtIso ?? now.toIso8601String(),
+        ),
+      );
+    }
     return repo.saveCheckin(
-      Checkin.today(mood: mood, energy: energy, note: note),
+      Checkin.today(mood: mood, energy: energy, note: note, at: at),
     );
   }
 
-  /// Deletes [dateKey]'s check-in -- swipe-to-delete in 최근 기록.
-  Future<void> delete(String dateKey) {
+  /// Deletes a check-in record by [id].
+  Future<void> delete(String id) {
     final repo = _ref.read(plannerRepositoryProvider)!;
-    return repo.removeCheckin(dateKey);
+    return repo.removeCheckin(id);
   }
 }
