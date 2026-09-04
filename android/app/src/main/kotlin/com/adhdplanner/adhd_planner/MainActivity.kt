@@ -182,6 +182,23 @@ class MainActivity : FlutterActivity() {
                     "openChannelSettings" -> {
                         openChannelSettings(call, result)
                     }
+                    "syncAlarmMetadata" -> {
+                        val restDays = call.argument<List<String>>("restDays") ?: emptyList()
+                        @Suppress("UNCHECKED_CAST")
+                        val scheduleTargets = call.argument<Map<String, String>>("scheduleTargets") ?: emptyMap()
+                        val prefs = applicationContext.getSharedPreferences("adhd_alarm_prefs", Context.MODE_PRIVATE)
+                        prefs.edit().apply {
+                            putStringSet("rest_days", restDays.toSet())
+                            for (key in prefs.all.keys) {
+                                if (key.startsWith("target_")) remove(key)
+                            }
+                            for ((reqCode, target) in scheduleTargets) {
+                                putString("target_$reqCode", target)
+                            }
+                            apply()
+                        }
+                        result.success(null)
+                    }
                     else -> result.notImplemented()
                 }
             }

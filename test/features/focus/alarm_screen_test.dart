@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:adhd_planner/data/models/app_settings.dart';
 import 'package:adhd_planner/data/models/completion.dart';
+import 'package:adhd_planner/data/models/rest_day.dart';
 import 'package:adhd_planner/data/models/segment.dart';
 import 'package:adhd_planner/data/providers.dart';
 import 'package:adhd_planner/data/today.dart';
@@ -225,5 +226,28 @@ void main() {
 
     final skips = await repo.watchAlarmSkips().first;
     expect(skippedBlockIdsOn(skips), contains('s1'));
+  });
+
+  testWidgets('auto-dismisses when opened on a rest day for a workDaysOnly block', (tester) async {
+    final repo = FakePlannerRepository();
+    await repo.upsertSegment(_block(id: 's1').copyWith(
+      scheduleTarget: SegmentScheduleTarget.workDaysOnly,
+    ));
+    await repo.saveRestDay(RestDay.today());
+
+    await openAlarm(tester, repo);
+
+    expect(find.byType(AlarmScreen), findsNothing);
+  });
+
+  testWidgets('shows normally on a work day for a workDaysOnly block', (tester) async {
+    final repo = FakePlannerRepository();
+    await repo.upsertSegment(_block(id: 's1').copyWith(
+      scheduleTarget: SegmentScheduleTarget.workDaysOnly,
+    ));
+
+    await openAlarm(tester, repo);
+
+    expect(find.byType(AlarmScreen), findsOneWidget);
   });
 }

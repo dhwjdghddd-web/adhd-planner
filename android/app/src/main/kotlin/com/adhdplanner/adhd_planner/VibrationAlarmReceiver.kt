@@ -45,6 +45,15 @@ class VibrationAlarmReceiver : BroadcastReceiver() {
         val repeatIntervalMs = intent.getLongExtra(EXTRA_REPEAT_INTERVAL_MS, 0L)
         val watchAlarm = intent.getBooleanExtra(EXTRA_WATCH_ALARM, false)
 
+        // Check dynamic rest-day / work-day guard for this alarm
+        val prefs = context.getSharedPreferences("adhd_alarm_prefs", Context.MODE_PRIVATE)
+        val restDays = prefs.getStringSet("rest_days", emptySet()) ?: emptySet()
+        val scheduleTarget = prefs.getString("target_$requestCode", "everyday") ?: "everyday"
+        val todayKey = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date())
+        val isRestToday = restDays.contains(todayKey)
+
+        val shouldSuppress = (isRestToday && scheduleTarget == "workDaysOnly") || (!isRestToday && scheduleTarget == "restDaysOnly")
+
         // Recurring (daily) routine alarms re-arm themselves for next day right
         // here -- mirrors how flutter_local_notifications' own
         // matchDateTimeComponents reschedules itself, so this stays in sync
@@ -59,6 +68,13 @@ class VibrationAlarmReceiver : BroadcastReceiver() {
                 repeatIntervalMs,
                 watchAlarm,
             )
+        }
+
+        if (shouldSuppress) {
+            // Dismiss notification if it was posted by flutter_local_notifications
+            val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+            notificationManager?.cancel(requestCode)
+            return
         }
 
         // Buzz now, then hand off to the swipe-aware loop for the rest of the

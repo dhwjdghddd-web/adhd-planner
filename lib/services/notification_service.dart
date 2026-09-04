@@ -10,10 +10,10 @@ import 'package:timezone/timezone.dart' as tz;
 
 import '../core/debug_log.dart';
 import '../data/models/app_settings.dart';
+import '../data/models/rest_day.dart';
 import '../data/models/segment.dart';
 import '../data/providers.dart';
 import '../data/repositories/planner_repository.dart';
-import '../data/today.dart';
 import 'notification_schedule.dart';
 // The pure scheduling logic lives in notification_schedule.dart; re-export it
 // so existing importers of this file (and notification_service_test) keep
@@ -271,6 +271,25 @@ Future<void> _ensureChannels(AppSettings settings) async {
   }
 }
 
+Future<void> _syncAlarmMetadata(
+  List<Segment> segments,
+  List<RestDay> restDays,
+) async {
+  try {
+    final targets = <String, String>{};
+    for (final s in segments) {
+      targets['${notificationIdFor(s.id, 0)}'] = s.scheduleTarget.name;
+      targets['${notificationIdFor(s.id, leadWarningSlot)}'] = s.scheduleTarget.name;
+    }
+    await _alarmChannelChannel.invokeMethod('syncAlarmMetadata', {
+      'restDays': restDays.map((r) => r.dateKey).toList(),
+      'scheduleTargets': targets,
+    });
+  } catch (e) {
+    logSwallowed('syncAlarmMetadata', e);
+  }
+}
+
 /// Sets `tz.local` to the device's real timezone. Must be called before any
 /// `tz.TZDateTime.now(tz.local)`/scheduling call — `tz.local` otherwise
 /// defaults to UTC.
@@ -338,19 +357,15 @@ class NotificationService {
     if (repo == null) return; // auth 전환 중 — 알람 재스케줄 건너뜀
     await _ensureChannels(settings);
 
-    // "오늘은 쉬기"를 여기서 직접 읽는다 -- 호출부가 플래그를 넘기는 방식은
-    // 호출부가 늘 때마다 누락 버그를 낳았다(설정 변경/계정 전환 경로가 쉬는
-    // 날을 무시하고 오늘 알람을 되살리던 실버그). 이제 어떤 경로로 재스케줄
-    // 되든 쉬는 날이 항상 반영된다.
     var restToday = false;
     var restTomorrow = false;
+    var restDays = const <RestDay>[];
     try {
-      final restDays = await repo.watchRestDays().first;
-      restToday = isRestDayOn(restDays);
-      restTomorrow = isRestDayTomorrow(restDays);
+      restDays = await repo.watchRestDays().first;
     } catch (e) {
-      logSwallowed('쉬는 날 조회(재스케줄)', e); // 조회 실패 → 쉬는 날 아님으로 진행
+      logSwallowed('쉬는 날 조회(재스케줄)', e); // 조회 실패 → 빈 목록으로 진행
     }
+    await _syncAlarmMetadata(segments, restDays);
 
     // 기존 알람을 전부 비우고 아래에서 현재 blocks만 다시 건다.
     // 네이티브가 자체 보관하는 requestCode 집합으로 진동 알람을 전부 취소하고
@@ -366,19 +381,9 @@ class NotificationService {
 
     final specs = buildSchedule(
       segments,
-      isRestDay: restToday,
       leadMinutes: settings.leadMinutes,
     );
     for (final spec in specs) {
-      // 쉬는 날(오늘/내일): leave that day's alarms unscheduled entirely so
-      // nothing fires -- no sound AND no popup. See restDaySuppresses.
-      if (restDaySuppresses(
-        spec.minuteOfDay,
-        restToday: restToday,
-        restTomorrow: restTomorrow,
-      )) {
-        continue;
-      }
       final triggerAt = nextInstanceOf(spec.minuteOfDay);
       if (spec.isLeadWarning) {
         // Quiet heads-up only -- no native Vibrator call, no alarmClock

@@ -122,7 +122,7 @@ void main() {
       },
     );
 
-    test('isRestDay true suppresses workDaysOnly blocks and keeps restDaysOnly blocks', () {
+    test('buildSchedule always keeps all active blocks armed with their scheduleTarget preserved', () {
       final workBlock = _block(id: 'w1').copyWith(
         scheduleTarget: SegmentScheduleTarget.workDaysOnly,
       );
@@ -133,23 +133,15 @@ void main() {
         scheduleTarget: SegmentScheduleTarget.everyday,
       );
 
-      final holidaySpecs = buildSchedule(
-        [workBlock, restBlock, everyBlock],
-        isRestDay: true,
-      );
-      final holidayIds = holidaySpecs.map((s) => s.segmentId).toList();
-      expect(holidayIds, contains('r1'));
-      expect(holidayIds, contains('e1'));
-      expect(holidayIds, isNot(contains('w1')));
+      final specs = buildSchedule([workBlock, restBlock, everyBlock]);
+      final ids = specs.map((s) => s.segmentId).toList();
+      expect(ids, contains('w1'));
+      expect(ids, contains('r1'));
+      expect(ids, contains('e1'));
 
-      final workDaySpecs = buildSchedule(
-        [workBlock, restBlock, everyBlock],
-        isRestDay: false,
-      );
-      final workDayIds = workDaySpecs.map((s) => s.segmentId).toList();
-      expect(workDayIds, contains('w1'));
-      expect(workDayIds, contains('e1'));
-      expect(workDayIds, isNot(contains('r1')));
+      expect(specs.firstWhere((s) => s.segmentId == 'w1').scheduleTarget, SegmentScheduleTarget.workDaysOnly);
+      expect(specs.firstWhere((s) => s.segmentId == 'r1').scheduleTarget, SegmentScheduleTarget.restDaysOnly);
+      expect(specs.firstWhere((s) => s.segmentId == 'e1').scheduleTarget, SegmentScheduleTarget.everyday);
     });
 
     test('gentle and hapticOnly alarmTypes are passed correctly to ScheduledSpec', () {

@@ -41,6 +41,7 @@ class ScheduledSpec {
     required this.title,
     required this.body,
     this.alarmType = SegmentAlarmType.fullScreen,
+    this.scheduleTarget = SegmentScheduleTarget.everyday,
     this.isLeadWarning = false,
   });
 
@@ -50,6 +51,7 @@ class ScheduledSpec {
   final String title;
   final String body;
   final SegmentAlarmType alarmType;
+  final SegmentScheduleTarget scheduleTarget;
   // False for the main start-of-block alarm; true for the quiet "전환 예고" heads-up.
   final bool isLeadWarning;
 
@@ -66,23 +68,15 @@ const _leadWarningSlot = 1;
 
 /// Pure: turns the current block list into the exact set of alarms that should
 /// exist on the device.
-/// Filters by [isRestDay] against each segment's [scheduleTarget].
+/// All alarm-enabled blocks stay always armed in the OS, so changing work/rest
+/// days never causes missed alarms on subsequent work days.
 List<ScheduledSpec> buildSchedule(
   List<Segment> segments, {
-  bool isRestDay = false,
   int leadMinutes = 10,
 }) {
   final specs = <ScheduledSpec>[];
   for (final segment in segments) {
     if (segment.alarmType == SegmentAlarmType.none) continue;
-
-    // Check rest/work day filter
-    if (isRestDay && segment.scheduleTarget == SegmentScheduleTarget.workDaysOnly) {
-      continue;
-    }
-    if (!isRestDay && segment.scheduleTarget == SegmentScheduleTarget.restDaysOnly) {
-      continue;
-    }
 
     specs.add(ScheduledSpec(
       id: notificationIdFor(segment.id, 0),
@@ -91,6 +85,7 @@ List<ScheduledSpec> buildSchedule(
       title: segment.name,
       body: '지금 시작할 시간이에요',
       alarmType: segment.alarmType,
+      scheduleTarget: segment.scheduleTarget,
     ));
 
     final effectiveLead = segment.leadWarningMinutes > 0
@@ -106,6 +101,7 @@ List<ScheduledSpec> buildSchedule(
         title: segment.name,
         body: '$effectiveLead분 후 시작해요',
         alarmType: SegmentAlarmType.gentle,
+        scheduleTarget: segment.scheduleTarget,
         isLeadWarning: true,
       ));
     }
@@ -130,34 +126,27 @@ tz.TZDateTime nextInstanceOf(int minuteOfDay, {tz.TZDateTime? now}) {
   return scheduled;
 }
 
-/// Whether [minuteOfDay]'s next occurrence lands later TODAY (as opposed to
-/// having already passed, so its next fire is tomorrow) — i.e. which calendar
-/// day [nextInstanceOf] just picked.
+const leadWarningSlot = 1;
+
+/// Whether an alarm firing at [minuteOfDay] has its next occurrence later today
+/// (vs already passed, so its next fire is tomorrow).
 bool firesLaterToday(int minuteOfDay, {tz.TZDateTime? now}) {
-  final from = now ?? tz.TZDateTime.now(tz.local);
-  final trigger = nextInstanceOf(minuteOfDay, now: from);
-  return trigger.year == from.year &&
-      trigger.month == from.month &&
-      trigger.day == from.day;
+  final current = now ?? tz.TZDateTime.now(tz.local);
+  final trigger = nextInstanceOf(minuteOfDay, now: current);
+  return trigger.year == current.year &&
+      trigger.month == current.month &&
+      trigger.day == current.day;
 }
 
-/// Whether an alarm at [minuteOfDay] must be left **unscheduled** because its
-/// next fire lands on a rest day.
-///
-/// A daily alarm's next fire is either later today or tomorrow, so those two
-/// flags between them cover every alarm: "오늘은 쉬기" silences the ones still
-/// ahead today, and "내일 쉬기" — set the night before, when today's alarms
-/// have all passed already — silences exactly the ones that would next fire
-/// tomorrow morning.
-///
-/// Suppression has to mean *not scheduled at all*: the `matchDateTimeComponents
-/// .time` daily repeat re-anchors to the next matching *time* regardless of the
-/// scheduled date, so a would-be rest-day alarm can't simply be pushed to the
-/// day after. It's left off the device and re-armed by the next reschedule
-/// (see app.dart's _DayRolloverAlarmSync, which runs on every date change).
+/// Helper to test rest day suppression logic.
 bool restDaySuppresses(
   int minuteOfDay, {
   required bool restToday,
   required bool restTomorrow,
   tz.TZDateTime? now,
-}) => firesLaterToday(minuteOfDay, now: now) ? restToday : restTomorrow;
+}) {
+  final firesToday = firesLaterToday(minuteOfDay, now: now);
+  if (firesToday && restToday) return true;
+  if (!firesToday && restTomorrow) return true;
+  return false;
+}

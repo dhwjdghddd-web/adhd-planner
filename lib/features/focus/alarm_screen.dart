@@ -10,6 +10,7 @@ import '../../core/time_geometry.dart';
 import '../../data/models/app_settings.dart';
 import '../../data/models/segment.dart';
 import '../../data/providers.dart';
+import '../../data/today.dart';
 import '../../services/notification_service.dart';
 import '../../services/screen_wake_service.dart';
 import 'alarm_skip_controller.dart';
@@ -128,6 +129,23 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
       if (s.id == widget.segmentId) {
         segment = s;
         break;
+      }
+    }
+
+    final restDays = ref.watch(restDaysProvider).value ?? const [];
+    final isRest = isRestDayOn(restDays);
+
+    if (segment != null) {
+      final shouldSuppress = (isRest && segment.scheduleTarget == SegmentScheduleTarget.workDaysOnly) ||
+          (!isRest && segment.scheduleTarget == SegmentScheduleTarget.restDaysOnly);
+      if (shouldSuppress) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            unawaited(_tryCancelNotification());
+            Navigator.of(context).maybePop();
+          }
+        });
+        return const Scaffold(body: SizedBox.shrink());
       }
     }
 
