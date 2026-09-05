@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/debug_log.dart';
@@ -220,6 +221,9 @@ class _WaitingForAccount extends StatelessWidget {
 /// actually exists. A plain callback from the notification handler can't
 /// show the screen directly: on a cold start, that handler can fire before
 /// `runApp()`'s widget tree — and therefore [appNavigatorKey] — is ready.
+const _alarmTriggerChannel =
+    MethodChannel('com.adhdplanner.adhd_planner/alarm_trigger');
+
 class _AlarmAlertLauncher extends StatefulWidget {
   const _AlarmAlertLauncher();
 
@@ -232,10 +236,28 @@ class _AlarmAlertLauncherState extends State<_AlarmAlertLauncher> {
   void initState() {
     super.initState();
     pendingAlarmAlert.addListener(_openIfPending);
+    _alarmTriggerChannel.setMethodCallHandler(_handleNativeAlarmTrigger);
     // Covers a pending value that arrived before this widget was even
     // built (e.g. a cold start where the notification response callback
     // fired during main(), before runApp()).
     WidgetsBinding.instance.addPostFrameCallback((_) => _openIfPending());
+  }
+
+  Future<dynamic> _handleNativeAlarmTrigger(MethodCall call) async {
+    if (call.method == 'onAlarmTriggered') {
+      final args = call.arguments;
+      if (args is Map) {
+        final notifId = (args['notificationId'] as num?)?.toInt() ?? 0;
+        final segmentId = args['segmentId'] as String? ?? '';
+        if (segmentId.isNotEmpty) {
+          pendingAlarmAlert.value = PendingAlarmAlert(
+            notificationId: notifId,
+            segmentId: segmentId,
+          );
+        }
+      }
+    }
+    return null;
   }
 
   void _openIfPending() {
@@ -257,6 +279,7 @@ class _AlarmAlertLauncherState extends State<_AlarmAlertLauncher> {
 
   @override
   void dispose() {
+    _alarmTriggerChannel.setMethodCallHandler(null);
     pendingAlarmAlert.removeListener(_openIfPending);
     super.dispose();
   }

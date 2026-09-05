@@ -169,15 +169,13 @@ void main() {
     expect(find.text('💊 비타민 챙겨먹기'), findsOneWidget);
   });
 
-  testWidgets('shows the multi-snooze exits (+5, +15, +30분) and skip exit below the slide', (tester) async {
+  testWidgets('shows the snooze button and skip exit', (tester) async {
     final repo = FakePlannerRepository();
     await repo.upsertSegment(_block());
 
     await openAlarm(tester, repo);
 
-    expect(find.text('+5분'), findsOneWidget);
-    expect(find.text('+15분'), findsOneWidget);
-    expect(find.text('+30분'), findsOneWidget);
+    expect(find.text('탭해서 10분 뒤 다시 울림'), findsOneWidget);
     expect(find.text('오늘은 건너뛰기'), findsOneWidget);
   });
 
@@ -190,7 +188,7 @@ void main() {
     repo.watchCompletions().listen(snapshots.add);
 
     await openAlarm(tester, repo);
-    await tester.tap(find.text('+15분'));
+    await tester.tap(find.text('탭해서 10분 뒤 다시 울림'));
     await tester.pumpAndSettle();
 
     expect(find.byType(AlarmScreen), findsNothing);
@@ -199,14 +197,14 @@ void main() {
   });
 
   testWidgets(
-      "tapping '+5분' cancels today's ring before arming the snooze, even when "
+      "tapping snooze cancels today's ring before arming the snooze, even when "
       'cancelling is the slower of the two', (tester) async {
     final repo = FakePlannerRepository();
     await repo.upsertSegment(_block());
     final service = _OrderRecordingNotificationService();
 
     await openAlarm(tester, repo, notificationService: service);
-    await tester.tap(find.text('+5분'));
+    await tester.tap(find.text('탭해서 10분 뒤 다시 울림'));
     await tester.pumpAndSettle();
 
     expect(service.order, ['cancel', 'schedule']);

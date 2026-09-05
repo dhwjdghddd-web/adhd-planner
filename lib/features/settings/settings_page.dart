@@ -29,10 +29,13 @@ class SettingsPage extends ConsumerStatefulWidget {
   ConsumerState<SettingsPage> createState() => _SettingsPageState();
 }
 
-class _SettingsPageState extends ConsumerState<SettingsPage> {
+class _SettingsPageState extends ConsumerState<SettingsPage>
+    with WidgetsBindingObserver {
   PermissionStatus? _notification;
   PermissionStatus? _exactAlarm;
   PermissionStatus? _microphone;
+  bool? _fullScreenIntent;
+  bool? _canDrawOverlays;
 
   /// 스크롤 위치를 State에서 관리: 계정 전환으로 화면이 리빌드돼도 위치 유지.
   final ScrollController _scrollController = ScrollController();
@@ -44,13 +47,22 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _refreshPermissions();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _scrollController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _refreshPermissions();
+    }
   }
 
   // Defensive: on a real device a failed platform call here would just be
@@ -69,11 +81,16 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     final notification = await _safeStatus(Permission.notification);
     final exactAlarm = await _safeStatus(Permission.scheduleExactAlarm);
     final microphone = await _safeStatus(Permission.microphone);
+    final notifService = ref.read(notificationServiceProvider);
+    final fullScreen = await notifService.checkFullScreenIntentPermission();
+    final canOverlay = await notifService.checkOverlayPermission();
     if (!mounted) return;
     setState(() {
       _notification = notification;
       _exactAlarm = exactAlarm;
       _microphone = microphone;
+      _fullScreenIntent = fullScreen;
+      _canDrawOverlays = canOverlay;
     });
 
     if (exactAlarm == null) return;
@@ -83,6 +100,35 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       await ref
           .read(settingsControllerProvider)
           .save(settings.copyWith(exactAlarmGranted: exactAlarm.isGranted));
+    }
+  }
+
+  Future<void> _testAlarm(AppSettings settings) async {
+    final segments = ref.read(segmentsProvider).value ?? const [];
+    if (segments.isEmpty) {
+      showAppSnackBar(
+        context,
+        const Text('등록된 구간이 없어요. 구간을 먼저 추가해 주세요.'),
+      );
+      return;
+    }
+    final targetSegment = segments.first;
+    try {
+      await ref.read(notificationServiceProvider).scheduleTestAlarm(
+        segment: targetSegment,
+        settings: settings,
+        delaySeconds: 5,
+      );
+      if (!mounted) return;
+      showAppSnackBar(
+        context,
+        const Text('5초 뒤 강력 알람이 울려요! 지금 바로 화면을 잠가보세요.'),
+        duration: const Duration(seconds: 4),
+      );
+    } catch (e, st) {
+      reportError(e, st, where: '강력 알람 테스트');
+      if (!mounted) return;
+      showAppSnackBar(context, const Text('알람 테스트 예약에 실패했어요.'));
     }
   }
 
@@ -377,6 +423,20 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           status: _exactAlarm,
           onTap: () => _requestOrOpenSettings(Permission.scheduleExactAlarm),
         ),
+        _BoolPermissionRow(
+          icon: Icons.fullscreen,
+          label: '전체화면 알림 (Android 14+)',
+          description: '화면이 꺼져 있을 때 잠금화면 위로 알람을 바로 띄워요.',
+          isGranted: _fullScreenIntent,
+          onTap: () => ref.read(notificationServiceProvider).openFullScreenIntentSettings(),
+        ),
+        _BoolPermissionRow(
+          icon: Icons.picture_in_picture_outlined,
+          label: '다른 앱 위에 표시',
+          description: '폰 사용 중에도 팝업창 대신 전체화면으로 바로 띄워요.',
+          isGranted: _canDrawOverlays,
+          onTap: () => ref.read(notificationServiceProvider).openOverlaySettings(),
+        ),
         _PermissionRow(
           icon: Icons.mic_none,
           label: '마이크',
@@ -420,7 +480,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
           child: Text(
-            '스누즈 시간 (알람에서 "다시" 눌렀을 때)',
+            '스누즈 시간 (알람에서 "다시 울림" 눌렀을 때)',
             style: Theme.of(context).textTheme.bodyMedium,
           ),
         ),
@@ -430,7 +490,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             spacing: 8,
             runSpacing: 8,
             children: [
-              for (final minutes in const [5, 10, 15])
+              for (final minutes in const [3, 5, 10, 15, 20, 30])
                 ChoiceChip(
                   label: Text('$minutes분'),
                   selected: settings.snoozeMinutes == minutes,
@@ -438,6 +498,13 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                 ),
             ],
           ),
+        ),
+        ListTile(
+          leading: const Icon(Icons.alarm_on_outlined),
+          title: const Text('강력 알람 5초 뒤 테스트'),
+          subtitle: const Text('버튼을 누르고 화면을 끄면 5초 뒤 실제 알람이 울려요.'),
+          trailing: const Icon(Icons.play_circle_outline),
+          onTap: () => _testAlarm(settings),
         ),
         ListTile(
           leading: const Icon(Icons.calendar_month_outlined),
@@ -689,3 +756,68 @@ class _PermissionRow extends StatelessWidget {
     );
   }
 }
+
+class _BoolPermissionRow extends StatelessWidget {
+  const _BoolPermissionRow({
+    required this.icon,
+    required this.label,
+    required this.description,
+    required this.isGranted,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final String description;
+  final bool? isGranted;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final granted = isGranted ?? false;
+    final statusText = isGranted == null
+        ? '확인 중...'
+        : granted
+        ? '허용됨'
+        : '설정 필요';
+    final statusIcon = granted ? Icons.check_circle : Icons.warning_amber_rounded;
+    final statusColor = granted ? Colors.green : Colors.orange.shade800;
+
+    return Semantics(
+      label: '$label 권한, $statusText',
+      child: ListTile(
+        leading: Icon(icon),
+        title: Text(label),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(description, style: Theme.of(context).textTheme.bodySmall),
+            const SizedBox(height: 2),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(statusIcon, size: 16, color: statusColor),
+                const SizedBox(width: 4),
+                Text(
+                  statusText,
+                  style: TextStyle(
+                    color: statusColor,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+        trailing: granted
+            ? null
+            : TextButton(
+                onPressed: onTap,
+                child: const Text('설정 열기'),
+              ),
+      ),
+    );
+  }
+}
+

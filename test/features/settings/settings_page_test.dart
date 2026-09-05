@@ -60,8 +60,8 @@ void main() {
   // Grown again for T10's 알림 채널 section -- five more rows pushed 화면/계정
   // further down than the previous 1400px height could still inflate.
   Future<void> growSurface(WidgetTester tester) async {
-    await tester.binding.setSurfaceSize(const Size(800, 1900));
-    tester.view.physicalSize = const Size(800, 1900);
+    await tester.binding.setSurfaceSize(const Size(800, 2400));
+    tester.view.physicalSize = const Size(800, 2400);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(() {
       tester.view.resetPhysicalSize();
@@ -78,6 +78,8 @@ void main() {
 
       expect(find.text('알림'), findsOneWidget);
       expect(find.text('정확한 알람'), findsOneWidget);
+      expect(find.text('전체화면 알림 (Android 14+)'), findsOneWidget);
+      expect(find.text('다른 앱 위에 표시'), findsOneWidget);
       expect(find.text('마이크'), findsOneWidget);
       expect(find.text('동작 줄이기'), findsOneWidget);
       // No platform channel under flutter test, so status degrades gracefully.
@@ -143,7 +145,7 @@ void main() {
     await tester.pumpWidget(wrap(FakePlannerRepository()));
     await tester.pumpAndSettle();
 
-    for (final minutes in const [5, 10, 15]) {
+    for (final minutes in const [3, 5, 10, 15, 20, 30]) {
       expect(find.widgetWithText(ChoiceChip, '$minutes분'), findsOneWidget);
     }
     final defaultChip = tester.widget<ChoiceChip>(
@@ -165,6 +167,19 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(settingsLog.last.snoozeMinutes, 15);
+  });
+
+  testWidgets('shows the test alarm tile and clicking without segments shows snackbar',
+      (tester) async {
+    await growSurface(tester);
+    await tester.pumpWidget(wrap(FakePlannerRepository()));
+    await tester.pumpAndSettle();
+
+    expect(find.text('강력 알람 5초 뒤 테스트'), findsOneWidget);
+    await tester.tap(find.text('강력 알람 5초 뒤 테스트'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('등록된 구간이 없어요. 구간을 먼저 추가해 주세요.'), findsOneWidget);
   });
 
   testWidgets(

@@ -151,6 +151,7 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
 
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+    final settings = ref.watch(settingsProvider).value ?? const AppSettings.defaults();
 
     if (segment == null) {
       return Scaffold(
@@ -275,31 +276,30 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
                           ),
                         ],
                         SizedBox(height: compact ? 20 : 36),
+                        // 1. 탭해서 N분 뒤 다시 울림 (설정된 스누즈 시간)
+                        SizedBox(
+                          width: double.infinity,
+                          height: compact ? 48 : 56,
+                          child: FilledButton.tonalIcon(
+                            onPressed: () => _snooze(segment!, settings.snoozeMinutes),
+                            icon: const Icon(Icons.snooze),
+                            label: Text(
+                              '탭해서 ${settings.snoozeMinutes}분 뒤 다시 울림',
+                              style: TextStyle(
+                                fontSize: compact ? 14 : 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ),
+                        SizedBox(height: compact ? 10 : 16),
+                        // 2. 밀어서 끄고 시작하기
                         _SlideToDismiss(
                           label: '밀어서 끄고 시작하기',
                           onDismiss: () => _dismiss(segment!),
                         ),
-                        SizedBox(height: compact ? 12 : 20),
-                        Text('지금 하기 어렵다면', style: theme.textTheme.labelSmall?.copyWith(color: mutedColor)),
-                        const SizedBox(height: 6),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                          children: [
-                            OutlinedButton(
-                              onPressed: () => _snooze(segment!, 5),
-                              child: const Text('+5분'),
-                            ),
-                            OutlinedButton(
-                              onPressed: () => _snooze(segment!, 15),
-                              child: const Text('+15분'),
-                            ),
-                            OutlinedButton(
-                              onPressed: () => _snooze(segment!, 30),
-                              child: const Text('+30분'),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 6),
+                        SizedBox(height: compact ? 6 : 10),
+                        // 3. 오늘은 건너뛰기
                         TextButton(
                           onPressed: () => _skipToday(segment!),
                           child: const Text('오늘은 건너뛰기'),
@@ -349,7 +349,7 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
   // (see NotificationService.scheduleSnooze) rather than just disappearing
   // until tomorrow, which is what a bare 해제/무시 would do.
   void _snooze(Segment segment, int snoozeMinutes) {
-    unawaited(_cancelThenScheduleSnooze(segment));
+    unawaited(_cancelThenScheduleSnooze(segment, snoozeMinutes));
     // pop, not maybePop: this screen's PopScope(canPop: false) blocks
     // maybePop()/popDisposition-based pops (that's the whole point -- it's
     // what stops a stray system back gesture) but does NOT affect this direct
@@ -370,15 +370,18 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
   // "cancel whatever's armed for this id" -- silently wiping out the just-armed
   // snooze. Awaiting cancel to fully finish first makes the order
   // deterministic: cancel today's ring, *then* arm the snooze.
-  Future<void> _cancelThenScheduleSnooze(Segment segment) async {
+  Future<void> _cancelThenScheduleSnooze(Segment segment, [int? snoozeMinutes]) async {
     await _tryCancelNotification();
-    await _tryScheduleSnooze(segment);
+    await _tryScheduleSnooze(segment, snoozeMinutes);
   }
 
-  Future<void> _tryScheduleSnooze(Segment segment) async {
+  Future<void> _tryScheduleSnooze(Segment segment, [int? snoozeMinutes]) async {
     try {
-      final settings =
+      final baseSettings =
           ref.read(settingsProvider).value ?? const AppSettings.defaults();
+      final settings = snoozeMinutes != null
+          ? baseSettings.copyWith(snoozeMinutes: snoozeMinutes)
+          : baseSettings;
       await ref
           .read(notificationServiceProvider)
           .scheduleSnooze(segment: segment, settings: settings);

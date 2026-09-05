@@ -448,6 +448,7 @@ class NotificationService {
           durationMs: _alarmRepeatMs,
           repeatInterval: const Duration(days: 1),
           watchAlarm: true,
+          segmentId: spec.segmentId,
         );
       }
     }
@@ -642,6 +643,39 @@ class NotificationService {
       durationMs: _alarmRepeatMs,
       repeatInterval: Duration.zero,
       watchAlarm: true,
+      segmentId: segment.id,
+    );
+  }
+
+  /// Schedules a one-time test alarm in [delaySeconds] (default 5s) to verify
+  /// full-screen takeover, sound, and vibration.
+  Future<void> scheduleTestAlarm({
+    required Segment segment,
+    required AppSettings settings,
+    int delaySeconds = 5,
+  }) async {
+    await _ensureChannels(settings);
+    const id = 99999;
+    final triggerAt = tz.TZDateTime.now(tz.local).add(Duration(seconds: delaySeconds));
+    await _plugin.zonedSchedule(
+      id,
+      '[테스트] ${segment.name}',
+      '강력 알람 테스트 중입니다.',
+      triggerAt,
+      NotificationDetails(android: _androidDetailsFor(settings)),
+      uiLocalNotificationDateInterpretation:
+          UILocalNotificationDateInterpretation.absoluteTime,
+      androidScheduleMode: AndroidScheduleMode.alarmClock,
+      payload: 'block:${segment.id}',
+    );
+    await _scheduleVibrationAlarm(
+      requestCode: id,
+      triggerAt: triggerAt,
+      pattern: vibrationPatternFor(settings.vibrationPattern),
+      durationMs: _alarmRepeatMs,
+      repeatInterval: Duration.zero,
+      watchAlarm: true,
+      segmentId: segment.id,
     );
   }
 
@@ -706,6 +740,7 @@ class NotificationService {
     // wrist. (No name payload: the watch reads the ringing block names from
     // its synced checklist.)
     bool watchAlarm = false,
+    String? segmentId,
   }) async {
     try {
       await _alarmChannelChannel.invokeMethod('scheduleVibrationAlarm', {
@@ -719,10 +754,50 @@ class NotificationService {
         'durationMs': durationMs,
         'repeatIntervalMs': repeatInterval.inMilliseconds,
         'watchAlarm': watchAlarm,
+        'segmentId': ?segmentId,
       });
     } catch (e) {
       // No platform channel available (e.g. under flutter test).
       logSwallowed('scheduleVibrationAlarm', e);
+    }
+  }
+
+  /// Checks whether Android 14+'s USE_FULL_SCREEN_INTENT permission is granted.
+  /// (Always returns true on Android 13 and below, or in tests).
+  Future<bool> checkFullScreenIntentPermission() async {
+    try {
+      final res = await _alarmChannelChannel.invokeMethod<bool>('checkFullScreenIntent');
+      return res ?? true;
+    } catch (_) {
+      return true;
+    }
+  }
+
+  /// Opens Android 14+'s "Full screen notifications" special access settings.
+  Future<void> openFullScreenIntentSettings() async {
+    try {
+      await _alarmChannelChannel.invokeMethod('openFullScreenIntentSettings');
+    } catch (e) {
+      logSwallowed('openFullScreenIntentSettings', e);
+    }
+  }
+
+  /// Checks whether SYSTEM_ALERT_WINDOW ("다른 앱 위에 표시") permission is granted.
+  Future<bool> checkOverlayPermission() async {
+    try {
+      final res = await _alarmChannelChannel.invokeMethod<bool>('checkOverlayPermission');
+      return res ?? true;
+    } catch (_) {
+      return true;
+    }
+  }
+
+  /// Opens Android's "Display over other apps" (다른 앱 위에 표시) settings.
+  Future<void> openOverlaySettings() async {
+    try {
+      await _alarmChannelChannel.invokeMethod('openOverlaySettings');
+    } catch (e) {
+      logSwallowed('openOverlaySettings', e);
     }
   }
 }

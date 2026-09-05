@@ -11,6 +11,7 @@ import android.media.AudioAttributes
 import android.media.RingtoneManager
 import android.net.Uri
 import android.os.Build
+import android.os.Bundle
 import android.os.VibrationAttributes
 import android.os.VibrationEffect
 import android.os.Vibrator
@@ -44,11 +45,62 @@ class MainActivity : FlutterActivity() {
     // Set while an AlarmScreen is showing: lets native treat a power-button
     // press (ACTION_SCREEN_OFF) as "dismiss this alarm" and call back into Dart.
     private var alarmChannel: MethodChannel? = null
+    private var triggerChannel: MethodChannel? = null
+    private var pendingAlarmData: Map<String, Any>? = null
     private var screenOffReceiver: BroadcastReceiver? = null
     private var guardedNotificationId: Int = -1
 
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        enableLockScreenDisplay()
+        handleAlarmIntent(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        enableLockScreenDisplay()
+        handleAlarmIntent(intent)
+    }
+
+    private fun enableLockScreenDisplay() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            setShowWhenLocked(true)
+            setTurnScreenOn(true)
+        } else {
+            @Suppress("DEPRECATION")
+            window.addFlags(
+                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
+                WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD
+            )
+        }
+    }
+
+    private fun handleAlarmIntent(intent: Intent?) {
+        if (intent == null) return
+        if (intent.getBooleanExtra("alarm_trigger", false)) {
+            val notifId = intent.getIntExtra("notification_id", -1)
+            val segmentId = intent.getStringExtra("segment_id") ?: ""
+            val data = mapOf<String, Any>("notificationId" to notifId, "segmentId" to segmentId)
+            val ch = triggerChannel
+            if (ch != null) {
+                ch.invokeMethod("onAlarmTriggered", data)
+            } else {
+                pendingAlarmData = data
+            }
+        }
+    }
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+
+        val trigCh = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "com.adhdplanner.adhd_planner/alarm_trigger")
+        triggerChannel = trigCh
+        pendingAlarmData?.let {
+            trigCh.invokeMethod("onAlarmTriggered", it)
+            pendingAlarmData = null
+        }
 
         // Screen-wake toggle (settings option). FLAG_KEEP_SCREEN_ON only keeps
         // the screen on while THIS activity is in the foreground, so it
@@ -182,6 +234,54 @@ class MainActivity : FlutterActivity() {
                     "openChannelSettings" -> {
                         openChannelSettings(call, result)
                     }
+                    "checkFullScreenIntent" -> {
+                        if (Build.VERSION.SDK_INT >= 34) {
+                            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                            result.success(nm.canUseFullScreenIntent())
+                        } else {
+                            result.success(true)
+                        }
+                    }
+                    "openFullScreenIntentSettings" -> {
+                        if (Build.VERSION.SDK_INT >= 34) {
+                            try {
+                                val intent = Intent("android.settings.MANAGE_APP_USE_FULL_SCREEN_INTENT").apply {
+                                    data = Uri.parse("package:$packageName")
+                                }
+                                startActivity(intent)
+                            } catch (_: Exception) {
+                                val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                    data = Uri.parse("package:$packageName")
+                                }
+                                startActivity(intent)
+                            }
+                        }
+                        result.success(null)
+                    }
+                    "checkOverlayPermission" -> {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                            result.success(android.provider.Settings.canDrawOverlays(this))
+                        } else {
+                            result.success(true)
+                        }
+                    }
+                    "openOverlaySettings" -> {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                            try {
+                                val intent = Intent(
+                                    android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                    Uri.parse("package:$packageName")
+                                )
+                                startActivity(intent)
+                            } catch (_: Exception) {
+                                val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                    data = Uri.parse("package:$packageName")
+                                }
+                                startActivity(intent)
+                            }
+                        }
+                        result.success(null)
+                    }
                     "syncAlarmMetadata" -> {
                         val restDays = call.argument<List<String>>("restDays") ?: emptyList()
                         @Suppress("UNCHECKED_CAST")
@@ -278,6 +378,7 @@ class MainActivity : FlutterActivity() {
         val durationMs = (call.argument<Number>("durationMs"))!!.toLong()
         val repeatIntervalMs = (call.argument<Number>("repeatIntervalMs"))!!.toLong()
         val watchAlarm = call.argument<Boolean>("watchAlarm") ?: false
+        val segmentId = call.argument<String>("segmentId")
 
         VibrationAlarmReceiver.schedule(
             applicationContext,
@@ -287,6 +388,7 @@ class MainActivity : FlutterActivity() {
             durationMs,
             repeatIntervalMs,
             watchAlarm,
+            segmentId,
         )
         result.success(null)
     }

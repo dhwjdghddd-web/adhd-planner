@@ -54,6 +54,8 @@ class VibrationAlarmReceiver : BroadcastReceiver() {
 
         val shouldSuppress = (isRestToday && scheduleTarget == "workDaysOnly") || (!isRestToday && scheduleTarget == "restDaysOnly")
 
+        val segmentId = intent.getStringExtra(EXTRA_SEGMENT_ID)
+
         // Recurring (daily) routine alarms re-arm themselves for next day right
         // here -- mirrors how flutter_local_notifications' own
         // matchDateTimeComponents reschedules itself, so this stays in sync
@@ -67,6 +69,7 @@ class VibrationAlarmReceiver : BroadcastReceiver() {
                 durationMs,
                 repeatIntervalMs,
                 watchAlarm,
+                segmentId,
             )
         }
 
@@ -95,6 +98,22 @@ class VibrationAlarmReceiver : BroadcastReceiver() {
             val pending = goAsync()
             WearAlarmMessenger.sendRing(context) { pending.finish() }
         }
+
+        // Bring MainActivity directly to the foreground so the full-screen AlarmScreen displays immediately
+        // without waiting for the user to tap the notification popup banner.
+        try {
+            val launchIntent = Intent(context, MainActivity::class.java).apply {
+                action = Intent.ACTION_MAIN
+                addCategory(Intent.CATEGORY_LAUNCHER)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                putExtra("alarm_trigger", true)
+                putExtra("notification_id", requestCode)
+                if (segmentId != null) putExtra("segment_id", segmentId)
+            }
+            context.startActivity(launchIntent)
+        } catch (e: Exception) {
+            android.util.Log.w("VibrationAlarmReceiver", "Failed to auto-launch MainActivity for alarm", e)
+        }
     }
 
     companion object {
@@ -104,6 +123,7 @@ class VibrationAlarmReceiver : BroadcastReceiver() {
         private const val EXTRA_REQUEST_CODE = "requestCode"
         private const val EXTRA_BUZZ_UNTIL_MS = "buzzUntilMs"
         private const val EXTRA_WATCH_ALARM = "watchAlarm"
+        private const val EXTRA_SEGMENT_ID = "segmentId"
 
         // Marks the self-rescheduling in-alarm buzz continuations. A distinct
         // action keeps its PendingIntent separate from the daily re-arm's
@@ -152,10 +172,11 @@ class VibrationAlarmReceiver : BroadcastReceiver() {
             durationMs: Long,
             repeatIntervalMs: Long,
             watchAlarm: Boolean = false,
+            segmentId: String? = null,
         ) {
             val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
             val pendingIntent = pendingIntentFor(
-                context, requestCode, pattern, durationMs, repeatIntervalMs, watchAlarm,
+                context, requestCode, pattern, durationMs, repeatIntervalMs, watchAlarm, segmentId,
             )
             val info = AlarmManager.AlarmClockInfo(triggerAtMillis, pendingIntent)
             alarmManager.setAlarmClock(info, pendingIntent)
@@ -329,6 +350,7 @@ class VibrationAlarmReceiver : BroadcastReceiver() {
             durationMs: Long,
             repeatIntervalMs: Long,
             watchAlarm: Boolean,
+            segmentId: String? = null,
         ): PendingIntent {
             val intent = Intent(context, VibrationAlarmReceiver::class.java).apply {
                 putExtra(EXTRA_PATTERN, pattern)
@@ -336,6 +358,9 @@ class VibrationAlarmReceiver : BroadcastReceiver() {
                 putExtra(EXTRA_REPEAT_INTERVAL_MS, repeatIntervalMs)
                 putExtra(EXTRA_REQUEST_CODE, requestCode)
                 putExtra(EXTRA_WATCH_ALARM, watchAlarm)
+                if (segmentId != null) {
+                    putExtra(EXTRA_SEGMENT_ID, segmentId)
+                }
             }
             return PendingIntent.getBroadcast(
                 context,
