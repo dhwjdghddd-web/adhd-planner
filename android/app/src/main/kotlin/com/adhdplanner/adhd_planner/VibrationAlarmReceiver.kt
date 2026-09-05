@@ -25,6 +25,7 @@ class VibrationAlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val pattern = intent.getLongArrayExtra(EXTRA_PATTERN) ?: return
         val requestCode = intent.getIntExtra(EXTRA_REQUEST_CODE, 0)
+        val amplitude = intent.getIntExtra(EXTRA_AMPLITUDE, 255)
 
         // A continuation of the in-alarm buzz loop (see below): keep buzzing in
         // short cycles until the window ends OR the user removes the alarm
@@ -36,8 +37,8 @@ class VibrationAlarmReceiver : BroadcastReceiver() {
             val buzzUntil = intent.getLongExtra(EXTRA_BUZZ_UNTIL_MS, 0L)
             if (System.currentTimeMillis() >= buzzUntil) return
             if (!isAlarmNotificationActive(context, requestCode)) return
-            startVibration(context, pattern, BUZZ_CYCLE_MS)
-            scheduleBuzzContinuation(context, requestCode, pattern, buzzUntil)
+            startVibration(context, pattern, BUZZ_CYCLE_MS, amplitude)
+            scheduleBuzzContinuation(context, requestCode, pattern, buzzUntil, amplitude)
             return
         }
 
@@ -70,6 +71,7 @@ class VibrationAlarmReceiver : BroadcastReceiver() {
                 repeatIntervalMs,
                 watchAlarm,
                 segmentId,
+                amplitude,
             )
         }
 
@@ -83,13 +85,14 @@ class VibrationAlarmReceiver : BroadcastReceiver() {
         // Buzz now, then hand off to the swipe-aware loop for the rest of the
         // window (durationMs): short cycles that stop as soon as the alarm
         // notification is gone.
-        startVibration(context, pattern, BUZZ_CYCLE_MS)
+        startVibration(context, pattern, BUZZ_CYCLE_MS, amplitude)
         val window = if (durationMs > 0L) durationMs else BUZZ_CYCLE_MS
         scheduleBuzzContinuation(
             context,
             requestCode,
             pattern,
             System.currentTimeMillis() + window,
+            amplitude,
         )
 
         // Block alarms also ring the watch companion. goAsync keeps this
@@ -124,6 +127,7 @@ class VibrationAlarmReceiver : BroadcastReceiver() {
         private const val EXTRA_BUZZ_UNTIL_MS = "buzzUntilMs"
         private const val EXTRA_WATCH_ALARM = "watchAlarm"
         private const val EXTRA_SEGMENT_ID = "segmentId"
+        private const val EXTRA_AMPLITUDE = "amplitude"
 
         // Marks the self-rescheduling in-alarm buzz continuations. A distinct
         // action keeps its PendingIntent separate from the daily re-arm's
@@ -173,10 +177,11 @@ class VibrationAlarmReceiver : BroadcastReceiver() {
             repeatIntervalMs: Long,
             watchAlarm: Boolean = false,
             segmentId: String? = null,
+            amplitude: Int = 255,
         ) {
             val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
             val pendingIntent = pendingIntentFor(
-                context, requestCode, pattern, durationMs, repeatIntervalMs, watchAlarm, segmentId,
+                context, requestCode, pattern, durationMs, repeatIntervalMs, watchAlarm, segmentId, amplitude,
             )
             val info = AlarmManager.AlarmClockInfo(triggerAtMillis, pendingIntent)
             alarmManager.setAlarmClock(info, pendingIntent)
@@ -251,10 +256,11 @@ class VibrationAlarmReceiver : BroadcastReceiver() {
             requestCode: Int,
             pattern: LongArray,
             buzzUntil: Long,
+            amplitude: Int = 255,
         ) {
             val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
             val pendingIntent =
-                buzzLoopPendingIntent(context, requestCode, pattern, buzzUntil)
+                buzzLoopPendingIntent(context, requestCode, pattern, buzzUntil, amplitude)
             val triggerAt = System.currentTimeMillis() + LOOP_INTERVAL_MS
             alarmManager.setAlarmClock(
                 AlarmManager.AlarmClockInfo(triggerAt, pendingIntent),
@@ -267,12 +273,14 @@ class VibrationAlarmReceiver : BroadcastReceiver() {
             requestCode: Int,
             pattern: LongArray,
             buzzUntil: Long,
+            amplitude: Int = 255,
         ): PendingIntent {
             val intent = Intent(context, VibrationAlarmReceiver::class.java).apply {
                 action = ACTION_BUZZ_LOOP
                 putExtra(EXTRA_PATTERN, pattern)
                 putExtra(EXTRA_REQUEST_CODE, requestCode)
                 putExtra(EXTRA_BUZZ_UNTIL_MS, buzzUntil)
+                putExtra(EXTRA_AMPLITUDE, amplitude)
             }
             return PendingIntent.getBroadcast(
                 context,
@@ -282,7 +290,25 @@ class VibrationAlarmReceiver : BroadcastReceiver() {
             )
         }
 
-        private fun startVibration(context: Context, pattern: LongArray, durationMs: Long) {
+        fun createVibrationEffect(vibrator: Vibrator, pattern: LongArray, amplitude: Int): VibrationEffect {
+            val clampedAmp = amplitude.coerceIn(1, 255)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                if (vibrator.hasAmplitudeControl()) {
+                    val amplitudes = IntArray(pattern.size) { i ->
+                        if (i % 2 == 0) 0 else clampedAmp
+                    }
+                    return VibrationEffect.createWaveform(pattern, amplitudes, -1)
+                }
+            }
+            return VibrationEffect.createWaveform(pattern, -1)
+        }
+
+        private fun startVibration(
+            context: Context,
+            pattern: LongArray,
+            durationMs: Long,
+            amplitude: Int = 255,
+        ) {
             val vibrator = vibratorFor(context)
             // A *finite* waveform sized to fill durationMs, played once
             // (repeatIndex -1) -- NOT an infinitely-repeating waveform
@@ -294,14 +320,15 @@ class VibrationAlarmReceiver : BroadcastReceiver() {
             // on its own with no callback needed; cancel() (below) still
             // works for an explicit 확인/미루기/넘기기 stop.
             val waveform = if (durationMs > 0L) finitePattern(pattern, durationMs) else pattern
+            val effect = createVibrationEffect(vibrator, waveform, amplitude)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 val attrs = VibrationAttributes.Builder()
                     .setUsage(VibrationAttributes.USAGE_ALARM)
                     .build()
-                vibrator.vibrate(VibrationEffect.createWaveform(waveform, -1), attrs)
+                vibrator.vibrate(effect, attrs)
             } else {
                 @Suppress("DEPRECATION")
-                vibrator.vibrate(VibrationEffect.createWaveform(waveform, -1))
+                vibrator.vibrate(effect)
             }
         }
 
@@ -351,6 +378,7 @@ class VibrationAlarmReceiver : BroadcastReceiver() {
             repeatIntervalMs: Long,
             watchAlarm: Boolean,
             segmentId: String? = null,
+            amplitude: Int = 255,
         ): PendingIntent {
             val intent = Intent(context, VibrationAlarmReceiver::class.java).apply {
                 putExtra(EXTRA_PATTERN, pattern)
@@ -358,6 +386,7 @@ class VibrationAlarmReceiver : BroadcastReceiver() {
                 putExtra(EXTRA_REPEAT_INTERVAL_MS, repeatIntervalMs)
                 putExtra(EXTRA_REQUEST_CODE, requestCode)
                 putExtra(EXTRA_WATCH_ALARM, watchAlarm)
+                putExtra(EXTRA_AMPLITUDE, amplitude)
                 if (segmentId != null) {
                     putExtra(EXTRA_SEGMENT_ID, segmentId)
                 }

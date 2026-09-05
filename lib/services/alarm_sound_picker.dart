@@ -34,15 +34,18 @@ Future<AlarmSoundPick?> pickAlarmSound({String? currentUri}) async {
 
 /// Plays [pattern] (the same `[pause, on, off, on, off, ...]` millisecond
 /// list the real alarm channel uses) once on the device's vibration motor,
-/// so picking a pattern in Settings is a felt choice rather than a guess
+/// so picking a pattern/intensity in Settings is a felt choice rather than a guess
 /// from the label alone. No-op if there's no platform channel (iOS, tests).
-Future<void> previewVibration(List<int> pattern) async {
+Future<void> previewVibration(List<int> pattern, {int amplitude = 255}) async {
   try {
     // .toList() rather than passing a typed list (e.g. Int64List) through
     // as-is: a plain Dart List always arrives as a Java/Kotlin List via the
     // standard method codec, which is what MainActivity.kt's handler
     // expects -- a typed list instead maps to a raw long[].
-    await _channel.invokeMethod('previewVibration', {'vibrationPattern': pattern.toList()});
+    await _channel.invokeMethod('previewVibration', {
+      'vibrationPattern': pattern.toList(),
+      'amplitude': amplitude,
+    });
   } catch (_) {
     // No platform channel available -- nothing to preview.
   }

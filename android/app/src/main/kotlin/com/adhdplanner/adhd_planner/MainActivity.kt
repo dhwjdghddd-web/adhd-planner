@@ -341,6 +341,7 @@ class MainActivity : FlutterActivity() {
         val vibrationPattern = call.argument<List<*>>("vibrationPattern")!!
             .map { (it as Number).toLong() }
             .toLongArray()
+        val amplitude = (call.argument<Number>("amplitude"))?.toInt() ?: 255
 
         val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             val vibratorManager = getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
@@ -350,14 +351,16 @@ class MainActivity : FlutterActivity() {
             getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
         }
 
+        val effect = VibrationAlarmReceiver.createVibrationEffect(vibrator, vibrationPattern, amplitude)
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             val attrs = VibrationAttributes.Builder()
                 .setUsage(VibrationAttributes.USAGE_ALARM)
                 .build()
-            vibrator.vibrate(VibrationEffect.createWaveform(vibrationPattern, -1), attrs)
+            vibrator.vibrate(effect, attrs)
         } else {
             @Suppress("DEPRECATION")
-            vibrator.vibrate(VibrationEffect.createWaveform(vibrationPattern, -1))
+            vibrator.vibrate(effect)
         }
         result.success(null)
     }
@@ -379,6 +382,7 @@ class MainActivity : FlutterActivity() {
         val repeatIntervalMs = (call.argument<Number>("repeatIntervalMs"))!!.toLong()
         val watchAlarm = call.argument<Boolean>("watchAlarm") ?: false
         val segmentId = call.argument<String>("segmentId")
+        val amplitude = (call.argument<Number>("amplitude"))?.toInt() ?: 255
 
         VibrationAlarmReceiver.schedule(
             applicationContext,
@@ -389,6 +393,7 @@ class MainActivity : FlutterActivity() {
             repeatIntervalMs,
             watchAlarm,
             segmentId,
+            amplitude,
         )
         result.success(null)
     }

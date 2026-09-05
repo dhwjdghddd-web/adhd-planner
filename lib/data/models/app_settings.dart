@@ -25,6 +25,26 @@ enum AlarmVibrationPattern {
   };
 }
 
+/// Named vibration intensity level for alarms.
+enum AlarmVibrationIntensity {
+  strong,
+  normal,
+  gentle;
+
+  String get label => switch (this) {
+    AlarmVibrationIntensity.strong => '강하게 (최대)',
+    AlarmVibrationIntensity.normal => '보통',
+    AlarmVibrationIntensity.gentle => '부드럽게',
+  };
+
+  /// Android VibrationEffect amplitude (1~255).
+  int get amplitude => switch (this) {
+    AlarmVibrationIntensity.strong => 255,
+    AlarmVibrationIntensity.normal => 180,
+    AlarmVibrationIntensity.gentle => 100,
+  };
+}
+
 /// Single-document user preferences: theme, accessibility scaling, alarm
 /// sound/vibration choice, and the last-known permission state for exact
 /// alarms (STEP 8/12).
@@ -39,6 +59,7 @@ class AppSettings {
   final String? alarmSoundUri;
   final String? alarmSoundLabel;
   final AlarmVibrationPattern vibrationPattern;
+  final AlarmVibrationIntensity vibrationIntensity;
   // Day-key (yyyy-MM-dd) of the last day the "all of today's checklist done"
   // celebration was shown, so it fires at most once per day. null = never.
   final String? lastCelebratedDate;
@@ -80,6 +101,7 @@ class AppSettings {
     this.alarmSoundUri,
     this.alarmSoundLabel,
     this.vibrationPattern = AlarmVibrationPattern.defaultPattern,
+    this.vibrationIntensity = AlarmVibrationIntensity.strong,
     this.lastCelebratedDate,
     this.lastPartialCelebratedDate,
     this.snoozeMinutes = 10,
@@ -105,6 +127,7 @@ class AppSettings {
     // `alarmSoundUri: null` argument can't be told apart from "unchanged".
     bool clearAlarmSound = false,
     AlarmVibrationPattern? vibrationPattern,
+    AlarmVibrationIntensity? vibrationIntensity,
     String? lastCelebratedDate,
     String? lastPartialCelebratedDate,
     int? snoozeMinutes,
@@ -128,6 +151,7 @@ class AppSettings {
           ? null
           : (alarmSoundLabel ?? this.alarmSoundLabel),
       vibrationPattern: vibrationPattern ?? this.vibrationPattern,
+      vibrationIntensity: vibrationIntensity ?? this.vibrationIntensity,
       lastCelebratedDate: lastCelebratedDate ?? this.lastCelebratedDate,
       lastPartialCelebratedDate:
           lastPartialCelebratedDate ?? this.lastPartialCelebratedDate,
@@ -151,6 +175,7 @@ class AppSettings {
     'alarmSoundUri': alarmSoundUri,
     'alarmSoundLabel': alarmSoundLabel,
     'vibrationPattern': vibrationPattern.name,
+    'vibrationIntensity': vibrationIntensity.name,
     'lastCelebratedDate': lastCelebratedDate,
     'lastPartialCelebratedDate': lastPartialCelebratedDate,
     'snoozeMinutes': snoozeMinutes,
@@ -176,6 +201,10 @@ class AppSettings {
     vibrationPattern: AlarmVibrationPattern.values.firstWhere(
       (v) => v.name == map['vibrationPattern'],
       orElse: () => AlarmVibrationPattern.defaultPattern,
+    ),
+    vibrationIntensity: AlarmVibrationIntensity.values.firstWhere(
+      (v) => v.name == map['vibrationIntensity'],
+      orElse: () => AlarmVibrationIntensity.strong,
     ),
     lastCelebratedDate: map['lastCelebratedDate'] as String?,
     lastPartialCelebratedDate: map['lastPartialCelebratedDate'] as String?,

@@ -14,6 +14,7 @@ void main() {
       expect(settings.alarmSoundUri, isNull);
       expect(settings.alarmSoundLabel, isNull);
       expect(settings.vibrationPattern, AlarmVibrationPattern.defaultPattern);
+      expect(settings.vibrationIntensity, AlarmVibrationIntensity.strong);
       expect(settings.snoozeMinutes, 10);
       expect(settings.leadMinutes, 10);
     });
@@ -27,6 +28,7 @@ void main() {
           reduceMotion: true,
           exactAlarmGranted: true,
           onboardingComplete: true,
+          vibrationIntensity: AlarmVibrationIntensity.gentle,
         );
 
         final restored = AppSettings.fromMap(settings.toMap());
@@ -36,6 +38,7 @@ void main() {
         expect(restored.reduceMotion, true);
         expect(restored.exactAlarmGranted, true);
         expect(restored.onboardingComplete, true);
+        expect(restored.vibrationIntensity, AlarmVibrationIntensity.gentle);
       },
     );
 
@@ -63,6 +66,7 @@ void main() {
           alarmSoundUri: 'content://media/some/sound',
           alarmSoundLabel: '신나는 알람',
           vibrationPattern: AlarmVibrationPattern.long,
+          vibrationIntensity: AlarmVibrationIntensity.normal,
         );
 
         final restored = AppSettings.fromMap(settings.toMap());
@@ -70,6 +74,7 @@ void main() {
         expect(restored.alarmSoundUri, 'content://media/some/sound');
         expect(restored.alarmSoundLabel, '신나는 알람');
         expect(restored.vibrationPattern, AlarmVibrationPattern.long);
+        expect(restored.vibrationIntensity, AlarmVibrationIntensity.normal);
       },
     );
 
@@ -79,6 +84,7 @@ void main() {
         final restored = AppSettings.fromMap(const {'themeMode': 'dark'});
         expect(restored.alarmSoundUri, isNull);
         expect(restored.vibrationPattern, AlarmVibrationPattern.defaultPattern);
+        expect(restored.vibrationIntensity, AlarmVibrationIntensity.strong);
       },
     );
 

@@ -169,17 +169,36 @@ void main() {
     expect(settingsLog.last.snoozeMinutes, 15);
   });
 
-  testWidgets('shows the test alarm tile and clicking without segments shows snackbar',
+  testWidgets('shows vibration intensity choices with strong selected by default',
       (tester) async {
     await growSurface(tester);
     await tester.pumpWidget(wrap(FakePlannerRepository()));
     await tester.pumpAndSettle();
 
-    expect(find.text('강력 알람 5초 뒤 테스트'), findsOneWidget);
-    await tester.tap(find.text('강력 알람 5초 뒤 테스트'));
+    for (final intensity in AlarmVibrationIntensity.values) {
+      expect(find.widgetWithText(ChoiceChip, intensity.label), findsOneWidget);
+    }
+    final defaultChip = tester.widget<ChoiceChip>(
+      find.widgetWithText(ChoiceChip, AlarmVibrationIntensity.strong.label),
+    );
+    expect(defaultChip.selected, true);
+  });
+
+  testWidgets('picking a different vibration intensity persists it', (tester) async {
+    final repo = FakePlannerRepository();
+    final settingsLog = <AppSettings>[];
+    repo.watchSettings().listen(settingsLog.add);
+
+    await growSurface(tester);
+    await tester.pumpWidget(wrap(repo));
     await tester.pumpAndSettle();
 
-    expect(find.text('등록된 구간이 없어요. 구간을 먼저 추가해 주세요.'), findsOneWidget);
+    await tester.tap(
+      find.widgetWithText(ChoiceChip, AlarmVibrationIntensity.normal.label),
+    );
+    await tester.pumpAndSettle();
+
+    expect(settingsLog.last.vibrationIntensity, AlarmVibrationIntensity.normal);
   });
 
   testWidgets(

@@ -103,34 +103,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
     }
   }
 
-  Future<void> _testAlarm(AppSettings settings) async {
-    final segments = ref.read(segmentsProvider).value ?? const [];
-    if (segments.isEmpty) {
-      showAppSnackBar(
-        context,
-        const Text('등록된 구간이 없어요. 구간을 먼저 추가해 주세요.'),
-      );
-      return;
-    }
-    final targetSegment = segments.first;
-    try {
-      await ref.read(notificationServiceProvider).scheduleTestAlarm(
-        segment: targetSegment,
-        settings: settings,
-        delaySeconds: 5,
-      );
-      if (!mounted) return;
-      showAppSnackBar(
-        context,
-        const Text('5초 뒤 강력 알람이 울려요! 지금 바로 화면을 잠가보세요.'),
-        duration: const Duration(seconds: 4),
-      );
-    } catch (e, st) {
-      reportError(e, st, where: '강력 알람 테스트');
-      if (!mounted) return;
-      showAppSnackBar(context, const Text('알람 테스트 예약에 실패했어요.'));
-    }
-  }
 
   Future<void> _requestOrOpenSettings(Permission permission) async {
     try {
@@ -183,8 +155,24 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
     AppSettings settings,
     AlarmVibrationPattern pattern,
   ) async {
-    unawaited(previewVibration(vibrationPatternFor(pattern)));
+    unawaited(previewVibration(
+      vibrationPatternFor(pattern),
+      amplitude: settings.vibrationIntensity.amplitude,
+    ));
     final updated = settings.copyWith(vibrationPattern: pattern);
+    await ref.read(settingsControllerProvider).save(updated);
+    await _rescheduleAlarms(updated);
+  }
+
+  Future<void> _setVibrationIntensity(
+    AppSettings settings,
+    AlarmVibrationIntensity intensity,
+  ) async {
+    unawaited(previewVibration(
+      vibrationPatternFor(settings.vibrationPattern),
+      amplitude: intensity.amplitude,
+    ));
+    final updated = settings.copyWith(vibrationIntensity: intensity);
     await ref.read(settingsControllerProvider).save(updated);
     await _rescheduleAlarms(updated);
   }
@@ -479,6 +467,34 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+          child: Text('진동 세기', style: Theme.of(context).textTheme.bodyMedium),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final intensity in AlarmVibrationIntensity.values)
+                ChoiceChip(
+                  label: Text(intensity.label),
+                  selected: settings.vibrationIntensity == intensity,
+                  onSelected: (_) => _setVibrationIntensity(settings, intensity),
+                ),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          child: Text(
+            '※ 기기 전체 진동 세기는 휴대전화 "설정 > 소리 및 진동 > 진동 세기"의 영향도 받아요.',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
           child: Text(
             '스누즈 시간 (알람에서 "다시 울림" 눌렀을 때)',
             style: Theme.of(context).textTheme.bodyMedium,
@@ -498,13 +514,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
                 ),
             ],
           ),
-        ),
-        ListTile(
-          leading: const Icon(Icons.alarm_on_outlined),
-          title: const Text('강력 알람 5초 뒤 테스트'),
-          subtitle: const Text('버튼을 누르고 화면을 끄면 5초 뒤 실제 알람이 울려요.'),
-          trailing: const Icon(Icons.play_circle_outline),
-          onTap: () => _testAlarm(settings),
         ),
         ListTile(
           leading: const Icon(Icons.calendar_month_outlined),

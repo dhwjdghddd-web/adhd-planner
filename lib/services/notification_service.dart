@@ -109,7 +109,7 @@ String _channelSuffix(AppSettings settings) {
   final soundKey = (settings.alarmSoundUri ?? 'default').hashCode
       .toUnsigned(20)
       .toRadixString(36);
-  return '${soundKey}_${settings.vibrationPattern.name}';
+  return '${soundKey}_${settings.vibrationPattern.name}_${settings.vibrationIntensity.name}';
 }
 
 String _alarmChannelId(AppSettings settings) =>
@@ -449,6 +449,7 @@ class NotificationService {
           repeatInterval: const Duration(days: 1),
           watchAlarm: true,
           segmentId: spec.segmentId,
+          amplitude: settings.vibrationIntensity.amplitude,
         );
       }
     }
@@ -644,6 +645,7 @@ class NotificationService {
       repeatInterval: Duration.zero,
       watchAlarm: true,
       segmentId: segment.id,
+      amplitude: settings.vibrationIntensity.amplitude,
     );
   }
 
@@ -676,6 +678,7 @@ class NotificationService {
       repeatInterval: Duration.zero,
       watchAlarm: true,
       segmentId: segment.id,
+      amplitude: settings.vibrationIntensity.amplitude,
     );
   }
 
@@ -741,6 +744,7 @@ class NotificationService {
     // its synced checklist.)
     bool watchAlarm = false,
     String? segmentId,
+    int amplitude = 255,
   }) async {
     try {
       await _alarmChannelChannel.invokeMethod('scheduleVibrationAlarm', {
@@ -755,6 +759,7 @@ class NotificationService {
         'repeatIntervalMs': repeatInterval.inMilliseconds,
         'watchAlarm': watchAlarm,
         'segmentId': ?segmentId,
+        'amplitude': amplitude,
       });
     } catch (e) {
       // No platform channel available (e.g. under flutter test).
