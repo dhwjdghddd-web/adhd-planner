@@ -1,5 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'models/achieved_day.dart';
 import 'models/alarm_skip.dart';
@@ -15,6 +16,10 @@ import 'models/segment.dart';
 import 'repositories/firestore/firestore_planner_repository.dart';
 import 'repositories/planner_repository.dart';
 
+/// 앱 전역 SharedPreferences 인스턴스 Provider.
+/// main()에서 SharedPreferences.getInstance()를 로드해 overrideWithValue로 주입합니다.
+final sharedPreferencesProvider = Provider<SharedPreferences?>((ref) => null);
+
 /// Firebase 인증 사용자 스트림. userChanges()는 로그인/로그아웃뿐 아니라
 /// **연결(link)** 으로 providerData가 바뀔 때도 emit하므로, 익명→구글 연결을
 /// UI가 즉시 반영할 수 있다(연결은 uid를 바꾸지 않아 authStateChanges로는
@@ -23,37 +28,34 @@ final firebaseUserProvider = StreamProvider<User?>(
   (ref) => FirebaseAuth.instance.userChanges(),
 );
 
+/// main() 시작 시 FirebaseAuth에서 확정한 초기 uid.
+final initialUidProvider = Provider<String?>((ref) => null);
+
 /// 현재 활성 계정의 uid. select로 uid만 골라, 토큰 갱신 같은 잡음에는
 /// 리빌드되지 않고 **uid가 실제로 바뀔 때만**(로그인/로그아웃/계정전환)
 /// 아래 repository가 새로 만들어지게 한다.
-final currentUidProvider = Provider<String?>(
-  (ref) => ref.watch(firebaseUserProvider.select((s) => s.valueOrNull?.uid)),
-);
+final currentUidProvider = Provider<String?>((ref) {
+  final streamUid =
+      ref.watch(firebaseUserProvider.select((s) => s.valueOrNull?.uid));
+  final initialUid = ref.watch(initialUidProvider);
+  final fallbackUid = FirebaseAuth.instance.currentUser?.uid;
+  return streamUid ?? initialUid ?? fallbackUid;
+});
 
 /// 활성 계정 uid 아래의 Firestore 저장소.
-///
-/// uid가 null(= signOut 직후 signInAnonymously 완료 전 극히 짧은 순간)이면
-/// **null을 반환**한다. 아래 StreamProvider들은 null을 받으면 빈 스트림을
-/// emit하여, auth가 없는 순간 Firestore에 절대 접근하지 않는다.
-/// → permission-denied 에러가 발생하지 않는다.
-///
-/// **테스트 불변식(절대 깨지 말 것):** 이 provider는 평범한 Provider로 두어
-/// 테스트가 FakePlannerRepository로 override할 수 있게 한다. override하면 위
-/// auth provider들은 빌드되지 않으므로(=Firebase 접근 없음) 테스트에서 안전하다.
 final plannerRepositoryProvider = Provider<PlannerRepository?>((ref) {
-  final uid =
-      ref.watch(currentUidProvider) ?? FirebaseAuth.instance.currentUser?.uid;
+  final uid = ref.watch(currentUidProvider);
   if (uid == null) return null;
   return FirestorePlannerRepository(uid);
 });
 
-/// uid가 null인 순간(signOut ↔ signInAnonymously 사이)에는 empty 스트림을
-/// 반환하는 헬퍼. Firestore에 접근하지 않으므로 permission-denied가 뜨지 않는다.
+/// uid가 null인 순간(signOut ↔ signInAnonymously 사이)에는 empty 스트림 대신
+/// 빈 리스트 스트림을 반환하여, StreamProvider가 영구 로딩에 갇히지 않도록 안전 보호합니다.
 Stream<List<T>> _guardedStream<T>(
   PlannerRepository? repo,
   Stream<List<T>> Function(PlannerRepository) watch,
 ) {
-  if (repo == null) return const Stream.empty();
+  if (repo == null) return Stream.value(const []);
   return watch(repo);
 }
 

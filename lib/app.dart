@@ -131,45 +131,43 @@ class _RootRouter extends ConsumerStatefulWidget {
 
 class _RootRouterState extends ConsumerState<_RootRouter> {
   /// 마지막으로 확인된 onboardingComplete 값.
-  /// null이면 아직 첫 데이터를 받지 못한 것(앱 최초 로딩).
   bool? _lastOnboarded;
 
   @override
   Widget build(BuildContext context) {
+    final prefs = ref.watch(sharedPreferencesProvider);
+    final localOnboarded = prefs?.getBool('onboardingComplete');
     final repo = ref.watch(plannerRepositoryProvider);
     final settingsAsync = ref.watch(settingsProvider);
 
-    // build 중에 직접 갱신(여분의 setState/microtask 없음).
-    // auth 전환으로 settingsProvider가 loading이다가 data로 돌아오면
-    // 이 build가 다시 호출되어 _lastOnboarded가 자동 유지된다.
-    //
-    // 단, 계정이 없는 동안(repo == null) settingsProvider가 흘리는 값은 이
-    // 사용자의 설정이 아니라 AppSettings.defaults() 자리표시자이고, 그
-    // onboardingComplete는 false다. 그대로 기록하면 오프라인으로 실행한 기존
-    // 사용자가 온보딩 화면으로 떨어져 "데이터가 다 날아갔다"처럼 보인다.
-    // 그래서 진짜 계정이 붙어 있을 때의 값만 신뢰한다.
     if (repo != null) {
-      settingsAsync.whenData((s) => _lastOnboarded = s.onboardingComplete);
+      settingsAsync.whenData((s) {
+        _lastOnboarded = s.onboardingComplete;
+        if (s.onboardingComplete) {
+          prefs?.setBool('onboardingComplete', true);
+        }
+      });
     }
 
-    // 컨테스트가 있으면 loading/error 구간에도 화면을 유지한다.
-    // 이로써 로그아웃 시 OnboardingPage([SuppressGlobalFab] 포함)가
-    // 좌대 mount/unmount되어 fabSuppressionCount가 꽔이는 현상을 방지한다.
-    final onboarded = _lastOnboarded;
+    // 1. 메모리 캐시 또는 로컬 영구 캐시(SharedPreferences)가 있으면
+    // 백그라운드 재개 시 Firestore 스트림 지연을 기다릴 필요 없이 0초 만에 오늘 화면 렌더링!
+    final onboarded = _lastOnboarded ?? localOnboarded;
     if (onboarded != null) {
       return onboarded ? const PlannerPage() : const OnboardingPage();
     }
 
-    // 캐시도 없고 계정도 없다 = 시작 시 로그인이 실패한 첫 실행(오프라인 등).
-    // 온보딩/오늘 중 무엇을 보여줄지는 이 사용자의 실제 설정을 읽어야 알 수
-    // 있으므로, 판단을 미루고 기다린다. main.dart의 재시도가 성공하면 이 build가
-    // 다시 돌면서 진짜 설정값으로 라우팅된다.
+    // 2. 캐시도 없고 계정도 없다 = 시작 시 로그인이 실패한 첫 실행(오프라인 등).
     if (repo == null) return const _WaitingForAccount();
 
-    // 캐시 없음 = 앱 최초 로딩.
+    // 3. 앱 완전 최초 설치 실행 (아직 온보딩 완료 전)
     return settingsAsync.when(
-      data: (s) =>
-          s.onboardingComplete ? const PlannerPage() : const OnboardingPage(),
+      data: (s) {
+        if (s.onboardingComplete) {
+          prefs?.setBool('onboardingComplete', true);
+          return const PlannerPage();
+        }
+        return const OnboardingPage();
+      },
       loading: () =>
           const Scaffold(body: Center(child: CircularProgressIndicator())),
       error: (e, st) => Scaffold(body: errorView(e, st)),

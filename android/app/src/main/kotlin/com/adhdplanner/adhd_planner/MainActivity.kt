@@ -38,6 +38,31 @@ import io.flutter.plugin.common.MethodChannel
 /// channel even though the sound itself plays fine. Building the channel
 /// here instead is the only way to clear that flag.
 class MainActivity : FlutterActivity() {
+    companion object {
+        @Volatile
+        var isAppInForeground: Boolean = false
+    }
+
+    override fun onStart() {
+        super.onStart()
+        isAppInForeground = true
+    }
+
+    override fun onResume() {
+        super.onResume()
+        isAppInForeground = true
+    }
+
+    override fun onStop() {
+        super.onStop()
+        isAppInForeground = false
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        isAppInForeground = false
+    }
+
     private val channelName = "com.adhdplanner.adhd_planner/alarm_sound"
     private val pickRequestCode = 4242
     private var pendingResult: MethodChannel.Result? = null

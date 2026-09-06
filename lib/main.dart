@@ -10,19 +10,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:shared_preferences/shared_preferences.dart';
+
 import 'app.dart';
 import 'core/debug_log.dart';
 import 'core/error_reporting.dart';
+import 'data/providers.dart';
 import 'data/repositories/firestore/firestore_planner_repository.dart';
 import 'firebase_options.dart';
 import 'services/notification_service.dart';
 
 void main() {
-  // runZonedGuarded + the two global handlers funnel EVERY uncaught error --
-  // Flutter framework errors, async/platform errors, and the app's many
-  // `unawaited(...)` writes that throw -- through reportError, so failures
-  // that used to vanish silently leave a trail (and reach a crash reporter
-  // once one is wired into reportError).
   runZonedGuarded(() async {
     WidgetsFlutterBinding.ensureInitialized();
     FlutterError.onError = (details) =>
@@ -32,59 +30,55 @@ void main() {
       return true;
     };
 
-    // Portrait-only: the circular dial / Focus / alarm layouts are designed
-    // for a tall screen, and landscape squeezes them into overflow. Lock it
-    // here (plus android:screenOrientation="portrait" in the manifest).
     await SystemChrome.setPreferredOrientations(const [
       DeviceOrientation.portraitUp,
       DeviceOrientation.portraitDown,
     ]);
 
-    // Never throws -- see _startFirebase. Returns null if we couldn't get an
-    // account this launch (offline, auth blocked); the app still starts.
+    final prefs = await SharedPreferences.getInstance();
+
     final uid = await _startFirebase();
 
-    // UI first -- don't hold the first frame hostage behind a permission
-    // dialog or a Firestore round trip. Notification permission/scheduling
-    // runs right after, off the critical path (see below).
-    runApp(const ProviderScope(child: App()));
+    runApp(
+      ProviderScope(
+        overrides: [
+          sharedPreferencesProvider.overrideWithValue(prefs),
+          if (uid != null) initialUidProvider.overrideWithValue(uid),
+        ],
+        child: const App(),
+      ),
+    );
 
-    // No account yet -> nothing to schedule against. _retryAnonymousSignIn
-    // keeps trying, and app.dart's _AccountAlarmSync schedules the moment a
-    // repository appears, so a late sign-in still arms the alarms.
     if (uid != null) unawaited(_initNotificationsInBackground(uid));
   }, (error, stack) => reportError(error, stack, where: 'runZonedGuarded'));
 }
 
 /// Firebase init + "always signed in" -- and **never throws**.
-///
-/// Everything here used to run inline before `runApp`, so a single failure on
-/// the startup path skipped `runApp` entirely and left the app frozen on its
-/// splash screen forever. That is not a theoretical case: launching with no
-/// connectivity (or with this build's signing key not yet allowed by the
-/// Firebase API key restriction) made `signInAnonymously` throw, and the app
-/// simply never appeared. An offline-capable app (Firestore persistence is on)
-/// has no business refusing to start, so failures here degrade to "no account
-/// yet" and the UI comes up regardless.
-///
-/// Returns the signed-in uid, or null if we couldn't get one this launch.
 Future<String?> _startFirebase() async {
   try {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
-    );
+    ).timeout(const Duration(seconds: 4));
+  } catch (e, st) {
+    reportError(e, st, where: 'Firebase 초기화');
+  }
+
+  try {
     FirebaseFirestore.instance.settings = const Settings(
       persistenceEnabled: true,
     );
+  } catch (e) {
+    // WearListenerService 등 백그라운드에서 네이티브 Firestore가 이미 실행 중인 경우
+    // settings 재설정 시 예외가 발생할 수 있으므로 안전하게 격리합니다.
+    logSwallowed('Firestore settings 적용', e);
+  }
 
-    // Only ship crash reports from release builds -- debug runs would otherwise
-    // spam the console with noise from intentional/test errors.
+  try {
     await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(
       !kDebugMode,
     );
-  } catch (e, st) {
-    reportError(e, st, where: 'Firebase 초기화');
-    return null; // Firebase 자체가 없으면 로그인도 불가 -- 재시도해도 소용없다.
+  } catch (e) {
+    logSwallowed('Crashlytics 초기화', e);
   }
 
   // 항상 로그인 상태 보장: 아무 계정도 없으면 익명으로 시작.
@@ -92,12 +86,9 @@ Future<String?> _startFirebase() async {
   if (existing != null) return existing.uid;
 
   try {
-    // The timeout is for a *hung* request, not a failing one (offline fails
-    // fast on its own) -- without it a stalled sign-in would hold the first
-    // frame back, which is the very thing this function exists to prevent.
     final credential = await FirebaseAuth.instance
         .signInAnonymously()
-        .timeout(const Duration(seconds: 10));
+        .timeout(const Duration(seconds: 5));
     return credential.user?.uid;
   } catch (e, st) {
     reportError(e, st, where: '익명 로그인');

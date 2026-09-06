@@ -15,6 +15,9 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -23,6 +26,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -39,6 +43,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.style.TextAlign
@@ -443,14 +449,46 @@ fun ChecklistScreen(
                     }
                 }
 
+                val configuration = LocalConfiguration.current
+                val isRound = configuration.isScreenRound
+                // 원형 화면 곡률 및 TimeText를 고려한 크기별 반응형 상하 여백
+                val topPadding = if (isRound) 38.dp else 24.dp
+                val bottomPadding = if (isRound) 40.dp else 24.dp
+
+                // 스크롤 최상단일 때만 시계가 온전하게(100%) 표시되고 스크롤 시 부드럽게 숨겨지도록 자체 제어
+                val isAtTop = !listState.canScrollBackward
+                val timeTextAlpha by animateFloatAsState(
+                    targetValue = if (isAtTop) 1f else 0f,
+                    animationSpec = tween(durationMillis = 200),
+                    label = "timeTextAlpha",
+                )
+                val timeTextOffsetY by animateDpAsState(
+                    targetValue = if (isAtTop) 0.dp else (-24).dp,
+                    animationSpec = tween(durationMillis = 200),
+                    label = "timeTextOffset",
+                )
+
                 ScreenScaffold(
-                    scrollState = listState,
-                    timeText = { TimeText() },
-                ) { contentPadding ->
+                    timeText = {
+                        if (timeTextAlpha > 0.001f) {
+                            TimeText(
+                                modifier = Modifier.graphicsLayer {
+                                    alpha = timeTextAlpha
+                                    translationY = timeTextOffsetY.toPx()
+                                }
+                            )
+                        }
+                    },
+                ) { _ ->
                     Box(modifier = Modifier.fillMaxSize()) {
                         ScalingLazyColumn(
                             state = listState,
-                            contentPadding = contentPadding,
+                            contentPadding = PaddingValues(
+                                top = topPadding,
+                                bottom = bottomPadding,
+                                start = 12.dp,
+                                end = 12.dp,
+                            ),
                             autoCentering = null,
                             scalingParams = ScalingLazyColumnDefaults.scalingParams(
                                 edgeScale = 1f,
@@ -468,7 +506,7 @@ fun ChecklistScreen(
                                 Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(top = 16.dp, bottom = 6.dp),
+                                        .padding(top = 4.dp, bottom = 6.dp),
                                     contentAlignment = Alignment.Center,
                                 ) {
                                     Box(
@@ -677,12 +715,12 @@ fun ChecklistScreen(
                             }
                         }
 
-                        // 화면 상단 고정 플로팅 오버레이 안내 카드 (스크롤 위치와 무관하게 화면 상단 중앙에 노출)
+                        // 화면 상단 고정 플로팅 오버레이 안내 카드 (시계 바로 아래에 선명하게 노출)
                         if (recentMemoSaved != null) {
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(top = 22.dp, start = 12.dp, end = 12.dp)
+                                    .padding(top = if (isRound) 36.dp else 24.dp, start = 12.dp, end = 12.dp)
                                     .align(Alignment.TopCenter),
                                 contentAlignment = Alignment.Center,
                             ) {

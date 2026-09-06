@@ -230,10 +230,23 @@ class WearListenerService : WearableListenerService() {
             .set(memoMap)
             .addOnSuccessListener {
                 android.util.Log.i("WearListener", "addMemo successfully saved memo: $memoId, text: ${text.trim()}")
+                cleanupBackgroundProcessIfIdle()
             }
             .addOnFailureListener { e ->
                 android.util.Log.e("WearListener", "addMemo failed to save memo: $memoId", e)
+                cleanupBackgroundProcessIfIdle()
             }
+    }
+
+    private fun cleanupBackgroundProcessIfIdle() {
+        if (!MainActivity.isAppInForeground) {
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                if (!MainActivity.isAppInForeground) {
+                    android.util.Log.i("WearListener", "Cleaning up idle background process to prevent freezing")
+                    android.os.Process.killProcess(android.os.Process.myPid())
+                }
+            }, 800L)
+        }
     }
 
     companion object {
