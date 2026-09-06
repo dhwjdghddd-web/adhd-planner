@@ -35,8 +35,14 @@ class VibrationAlarmReceiver : BroadcastReceiver() {
         // heads-up alarm makes the buzzing stop.
         if (intent.action == ACTION_BUZZ_LOOP) {
             val buzzUntil = intent.getLongExtra(EXTRA_BUZZ_UNTIL_MS, 0L)
-            if (System.currentTimeMillis() >= buzzUntil) return
-            if (!isAlarmNotificationActive(context, requestCode)) return
+            if (System.currentTimeMillis() >= buzzUntil) {
+                clearRingingAlarm(context, requestCode)
+                return
+            }
+            if (!isAlarmNotificationActive(context, requestCode)) {
+                clearRingingAlarm(context, requestCode)
+                return
+            }
             startVibration(context, pattern, BUZZ_CYCLE_MS, amplitude)
             scheduleBuzzContinuation(context, requestCode, pattern, buzzUntil, amplitude)
             return
@@ -90,11 +96,13 @@ class VibrationAlarmReceiver : BroadcastReceiver() {
         // notification is gone.
         startVibration(context, pattern, BUZZ_CYCLE_MS, amplitude)
         val window = if (durationMs > 0L) durationMs else BUZZ_CYCLE_MS
+        val until = System.currentTimeMillis() + window
+        setRingingAlarm(context, requestCode, until)
         scheduleBuzzContinuation(
             context,
             requestCode,
             pattern,
-            System.currentTimeMillis() + window,
+            until,
             amplitude,
         )
 
@@ -194,7 +202,27 @@ class VibrationAlarmReceiver : BroadcastReceiver() {
             setActiveCodes(context, activeCodes(context).apply { add(requestCode.toString()) })
         }
 
+        private fun setRingingAlarm(context: Context, id: Int, untilMs: Long) {
+            val prefs = context.getSharedPreferences("adhd_alarm_prefs", Context.MODE_PRIVATE)
+            prefs.edit().putInt("ringing_alarm_id", id).putLong("ringing_until_ms", untilMs).apply()
+        }
+
+        private fun clearRingingAlarm(context: Context, id: Int) {
+            val prefs = context.getSharedPreferences("adhd_alarm_prefs", Context.MODE_PRIVATE)
+            if (prefs.getInt("ringing_alarm_id", -1) == id) {
+                prefs.edit().remove("ringing_alarm_id").remove("ringing_until_ms").apply()
+            }
+        }
+
+        private fun isCurrentlyRinging(context: Context, id: Int): Boolean {
+            val prefs = context.getSharedPreferences("adhd_alarm_prefs", Context.MODE_PRIVATE)
+            val ringingId = prefs.getInt("ringing_alarm_id", -1)
+            val untilMs = prefs.getLong("ringing_until_ms", 0L)
+            return ringingId == id && System.currentTimeMillis() < untilMs
+        }
+
         fun cancel(context: Context, requestCode: Int) {
+            clearRingingAlarm(context, requestCode)
             val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
             // Extras don't factor into PendingIntent equality (only the
             // Intent's action/component/data and this requestCode do), so
@@ -223,6 +251,10 @@ class VibrationAlarmReceiver : BroadcastReceiver() {
             val cancelled = ArrayList<Int>()
             for (code in activeCodes(context)) {
                 val requestCode = code.toIntOrNull() ?: continue
+                if (isCurrentlyRinging(context, requestCode)) {
+                    // 현재 울리고 있는 알람은 취소하지 않고 진동 루프를 보호
+                    continue
+                }
                 alarmManager.cancel(
                     pendingIntentFor(context, requestCode, longArrayOf(0), 0L, 0L, false),
                 )
@@ -231,12 +263,14 @@ class VibrationAlarmReceiver : BroadcastReceiver() {
                 }
                 cancelled.add(requestCode)
             }
-            setActiveCodes(context, emptySet())
-            // NB: no stopVibration(context) and no WearAlarmMessenger.sendStop here!
-            // cancelAll runs during routine rescheduleAll (incl. the cold start when
-            // an alarm fires), and stopping vibration here kills the buzz of a
-            // legitimately-ringing alarm. Only the explicit single cancel()
-            // (a real dismiss) signals the watch and stops the vibration.
+            val prefs = context.getSharedPreferences("adhd_alarm_prefs", Context.MODE_PRIVATE)
+            val ringingId = prefs.getInt("ringing_alarm_id", -1)
+            val remaining = if (ringingId != -1 && isCurrentlyRinging(context, ringingId)) {
+                setOf(ringingId.toString())
+            } else {
+                emptySet()
+            }
+            setActiveCodes(context, remaining)
             return cancelled
         }
 

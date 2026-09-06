@@ -374,15 +374,15 @@ class NotificationService {
     await _syncAlarmMetadata(segments, restDays);
     final restDateKeys = restDays.map((r) => r.dateKey).toSet();
 
-    // 기존 알람을 전부 비우고 아래에서 현재 blocks만 다시 건다.
-    // 네이티브가 자체 보관하는 requestCode 집합으로 진동 알람을 전부 취소하고
-    // 그 id들을 받아, 같은 id의 flutter_local_notifications 알림도 id별로
-    // 지운 뒤 cancelAll()로 마무리(혹시 모를 누락 방지).
+    // 기존 알람 중 불필요해진 항목들을 정리하고 현재 blocks만 다시 건다.
+    // 네이티브가 보관하는 미울림 requestCode 목록을 취소하고,
+    // 그 id들에 대해 flutter_local_notifications 알람을 취소한다.
+    // ※ 현재 울리고 있는 알람을 닫아버려 진동 루프가 끊어지는 버그를 막기 위해
+    // 여기서는 cancelAll()을 호출하지 않고 stale id만 개별 취소한다.
     final staleIds = await _cancelAllVibrationAlarms();
     for (final id in staleIds) {
       await _plugin.cancel(id);
     }
-    await _plugin.cancelAll();
 
     final specs = buildSchedule(
       segments,
