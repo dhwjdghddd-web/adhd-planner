@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../core/constants.dart';
@@ -12,6 +11,8 @@ import '../../core/wheel_time_picker.dart';
 import '../../data/models/segment.dart';
 import '../../data/providers.dart';
 import '../memos/quick_add_button.dart';
+import '../../data/models/routine_preset.dart';
+import 'multi_date_picker_dialog.dart';
 import 'segment_icons.dart';
 import 'segments_controller.dart';
 
@@ -22,7 +23,12 @@ const _uuid = Uuid();
 /// Reachable from [SegmentEditorPage]'s list, the home dial's "구간 추가" FAB,
 /// or by tapping a block's arc on the home dial.
 class SegmentFormPage extends ConsumerStatefulWidget {
-  const SegmentFormPage({super.key, this.existing, this.initialName});
+  const SegmentFormPage({
+    super.key,
+    this.existing,
+    this.initialName,
+    this.initialPresetId,
+  });
 
   final Segment? existing;
 
@@ -30,6 +36,7 @@ class SegmentFormPage extends ConsumerStatefulWidget {
   /// text straight into a block) — ignored when [existing] is set, since an
   /// edit always starts from that block's own name.
   final String? initialName;
+  final String? initialPresetId;
 
   @override
   ConsumerState<SegmentFormPage> createState() => _SegmentFormPageState();
@@ -50,6 +57,7 @@ class _SegmentFormPageState extends ConsumerState<SegmentFormPage> {
   late int _leadWarningMinutes;
   late bool _isFirstBlock;
   late Map<String, int> _dateOverrides;
+  late String _presetId;
   late List<String> _microSteps;
   // Parallel to _microSteps, one stable id per item so ReorderableListView can
   // track each item's identity across reorders -- the items are plain strings
@@ -75,6 +83,7 @@ class _SegmentFormPageState extends ConsumerState<SegmentFormPage> {
     _leadWarningMinutes = existing?.leadWarningMinutes ?? 10;
     _isFirstBlock = existing?.isFirstBlock ?? false;
     _dateOverrides = Map<String, int>.from(existing?.dateOverrides ?? {});
+    _presetId = existing?.presetId ?? widget.initialPresetId ?? 'work';
     _microSteps = [...(existing?.microSteps ?? const <String>[])];
     _microStepKeyIds = List.generate(
       _microSteps.length,
@@ -140,17 +149,15 @@ class _SegmentFormPageState extends ConsumerState<SegmentFormPage> {
   }
 
   Future<void> _addDateOverride() async {
-    final now = DateTime.now();
-    final pickedDate = await showDatePicker(
-      context: context,
-      initialDate: now,
-      firstDate: now.subtract(const Duration(days: 1)),
-      lastDate: now.add(const Duration(days: 365)),
-      helpText: '기상 시간을 다르게 설정할 날짜 선택',
+    final pickedDates = await MultiDatePickerDialog.show(
+      context,
+      title: '기상 시간 다르게 설정할 날짜 선택',
     );
-    if (pickedDate == null || !mounted) return;
+    if (pickedDates == null || pickedDates.isEmpty || !mounted) return;
 
-    final dateKey = DateFormat('yyyy-MM-dd').format(pickedDate);
+    final dateSummary = pickedDates.length == 1
+        ? pickedDates.first
+        : '${pickedDates.length}개 날짜 선택됨';
 
     final action = await showModalBottomSheet<String>(
       context: context,
@@ -162,20 +169,20 @@ class _SegmentFormPageState extends ConsumerState<SegmentFormPage> {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
               child: Text(
-                '$dateKey 기상 알람 설정',
+                '$dateSummary 기상 알람 설정',
                 style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
               ),
             ),
             ListTile(
               leading: const Icon(Icons.access_time),
               title: const Text('기상 시간 직접 설정'),
-              subtitle: const Text('해당 날짜에 일어날 시각을 지정합니다'),
+              subtitle: const Text('선택한 날짜들에 일어날 시각을 일괄 지정합니다'),
               onTap: () => Navigator.pop(ctx, 'time'),
             ),
             ListTile(
               leading: const Icon(Icons.notifications_off_outlined, color: Colors.orange),
               title: const Text('알람 없음 (울리지 않음)'),
-              subtitle: const Text('해당 날짜에는 아침 기상 알람이 울리지 않습니다'),
+              subtitle: const Text('선택한 날짜들에는 아침 기상 알람이 울리지 않습니다'),
               onTap: () => Navigator.pop(ctx, 'none'),
             ),
             const SizedBox(height: 12),
@@ -187,20 +194,20 @@ class _SegmentFormPageState extends ConsumerState<SegmentFormPage> {
 
     if (action == 'none') {
       setState(() {
-        _dateOverrides[dateKey] = Segment.noAlarmMinute;
+        for (final d in pickedDates) {
+          _dateOverrides[d] = Segment.noAlarmMinute;
+        }
       });
       return;
     }
 
-    final initialMinute = (_dateOverrides[dateKey] != null &&
-            _dateOverrides[dateKey] != Segment.noAlarmMinute)
-        ? _dateOverrides[dateKey]!
-        : _startMinute;
-    final pickedMinute = await pickWheelMinute(context, initialMinute);
+    final pickedMinute = await pickWheelMinute(context, _startMinute);
     if (pickedMinute == null || !mounted) return;
 
     setState(() {
-      _dateOverrides[dateKey] = pickedMinute;
+      for (final d in pickedDates) {
+        _dateOverrides[d] = pickedMinute;
+      }
     });
   }
 
@@ -225,6 +232,7 @@ class _SegmentFormPageState extends ConsumerState<SegmentFormPage> {
       leadWarningMinutes: _leadWarningMinutes,
       isFirstBlock: _isFirstBlock,
       dateOverrides: _dateOverrides,
+      presetId: _presetId,
       notificationIds: widget.existing?.notificationIds ?? const [],
     );
 
@@ -318,6 +326,34 @@ class _SegmentFormPageState extends ConsumerState<SegmentFormPage> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
+            const Text('소속 프리셋', style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            Builder(
+              builder: (context) {
+                final presets = ref.watch(settingsProvider).value?.presets ??
+                    RoutinePreset.defaultPresets;
+                return Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final p in presets)
+                      ChoiceChip(
+                        avatar: Icon(
+                          p.id == 'rest' ? Icons.beach_access : Icons.work,
+                          size: 16,
+                          color: _presetId == p.id
+                              ? theme.colorScheme.onPrimary
+                              : null,
+                        ),
+                        label: Text(p.name),
+                        selected: _presetId == p.id,
+                        onSelected: (_) => setState(() => _presetId = p.id),
+                      ),
+                  ],
+                );
+              },
+            ),
+            const SizedBox(height: 20),
             Semantics(
               label: '구간 이름 입력',
               child: TextField(
@@ -512,7 +548,7 @@ class _SegmentFormPageState extends ConsumerState<SegmentFormPage> {
                                   borderRadius: BorderRadius.circular(8),
                                   border: Border.all(
                                     color: isNone
-                                        ? Colors.orange.withOpacity(0.5)
+                                        ? Colors.orange.withValues(alpha: 0.5)
                                         : theme.colorScheme.outlineVariant,
                                   ),
                                 ),

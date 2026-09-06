@@ -27,20 +27,36 @@ void main() {
     await tester.pumpAndSettle();
 
     // Check title and today's day number
-    expect(find.text('쉬는 날(휴일) 캘린더'), findsOneWidget);
+    expect(find.text('스케줄 & 프리셋 캘린더'), findsOneWidget);
     expect(find.text('${now.year}년 ${now.month}월'), findsOneWidget);
     expect(find.text('${now.day}'), findsOneWidget);
 
-    // Tap on today's cell to toggle rest day
+    // Tap on today's cell to select it
     await tester.tap(find.text('${now.day}'));
+    await tester.pumpAndSettle();
+
+    // Bottom sheet shows up with preset actions
+    expect(find.text('선택한 1개 날짜에 프리셋 배정'), findsOneWidget);
+
+    // Tap '쉬는 날' preset button to apply
+    await tester.tap(find.widgetWithText(FilledButton, '쉬는 날'));
     await tester.pumpAndSettle();
 
     final restDays = await repo.watchRestDays().first;
     expect(restDays.map((r) => r.dateKey), contains(todayKey));
-    expect(find.byIcon(Icons.coffee), findsWidgets);
+    expect(restDays.firstWhere((r) => r.dateKey == todayKey).presetId, 'rest');
 
-    // Tap again to untoggle
+    // Wait for snackbar to dismiss
+    await tester.pump(const Duration(seconds: 4));
+    await tester.pumpAndSettle();
+
+    // Tap today again to select
     await tester.tap(find.text('${now.day}'));
+    await tester.pumpAndSettle();
+
+    // Ensure button is visible in horizontal scroll and tap
+    await tester.ensureVisible(find.text('기본값(해제)'));
+    await tester.tap(find.text('기본값(해제)'), warnIfMissed: false);
     await tester.pumpAndSettle();
 
     final restDaysAfter = await repo.watchRestDays().first;

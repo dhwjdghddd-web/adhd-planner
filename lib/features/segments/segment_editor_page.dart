@@ -7,11 +7,13 @@ import '../../core/constants.dart';
 import '../../core/error_view.dart';
 import '../../core/screen_mode.dart';
 import '../../core/time_geometry.dart';
+import '../../data/models/routine_preset.dart';
 import '../../data/models/segment.dart';
 import '../../data/providers.dart';
 import '../../data/today.dart';
 import '../memos/quick_add_button.dart';
 import 'mit_controller.dart';
+import 'preset_management_sheet.dart';
 import 'segment_form_page.dart';
 import 'segment_icons.dart';
 import 'segments_controller.dart';
@@ -22,17 +24,44 @@ class SegmentEditorPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final segmentsAsync = ref.watch(segmentsProvider);
+    final settings = ref.watch(settingsProvider).value;
+    final presets = settings?.presets ?? RoutinePreset.defaultPresets;
 
     return DefaultTabController(
-      length: 3,
+      length: presets.length + 1,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('하루 구간 관리'),
-          bottom: const TabBar(
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.settings_suggest_outlined),
+              tooltip: '프리셋 관리',
+              onPressed: () => PresetManagementSheet.show(context),
+            ),
+          ],
+          bottom: TabBar(
+            isScrollable: true,
+            tabAlignment: TabAlignment.start,
             tabs: [
-              Tab(text: '전체'),
-              Tab(text: '🏢 근무일'),
-              Tab(text: '🏖️ 쉬는 날'),
+              const Tab(text: '전체'),
+              for (final p in presets)
+                Tab(
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          color: Color(p.colorValue),
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(p.name),
+                    ],
+                  ),
+                ),
             ],
           ),
         ),
@@ -42,16 +71,13 @@ class SegmentEditorPage extends ConsumerWidget {
             data: (segments) => TabBarView(
               children: [
                 _SegmentList(segments: segments),
-                _SegmentList(
-                  segments: segments
-                      .where((s) => s.scheduleTarget != SegmentScheduleTarget.restDaysOnly)
-                      .toList(),
-                ),
-                _SegmentList(
-                  segments: segments
-                      .where((s) => s.scheduleTarget != SegmentScheduleTarget.workDaysOnly)
-                      .toList(),
-                ),
+                for (final p in presets)
+                  _SegmentList(
+                    segments: segments
+                        .where((s) => s.presetId == p.id)
+                        .toList(),
+                    currentPresetId: p.id,
+                  ),
               ],
             ),
             loading: () => const Center(child: CircularProgressIndicator()),
@@ -85,16 +111,20 @@ class SegmentEditorPage extends ConsumerWidget {
   }
 }
 
-void _openForm(BuildContext context, {Segment? existing}) {
+void _openForm(BuildContext context, {Segment? existing, String? presetId}) {
   Navigator.of(context).push(
-    MaterialPageRoute(builder: (_) => SegmentFormPage(existing: existing)),
+    MaterialPageRoute(
+      builder: (_) =>
+          SegmentFormPage(existing: existing, initialPresetId: presetId),
+    ),
   );
 }
 
 class _SegmentList extends ConsumerWidget {
-  const _SegmentList({required this.segments});
+  const _SegmentList({required this.segments, this.currentPresetId});
 
   final List<Segment> segments;
+  final String? currentPresetId;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -114,7 +144,7 @@ class _SegmentList extends ConsumerWidget {
               ),
               const SizedBox(height: 16),
               FilledButton.icon(
-                onPressed: () => _openForm(context),
+                onPressed: () => _openForm(context, presetId: currentPresetId),
                 icon: const Icon(Icons.add),
                 label: const Text('구간 추가'),
               ),
@@ -245,30 +275,31 @@ class _SegmentTile extends StatelessWidget {
                     ),
                   ),
                 ),
-              if (segment.scheduleTarget == SegmentScheduleTarget.workDaysOnly)
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: Colors.blue.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: const Text(
-                    '🏢 근무일',
-                    style: TextStyle(fontSize: 11, color: Colors.blue, fontWeight: FontWeight.w500),
-                  ),
-                )
-              else if (segment.scheduleTarget == SegmentScheduleTarget.restDaysOnly)
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: Colors.teal.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: const Text(
-                    '🏖️ 쉬는 날',
-                    style: TextStyle(fontSize: 11, color: Colors.teal, fontWeight: FontWeight.w500),
-                  ),
-                ),
+              Consumer(
+                builder: (context, ref, child) {
+                  final settings = ref.watch(settingsProvider).value;
+                  final presets = settings?.presets ?? RoutinePreset.defaultPresets;
+                  final preset = presets.firstWhere(
+                    (p) => p.id == segment.presetId,
+                    orElse: () => RoutinePreset.work,
+                  );
+                  return Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Color(preset.colorValue).withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      preset.name,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Color(preset.colorValue),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  );
+                },
+              ),
               if (segment.dateOverrides.isNotEmpty)
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),

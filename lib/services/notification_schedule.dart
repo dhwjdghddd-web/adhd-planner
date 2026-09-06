@@ -45,6 +45,7 @@ class ScheduledSpec {
     this.scheduleTarget = SegmentScheduleTarget.everyday,
     this.isLeadWarning = false,
     this.dateOverrides = const {},
+    this.presetId = 'work',
   });
 
   final int id;
@@ -57,6 +58,7 @@ class ScheduledSpec {
   // False for the main start-of-block alarm; true for the quiet "전환 예고" heads-up.
   final bool isLeadWarning;
   final Map<String, int> dateOverrides;
+  final String presetId;
 
   String get payload => isLeadWarning ? 'lead:$segmentId' : 'block:$segmentId';
 }
@@ -90,6 +92,7 @@ List<ScheduledSpec> buildSchedule(
       alarmType: segment.alarmType,
       scheduleTarget: segment.scheduleTarget,
       dateOverrides: segment.dateOverrides,
+      presetId: segment.presetId,
     ));
 
     final effectiveLead = segment.leadWarningMinutes > 0
@@ -116,6 +119,7 @@ List<ScheduledSpec> buildSchedule(
         scheduleTarget: segment.scheduleTarget,
         isLeadWarning: true,
         dateOverrides: leadOverrides,
+        presetId: segment.presetId,
       ));
     }
   }
@@ -175,6 +179,8 @@ tz.TZDateTime nextValidTriggerAt({
   required int minuteOfDay,
   required SegmentScheduleTarget scheduleTarget,
   required Set<String> restDateKeys,
+  String presetId = 'work',
+  Map<String, String> calendarPresetMap = const {},
   Map<String, int> dateOverrides = const {},
   tz.TZDateTime? now,
 }) {
@@ -183,11 +189,27 @@ tz.TZDateTime nextValidTriggerAt({
   for (var i = 0; i < 365; i++) {
     final dateKey = DateFormat('yyyy-MM-dd').format(calendarDay);
     final isRest = restDateKeys.contains(dateKey);
-    final isValid = switch (scheduleTarget) {
+
+    // If calendar has explicit preset for this day, check match.
+    // Otherwise, 'work' matches non-rest days, 'rest' matches rest days.
+    final assignedPreset = calendarPresetMap[dateKey];
+    final dayPreset = assignedPreset ?? (isRest ? 'rest' : 'work');
+
+    final effectivePresetId = switch (scheduleTarget) {
+      SegmentScheduleTarget.restDaysOnly => (presetId == 'work' ? 'rest' : presetId),
+      SegmentScheduleTarget.workDaysOnly => presetId,
+      SegmentScheduleTarget.everyday => null,
+    };
+
+    final matchesPreset = effectivePresetId == null || effectivePresetId == dayPreset;
+
+    final isValidTarget = switch (scheduleTarget) {
       SegmentScheduleTarget.everyday => true,
       SegmentScheduleTarget.workDaysOnly => !isRest,
       SegmentScheduleTarget.restDaysOnly => isRest,
     };
+    final isValid = matchesPreset && isValidTarget;
+
     final isSuppressedByOverride =
         dateOverrides[dateKey] == Segment.noAlarmMinute;
     if (isValid && !isSuppressedByOverride) {

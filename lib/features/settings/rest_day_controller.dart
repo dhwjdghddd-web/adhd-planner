@@ -30,9 +30,31 @@ class RestDayController {
   Future<void> setRestDay(String dateKey, bool isRest) async {
     final repo = _ref.read(plannerRepositoryProvider)!;
     if (isRest) {
-      await repo.saveRestDay(RestDay(dateKey: dateKey));
+      await repo.saveRestDay(RestDay(dateKey: dateKey, presetId: 'rest'));
     } else {
       await repo.removeRestDay(dateKey);
+    }
+  }
+
+  /// Sets a specific preset for a single [dateKey].
+  Future<void> setPreset(String dateKey, String presetId) async {
+    final repo = _ref.read(plannerRepositoryProvider)!;
+    await repo.saveRestDay(RestDay(dateKey: dateKey, presetId: presetId));
+  }
+
+  /// Sets a specific preset for multiple [dateKeys] at once.
+  Future<void> setPresetForDates(Iterable<String> dateKeys, String presetId) async {
+    final repo = _ref.read(plannerRepositoryProvider)!;
+    for (final key in dateKeys) {
+      await repo.saveRestDay(RestDay(dateKey: key, presetId: presetId));
+    }
+  }
+
+  /// Clears assigned presets for multiple [dateKeys] (resets to default work day).
+  Future<void> clearDates(Iterable<String> dateKeys) async {
+    final repo = _ref.read(plannerRepositoryProvider)!;
+    for (final key in dateKeys) {
+      await repo.removeRestDay(key);
     }
   }
 }

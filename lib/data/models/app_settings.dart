@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
 
+import 'routine_preset.dart';
+
 enum AppThemeMode { system, light, dark }
 
 /// Which view the home screen ('오늘') shows -- the full 24h dial, or T6's
@@ -91,6 +93,8 @@ class AppSettings {
   // Keep the device screen on while the app is in the foreground (settings
   // toggle). Off by default. See screen_wake_service.dart.
   final bool keepScreenOn;
+  // User-defined routine presets (e.g. 근무일, 쉬는 날, 당직 등).
+  final List<RoutinePreset> presets;
 
   const AppSettings({
     this.themeMode = AppThemeMode.system,
@@ -111,6 +115,7 @@ class AppSettings {
     this.checkinAlarmEnabled = false,
     this.checkinAlarmMinuteOfDay = 21 * 60,
     this.keepScreenOn = false,
+    this.presets = RoutinePreset.defaultPresets,
   });
 
   const AppSettings.defaults() : this();
@@ -137,6 +142,7 @@ class AppSettings {
     bool? checkinAlarmEnabled,
     int? checkinAlarmMinuteOfDay,
     bool? keepScreenOn,
+    List<RoutinePreset>? presets,
   }) {
     return AppSettings(
       themeMode: themeMode ?? this.themeMode,
@@ -163,6 +169,7 @@ class AppSettings {
       checkinAlarmMinuteOfDay:
           checkinAlarmMinuteOfDay ?? this.checkinAlarmMinuteOfDay,
       keepScreenOn: keepScreenOn ?? this.keepScreenOn,
+      presets: presets ?? this.presets,
     );
   }
 
@@ -185,6 +192,7 @@ class AppSettings {
     'checkinAlarmEnabled': checkinAlarmEnabled,
     'checkinAlarmMinuteOfDay': checkinAlarmMinuteOfDay,
     'keepScreenOn': keepScreenOn,
+    'presets': presets.map((p) => p.toMap()).toList(),
   };
 
   factory AppSettings.fromMap(Map<String, dynamic> map) => AppSettings(
@@ -219,5 +227,10 @@ class AppSettings {
     checkinAlarmMinuteOfDay:
         (map['checkinAlarmMinuteOfDay'] as num?)?.toInt() ?? 21 * 60,
     keepScreenOn: (map['keepScreenOn'] as bool?) ?? false,
+    presets: map['presets'] != null
+        ? (map['presets'] as List<dynamic>)
+            .map((p) => RoutinePreset.fromMap(p as Map<String, dynamic>))
+            .toList()
+        : RoutinePreset.defaultPresets,
   );
 }

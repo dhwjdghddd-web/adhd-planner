@@ -93,6 +93,8 @@ class SegmentsController {
   bool overlapsAny(Segment candidate, List<Segment> others) {
     return others.any((o) {
       if (o.id == candidate.id) return false;
+      // Blocks belonging to different presets never conflict on the same day.
+      if (o.presetId != candidate.presetId) return false;
       if ((candidate.scheduleTarget == SegmentScheduleTarget.workDaysOnly &&
               o.scheduleTarget == SegmentScheduleTarget.restDaysOnly) ||
           (candidate.scheduleTarget == SegmentScheduleTarget.restDaysOnly &&

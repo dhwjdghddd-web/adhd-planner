@@ -46,6 +46,8 @@ class Segment {
   final bool isFirstBlock;
   // Specific calendar date overrides for start minute: {"yyyy-MM-dd": minuteOfDay}.
   final Map<String, int> dateOverrides;
+  // Routine preset this block belongs to (e.g. 'work', 'rest', or custom presetId).
+  final String presetId;
   // Notification ids this block currently has scheduled.
   final List<int> notificationIds;
 
@@ -66,6 +68,7 @@ class Segment {
     bool? leadWarning,
     this.isFirstBlock = false,
     this.dateOverrides = const {},
+    this.presetId = 'work',
     this.notificationIds = const [],
   }) : alarmType = alarmType ??
            (alarmEnabled != null
@@ -163,6 +166,7 @@ class Segment {
     bool? leadWarning,
     bool? isFirstBlock,
     Map<String, int>? dateOverrides,
+    String? presetId,
     List<int>? notificationIds,
   }) {
     return Segment(
@@ -180,6 +184,7 @@ class Segment {
       leadWarningMinutes: leadWarningMinutes ?? (leadWarning != null ? (leadWarning ? 10 : 0) : this.leadWarningMinutes),
       isFirstBlock: isFirstBlock ?? this.isFirstBlock,
       dateOverrides: dateOverrides ?? this.dateOverrides,
+      presetId: presetId ?? this.presetId,
       notificationIds: notificationIds ?? this.notificationIds,
     );
   }
@@ -201,6 +206,7 @@ class Segment {
         'leadWarning': leadWarning,
         'isFirstBlock': isFirstBlock,
         'dateOverrides': dateOverrides,
+        'presetId': presetId,
         'notificationIds': notificationIds,
       };
 
@@ -251,6 +257,9 @@ class Segment {
       }
     }
 
+    final presetId = (map['presetId'] as String?) ??
+        (scheduleTarget == SegmentScheduleTarget.restDaysOnly ? 'rest' : 'work');
+
     return Segment(
       id: (map['id'] as String?) ?? '',
       name: (map['name'] as String?) ?? '',
@@ -268,6 +277,7 @@ class Segment {
       leadWarningMinutes: leadWarningMinutes,
       isFirstBlock: (map['isFirstBlock'] as bool?) ?? false,
       dateOverrides: dateOverrides,
+      presetId: presetId,
       notificationIds: (map['notificationIds'] as List? ?? const [])
           .whereType<num>()
           .map((n) => n.toInt())

@@ -391,11 +391,14 @@ class NotificationService {
       leadMinutes: settings.leadMinutes,
     );
     final now = tz.TZDateTime.now(tz.local);
+    final calendarPresetMap = {for (final r in restDays) r.dateKey: r.presetId};
     for (final spec in specs) {
       final triggerAt = nextValidTriggerAt(
         minuteOfDay: spec.minuteOfDay,
         scheduleTarget: spec.scheduleTarget,
         restDateKeys: restDateKeys,
+        presetId: spec.presetId,
+        calendarPresetMap: calendarPresetMap,
         dateOverrides: spec.dateOverrides,
         now: now,
       );

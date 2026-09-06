@@ -1,6 +1,5 @@
 import 'package:intl/intl.dart';
 
-import '../core/time_geometry.dart';
 import 'models/alarm_skip.dart';
 import 'models/completion.dart';
 import 'models/mit.dart';
@@ -58,7 +57,16 @@ DateTime tomorrowOf([DateTime? now]) {
 /// Whether [now]'s day (defaults to today) is marked a rest day ("오늘은 쉬기").
 bool isRestDayOn(List<RestDay> restDays, {DateTime? now}) {
   final key = dayKeyFor(now);
-  return restDays.any((r) => r.dateKey == key);
+  return restDays.any((r) => r.dateKey == key && r.presetId == 'rest');
+}
+
+/// Returns the assigned preset id for [now]'s day, defaulting to 'work'.
+String effectivePresetIdOn(List<RestDay> restDays, {DateTime? now}) {
+  final key = dayKeyFor(now);
+  for (final r in restDays) {
+    if (r.dateKey == key) return r.presetId;
+  }
+  return 'work';
 }
 
 /// Whether the day *after* [now] (defaults to tomorrow) is marked a rest day
@@ -71,30 +79,36 @@ bool isRestDayTomorrow(List<RestDay> restDays, {DateTime? now}) =>
 /// The "yyyy-MM-dd" keys of all rest days -- unioned into the streak's achieved
 /// set so a rest day never counts as a miss (see streakDateKeys).
 Set<String> restDateKeys(List<RestDay> restDays) => {
-  for (final r in restDays) r.dateKey,
+  for (final r in restDays)
+    if (r.presetId == 'rest') r.dateKey,
 };
 
-/// Filters segments applicable for [now]'s day based on rest day state and schedule targets,
+/// Filters segments applicable for [now]'s day based on preset or rest day state,
 /// and applies any specific date overrides for start/end minutes.
 List<Segment> todaySegments(
   List<Segment> allSegments, {
-  required bool isRestDay,
+  bool? isRestDay,
+  String? activePresetId,
   DateTime? now,
 }) {
   final key = dayKeyFor(now);
+  final targetPresetId = activePresetId ?? ((isRestDay ?? false) ? 'rest' : 'work');
+
   return allSegments.where((s) {
-    if (isRestDay && s.scheduleTarget == SegmentScheduleTarget.workDaysOnly) {
-      return false;
+    if (s.presetId == targetPresetId) return true;
+
+    // Backward compatibility for segments that haven't set presetId explicitly
+    if (targetPresetId == 'rest') {
+      return s.scheduleTarget == SegmentScheduleTarget.restDaysOnly;
+    } else if (targetPresetId == 'work') {
+      return s.scheduleTarget != SegmentScheduleTarget.restDaysOnly;
     }
-    if (!isRestDay && s.scheduleTarget == SegmentScheduleTarget.restDaysOnly) {
-      return false;
-    }
-    return true;
+    return false;
   }).map((s) {
-    if (s.dateOverrides.containsKey(key)) {
-      final overrideStart = s.dateOverrides[key]!;
-      final overrideEnd = (overrideStart + s.lengthMinutes) % TimeGeometry.minutesPerDay;
-      return s.copyWith(startMinute: overrideStart, endMinute: overrideEnd);
+    final ovStart = s.startMinuteFor(key);
+    final ovEnd = s.endMinuteFor(key);
+    if (ovStart != s.startMinute || ovEnd != s.endMinute) {
+      return s.copyWith(startMinute: ovStart, endMinute: ovEnd);
     }
     return s;
   }).toList();

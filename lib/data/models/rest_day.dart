@@ -14,19 +14,31 @@ import 'package:intl/intl.dart';
 @immutable
 class RestDay {
   final String dateKey;
+  final String presetId;
 
-  const RestDay({required this.dateKey});
+  const RestDay({
+    required this.dateKey,
+    this.presetId = 'rest',
+  });
 
   /// Builds the rest mark for [at]'s calendar day (defaults to today).
-  factory RestDay.today({DateTime? at}) {
+  factory RestDay.today({DateTime? at, String presetId = 'rest'}) {
     final n = at ?? DateTime.now();
-    return RestDay(dateKey: DateFormat('yyyy-MM-dd').format(n));
+    return RestDay(
+      dateKey: DateFormat('yyyy-MM-dd').format(n),
+      presetId: presetId,
+    );
   }
 
   String get id => dateKey;
 
-  Map<String, dynamic> toMap() => {'dateKey': dateKey};
+  Map<String, dynamic> toMap() => {
+        'dateKey': dateKey,
+        'presetId': presetId,
+      };
 
-  factory RestDay.fromMap(Map<String, dynamic> map) =>
-      RestDay(dateKey: (map['dateKey'] as String?) ?? '');
+  factory RestDay.fromMap(Map<String, dynamic> map) => RestDay(
+        dateKey: (map['dateKey'] as String?) ?? '',
+        presetId: (map['presetId'] as String?) ?? 'rest',
+      );
 }

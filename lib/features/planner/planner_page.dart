@@ -14,6 +14,7 @@ import '../../core/theme.dart';
 import '../../core/time_geometry.dart';
 import '../../data/block_status.dart';
 import '../../data/models/app_settings.dart';
+import '../../data/models/routine_preset.dart';
 import '../../data/models/segment.dart';
 import '../../data/providers.dart';
 import '../../data/today.dart';
@@ -57,36 +58,27 @@ class PlannerPage extends ConsumerStatefulWidget {
   ConsumerState<PlannerPage> createState() => _PlannerPageState();
 }
 
-enum HomeFilterMode {
-  today('📅 오늘'),
-  workDays('🏢 근무일'),
-  restDays('🏖️ 쉬는 날'),
-  all('🌐 전체 (겹침)');
-
-  const HomeFilterMode(this.label);
-  final String label;
-}
-
 class _PlannerPageState extends ConsumerState<PlannerPage> {
   late int _currentMinute;
   late final MinuteTicker _ticker;
-  HomeFilterMode _filterMode = HomeFilterMode.today;
+  String _activeFilter = 'today';
 
-  List<Segment> _filterSegments(List<Segment> all, bool isResting) {
-    switch (_filterMode) {
-      case HomeFilterMode.today:
-        return todaySegments(all, isRestDay: isResting);
-      case HomeFilterMode.workDays:
-        return all
-            .where((s) => s.scheduleTarget != SegmentScheduleTarget.restDaysOnly)
-            .toList();
-      case HomeFilterMode.restDays:
-        return all
-            .where((s) => s.scheduleTarget != SegmentScheduleTarget.workDaysOnly)
-            .toList();
-      case HomeFilterMode.all:
-        return all;
+  List<Segment> _filterSegments(
+    List<Segment> all, {
+    required bool isResting,
+    required String activePresetId,
+  }) {
+    if (_activeFilter == 'today') {
+      return todaySegments(
+        all,
+        isRestDay: isResting,
+        activePresetId: activePresetId,
+      );
     }
+    if (_activeFilter == 'all') {
+      return all;
+    }
+    return all.where((s) => s.presetId == _activeFilter).toList();
   }
 
   @override
@@ -124,8 +116,15 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
     final settings = ref.watch(settingsProvider).value;
     final homeViewMode = settings?.homeViewMode ?? HomeViewMode.dial;
     final restDays = ref.watch(restDaysProvider).value ?? const [];
+    final activePresetId = effectivePresetIdOn(restDays);
     final isResting = isRestDayOn(restDays);
     final isRestingTomorrow = isRestDayTomorrow(restDays);
+
+    final presets = settings?.presets ?? RoutinePreset.defaultPresets;
+    final activePreset = presets.firstWhere(
+      (p) => p.id == activePresetId,
+      orElse: () => RoutinePreset.work,
+    );
 
     return Scaffold(
       // 빠른메모 시트(모달, 별도 라우트)가 키보드와 함께 올라올 때 그 viewInsets가
@@ -208,19 +207,39 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  for (final mode in HomeFilterMode.values) ...[
+                  ChoiceChip(
+                    label: Text(
+                      '📅 오늘 (${activePreset.name})',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: _activeFilter == 'today'
+                            ? FontWeight.bold
+                            : FontWeight.normal,
+                      ),
+                    ),
+                    selected: _activeFilter == 'today',
+                    onSelected: (_) => setState(() => _activeFilter = 'today'),
+                    visualDensity: VisualDensity.compact,
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 4,
+                      vertical: 0,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  for (final preset in presets) ...[
                     ChoiceChip(
                       label: Text(
-                        mode.label,
+                        preset.name,
                         style: TextStyle(
                           fontSize: 12,
-                          fontWeight: _filterMode == mode
+                          fontWeight: _activeFilter == preset.id
                               ? FontWeight.bold
                               : FontWeight.normal,
                         ),
                       ),
-                      selected: _filterMode == mode,
-                      onSelected: (_) => setState(() => _filterMode = mode),
+                      selected: _activeFilter == preset.id,
+                      onSelected: (_) => setState(() => _activeFilter = preset.id),
                       visualDensity: VisualDensity.compact,
                       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       padding: const EdgeInsets.symmetric(
@@ -228,9 +247,27 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
                         vertical: 0,
                       ),
                     ),
-                    if (mode != HomeFilterMode.values.last)
-                      const SizedBox(width: 6),
+                    const SizedBox(width: 6),
                   ],
+                  ChoiceChip(
+                    label: Text(
+                      '🌐 전체 (겹침)',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: _activeFilter == 'all'
+                            ? FontWeight.bold
+                            : FontWeight.normal,
+                      ),
+                    ),
+                    selected: _activeFilter == 'all',
+                    onSelected: (_) => setState(() => _activeFilter = 'all'),
+                    visualDensity: VisualDensity.compact,
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 4,
+                      vertical: 0,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -253,7 +290,7 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
           // it behind the banner) so a rest day shows just the calm rest banner
           // on the ambient backdrop.
           Offstage(
-            offstage: isResting && _filterMode == HomeFilterMode.today,
+            offstage: isResting && _activeFilter == 'today',
             child:
                 // Header, badges, dial, and the next-block countdown are ONE
                 // vertically-centred group, balanced within the space above the
@@ -281,7 +318,11 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
                       if (isCompactLayout(context)) {
                         return segmentsAsync.maybeWhen(
                           data: (segments) => _CompactHome(
-                            segments: _filterSegments(segments, isResting),
+                            segments: _filterSegments(
+                              segments,
+                              isResting: isResting,
+                              activePresetId: activePresetId,
+                            ),
                             currentMinute: _currentMinute,
                             mitSegmentIds: mitSegmentIds,
                           ),
@@ -296,7 +337,11 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
                       if (homeViewMode == HomeViewMode.nextAction) {
                         return segmentsAsync.maybeWhen(
                           data: (segments) => _NextActionView(
-                            segments: _filterSegments(segments, isResting),
+                            segments: _filterSegments(
+                              segments,
+                              isResting: isResting,
+                              activePresetId: activePresetId,
+                            ),
                             currentMinute: _currentMinute,
                             mitSegmentIds: mitSegmentIds,
                           ),
@@ -383,7 +428,11 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
                             height: dialSize,
                             child: segmentsAsync.when(
                               data: (segments) => _Dial(
-                                segments: _filterSegments(segments, isResting),
+                                segments: _filterSegments(
+                                  segments,
+                                  isResting: isResting,
+                                  activePresetId: activePresetId,
+                                ),
                                 currentMinute: _currentMinute,
                                 completedSegmentIds: completedSegmentIds,
                                 mitSegmentIds: mitSegmentIds,
@@ -397,7 +446,11 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
                           SizedBox(height: vGap),
                           segmentsAsync.maybeWhen(
                             data: (segments) => _NextBlockCountdown(
-                              segments: _filterSegments(segments, isResting),
+                              segments: _filterSegments(
+                                segments,
+                                isResting: isResting,
+                                activePresetId: activePresetId,
+                              ),
                               currentMinute: _currentMinute,
                             ),
                             orElse: () => const SizedBox.shrink(),
@@ -421,7 +474,7 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
                   ),
                 ),
           ),
-          if (isResting && _filterMode == HomeFilterMode.today)
+          if (isResting && _activeFilter == 'today')
             Positioned.fill(
               child: IgnorePointer(
                 // Compact (cover): centre within the area ABOVE the bottom FAB
