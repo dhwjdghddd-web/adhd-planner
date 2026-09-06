@@ -31,6 +31,7 @@ String buildChecklistJson({
   required List<MicroStepProgress> progress,
   required List<MicroStepMove> moves,
   bool restToday = false,
+  bool restTomorrow = false,
   DateTime? now,
 }) {
   final todayKey = dayKeyFor(now);
@@ -46,9 +47,6 @@ String buildChecklistJson({
   // (from its own clock) which blocks are "current" (in progress) and which are
   // "starting now" (alarm) -- independent of when this was pushed, so a
   // minute-boundary lag can't show a stale/wrong set.
-  // ALL blocks (not just ones with checklist items): the alarm names every
-  // block *starting* now even if it has no items, and the watch decides
-  // current/starting from the times below.
   final blocks = <Map<String, dynamic>>[];
   for (final block in sorted) {
     final displayed = displayedStepsFor(
@@ -70,14 +68,28 @@ String buildChecklistJson({
             'text': ds.text,
             'checked':
                 checkedByHome[ds.homeSegmentId]?.contains(ds.index) ?? false,
+            'isMoved': ds.movedHere,
           },
       ],
     });
   }
 
+  // All blocks summary for watch move dialog and next block preview
+  final allBlocks = [
+    for (final b in sorted)
+      {
+        'blockId': b.id,
+        'name': b.name,
+        'start': b.startMinute,
+        'end': b.endMinute,
+      },
+  ];
+
   return jsonEncode({
     'dateKey': todayKey,
     'restToday': restToday,
+    'restTomorrow': restTomorrow,
     'blocks': blocks,
+    'allBlocks': allBlocks,
   });
 }

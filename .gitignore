@@ -54,3 +54,7 @@ screen*.png
 
 # Ad-hoc debug screenshots pulled from device
 _*.png
+
+# Agent config files
+.agents/
+GEMINI.md

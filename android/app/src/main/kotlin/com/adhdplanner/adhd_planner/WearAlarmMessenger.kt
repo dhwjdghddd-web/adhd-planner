@@ -16,8 +16,22 @@ object WearAlarmMessenger {
     private const val PATH_RING = "/alarm_ring"
     private const val PATH_STOP = "/alarm_stop"
 
-    fun sendRing(context: Context, onComplete: (() -> Unit)? = null) =
-        send(context, PATH_RING, ByteArray(0), onComplete)
+    fun sendRing(
+        context: Context,
+        amplitude: Int = 255,
+        pattern: LongArray? = null,
+        onComplete: (() -> Unit)? = null,
+    ) {
+        val json = org.json.JSONObject().apply {
+            put("amplitude", amplitude)
+            pattern?.let {
+                val arr = org.json.JSONArray()
+                for (v in it) arr.put(v)
+                put("pattern", arr)
+            }
+        }
+        send(context, PATH_RING, json.toString().toByteArray(), onComplete)
+    }
 
     fun sendStop(context: Context, onComplete: (() -> Unit)? = null) =
         send(context, PATH_STOP, ByteArray(0), onComplete)

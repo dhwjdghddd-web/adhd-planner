@@ -13,6 +13,14 @@ data class WatchItem(
     val index: Int,
     val text: String,
     val checked: Boolean,
+    val isMoved: Boolean = false,
+)
+
+data class WatchBlockSummary(
+    val blockId: String,
+    val name: String,
+    val start: Int,
+    val end: Int,
 )
 
 data class WatchBlock(
@@ -32,6 +40,8 @@ data class WatchBlock(
 data class WatchData(
     val blocks: List<WatchBlock>,
     val restToday: Boolean = false,
+    val restTomorrow: Boolean = false,
+    val allBlocks: List<WatchBlockSummary> = emptyList(),
 ) {
     // Computed from the WATCH's own clock, so it's correct at the exact alarm
     // moment regardless of when the phone last pushed (block times are static).
@@ -42,6 +52,16 @@ data class WatchData(
     // (an already-running overlapping block isn't starting now).
     fun startingBlocks(nowMinute: Int = nowMinute()): List<WatchBlock> =
         blocks.filter { it.start == nowMinute }
+
+    // Next upcoming block from allBlocks (or blocks if allBlocks is empty)
+    fun nextBlock(nowMinute: Int = nowMinute()): WatchBlockSummary? {
+        val candidates = if (allBlocks.isNotEmpty()) allBlocks else blocks.map {
+            WatchBlockSummary(it.blockId, it.name, it.start, it.end)
+        }
+        if (candidates.isEmpty()) return null
+        val laterToday = candidates.filter { it.start > nowMinute }.minByOrNull { it.start }
+        return laterToday ?: candidates.minByOrNull { it.start }
+    }
 }
 
 fun nowMinute(): Int {
@@ -67,6 +87,7 @@ object ChecklistData {
                             it.getInt("index"),
                             it.getString("text"),
                             it.getBoolean("checked"),
+                            it.optBoolean("isMoved", false),
                         ),
                     )
                 }
@@ -81,7 +102,28 @@ object ChecklistData {
                 )
             }
         }
-        return WatchData(blocks, root.optBoolean("restToday", false))
+
+        val allBlocks = ArrayList<WatchBlockSummary>()
+        root.optJSONArray("allBlocks")?.let { arr ->
+            for (i in 0 until arr.length()) {
+                val b = arr.getJSONObject(i)
+                allBlocks.add(
+                    WatchBlockSummary(
+                        b.getString("blockId"),
+                        b.getString("name"),
+                        b.getInt("start"),
+                        b.getInt("end"),
+                    ),
+                )
+            }
+        }
+
+        return WatchData(
+            blocks = blocks,
+            restToday = root.optBoolean("restToday", false),
+            restTomorrow = root.optBoolean("restTomorrow", false),
+            allBlocks = allBlocks,
+        )
     }
 
     fun readLatest(context: Context, onResult: (WatchData?) -> Unit) {

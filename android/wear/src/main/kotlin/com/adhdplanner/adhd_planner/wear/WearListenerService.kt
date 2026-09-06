@@ -8,9 +8,23 @@ import com.google.android.gms.wearable.WearableListenerService
 class WearListenerService : WearableListenerService() {
     override fun onMessageReceived(event: MessageEvent) {
         when (event.path) {
-            // The payload (rc/name) is ignored -- the alarm reads the ringing
-            // block names from the synced checklist instead.
-            PATH_ALARM_RING -> WatchAlarm.ring(this)
+            PATH_ALARM_RING -> {
+                var amp = 255
+                var pattern: LongArray? = null
+                if (event.data.isNotEmpty()) {
+                    try {
+                        val json = org.json.JSONObject(String(event.data))
+                        amp = json.optInt("amplitude", 255)
+                        json.optJSONArray("pattern")?.let { arr ->
+                            val list = LongArray(arr.length())
+                            for (i in 0 until arr.length()) list[i] = arr.getLong(i)
+                            pattern = list
+                        }
+                    } catch (_: Exception) {
+                    }
+                }
+                WatchAlarm.ring(this, amp, pattern)
+            }
             PATH_ALARM_STOP -> WatchAlarm.stop(this)
         }
     }

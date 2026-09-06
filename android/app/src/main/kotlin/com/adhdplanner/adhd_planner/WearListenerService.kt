@@ -49,6 +49,25 @@ class WearListenerService : WearableListenerService() {
                     }
                 }
                 PATH_TOGGLE_REST -> setRestDay(String(event.data).toBoolean())
+                PATH_TOGGLE_REST_TOMORROW -> setRestDayTomorrow(String(event.data).toBoolean())
+                PATH_MOVE_ITEM -> {
+                    val payload = JSONObject(String(event.data))
+                    moveItem(
+                        payload.getString("homeSegmentId"),
+                        payload.getInt("stepIndex"),
+                        payload.getString("targetSegmentId"),
+                    )
+                }
+                PATH_ALARM_SNOOZE -> {
+                    val payload = if (event.data.isNotEmpty()) JSONObject(String(event.data)) else JSONObject()
+                    val minutes = payload.optInt("minutes", 5)
+                    snoozeAlarms(minutes)
+                }
+                PATH_ALARM_SKIP -> {
+                    val payload = if (event.data.isNotEmpty()) JSONObject(String(event.data)) else JSONObject()
+                    val segmentId = payload.optString("segmentId", "")
+                    skipAlarms(listOf(segmentId))
+                }
             }
         } catch (e: Exception) {
             android.util.Log.w("WearListener", "malformed wear message dropped", e)
@@ -64,6 +83,78 @@ class WearListenerService : WearableListenerService() {
         (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
             .cancel(requestCode)
         dismissedAt[requestCode] = SystemClock.elapsedRealtime()
+    }
+
+    private fun snoozeAlarms(minutes: Int) {
+        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val active = nm.activeNotifications.map { it.id }.toSet()
+        val armed = VibrationAlarmReceiver.armedCodes(applicationContext)
+        for (id in armed) {
+            if (id in active) {
+                dismiss(id)
+                val triggerAt = System.currentTimeMillis() + minutes * 60_000L
+                VibrationAlarmReceiver.schedule(
+                    context = applicationContext,
+                    requestCode = id,
+                    triggerAtMillis = triggerAt,
+                    pattern = longArrayOf(0, 800, 400),
+                    durationMs = 60_000L,
+                    repeatIntervalMs = 0L,
+                    watchAlarm = true,
+                    amplitude = 255,
+                )
+            }
+        }
+    }
+
+    private fun skipAlarms(segmentIds: List<String>) {
+        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val active = nm.activeNotifications.map { it.id }.toSet()
+        for (id in VibrationAlarmReceiver.armedCodes(applicationContext)) {
+            if (id in active) dismiss(id)
+        }
+        val uid = FirebaseAuth.getInstance().currentUser?.uid ?: return
+        val dateKey = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+        for (segId in segmentIds) {
+            if (segId.isNotEmpty()) {
+                FirebaseFirestore.getInstance()
+                    .collection("users").document(uid)
+                    .collection("alarmSkips").document("${dateKey}_$segId")
+                    .set(mapOf("dateKey" to dateKey, "segmentId" to segId))
+            }
+        }
+    }
+
+    // Watch → phone "오늘만 여기서" move.
+    private fun moveItem(homeSegmentId: String, stepIndex: Int, targetSegmentId: String) {
+        val uid = FirebaseAuth.getInstance().currentUser?.uid ?: return
+        val dateKey = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+        val doc = FirebaseFirestore.getInstance()
+            .collection("users").document(uid)
+            .collection("microStepMoves").document("${dateKey}_${homeSegmentId}_$stepIndex")
+        if (homeSegmentId == targetSegmentId) {
+            doc.delete()
+        } else {
+            doc.set(
+                mapOf(
+                    "dateKey" to dateKey,
+                    "homeSegmentId" to homeSegmentId,
+                    "stepIndex" to stepIndex,
+                    "targetSegmentId" to targetSegmentId,
+                )
+            )
+        }
+    }
+
+    // Watch → phone "내일 쉬기" toggle.
+    private fun setRestDayTomorrow(resting: Boolean) {
+        val uid = FirebaseAuth.getInstance().currentUser?.uid ?: return
+        val cal = java.util.Calendar.getInstance().apply { add(java.util.Calendar.DAY_OF_YEAR, 1) }
+        val dateKey = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(cal.time)
+        val doc = FirebaseFirestore.getInstance()
+            .collection("users").document(uid)
+            .collection("restDays").document(dateKey)
+        if (resting) doc.set(mapOf("dateKey" to dateKey)) else doc.delete()
     }
 
     // Watch → phone "오늘은 쉬기" toggle. Mirrors the Dart RestDayController:
@@ -105,7 +196,11 @@ class WearListenerService : WearableListenerService() {
     companion object {
         private const val PATH_TOGGLE = "/toggle_item"
         private const val PATH_TOGGLE_REST = "/toggle_rest"
+        private const val PATH_TOGGLE_REST_TOMORROW = "/toggle_rest_tomorrow"
+        private const val PATH_MOVE_ITEM = "/move_item"
         private const val PATH_ALARM_DISMISS_ALL = "/alarm_dismiss_all"
+        private const val PATH_ALARM_SNOOZE = "/alarm_snooze"
+        private const val PATH_ALARM_SKIP = "/alarm_skip"
 
         // Ids the watch dismissed (id -> when), consumed by MainActivity's
         // channel so the phone's full-screen AlarmScreen can close/not-show.

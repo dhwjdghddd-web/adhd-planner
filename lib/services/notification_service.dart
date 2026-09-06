@@ -380,7 +380,9 @@ class NotificationService {
     // ※ 현재 울리고 있는 알람을 닫아버려 진동 루프가 끊어지는 버그를 막기 위해
     // 여기서는 cancelAll()을 호출하지 않고 stale id만 개별 취소한다.
     final staleIds = await _cancelAllVibrationAlarms();
+    final activeAlertId = pendingAlarmAlert.value?.notificationId;
     for (final id in staleIds) {
+      if (activeAlertId != null && id == activeAlertId) continue;
       await _plugin.cancel(id);
     }
 

@@ -61,7 +61,28 @@ class ChecklistDataTest {
     @Test
     fun `restToday defaults false and parses when present`() {
         assertFalse(ChecklistData.parse(sample).restToday)
-        val rest = """{"dateKey":"2026-07-06","restToday":true,"blocks":[]}"""
-        assertTrue(ChecklistData.parse(rest).restToday)
+        val rest = """{"dateKey":"2026-07-06","restToday":true,"restTomorrow":true,"blocks":[]}"""
+        val parsed = ChecklistData.parse(rest)
+        assertTrue(parsed.restToday)
+        assertTrue(parsed.restTomorrow)
+    }
+
+    @Test
+    fun `nextBlock picks closest future block`() {
+        val json = """
+            {
+              "dateKey": "2026-07-06",
+              "blocks": [],
+              "allBlocks": [
+                {"blockId":"a","name":"아침","start":540,"end":600},
+                {"blockId":"b","name":"점심","start":720,"end":780},
+                {"blockId":"c","name":"저녁","start":1140,"end":1200}
+              ]
+            }
+        """.trimIndent()
+        val data = ChecklistData.parse(json)
+        assertEquals("점심", data.nextBlock(600)?.name)
+        assertEquals("저녁", data.nextBlock(800)?.name)
+        assertEquals("아침", data.nextBlock(1300)?.name)
     }
 }

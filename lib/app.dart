@@ -685,6 +685,8 @@ class _WearSyncState extends ConsumerState<_WearSync> {
         progress: progress,
         moves: moves,
         restToday: restDays != null && isRestDayOn(restDays),
+        restTomorrow:
+            restDays != null && isRestDayOn(restDays, now: tomorrowOf()),
       );
       if (json != _lastPushed) {
         _lastPushed = json;

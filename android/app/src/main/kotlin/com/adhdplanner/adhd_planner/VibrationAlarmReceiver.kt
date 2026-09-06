@@ -23,6 +23,13 @@ import android.os.VibratorManager
 /// device actually buzzes* once it does.
 class VibrationAlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
+        // Acquire a short partial wake-lock so CPU stays awake during vibration even if the screen is off / in Doze
+        try {
+            val powerManager = context.getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager
+            val wakeLock = powerManager?.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "adhdplanner:vibrationalarm")
+            wakeLock?.acquire(10000L)
+        } catch (_: Exception) {}
+
         val pattern = intent.getLongArrayExtra(EXTRA_PATTERN) ?: return
         val requestCode = intent.getIntExtra(EXTRA_REQUEST_CODE, 0)
         val amplitude = intent.getIntExtra(EXTRA_AMPLITUDE, 255)
@@ -60,8 +67,8 @@ class VibrationAlarmReceiver : BroadcastReceiver() {
         val isRestToday = restDays.contains(todayKey)
 
         val shouldSuppress = (isRestToday && scheduleTarget == "workDaysOnly") || (!isRestToday && scheduleTarget == "restDaysOnly")
-
         val segmentId = intent.getStringExtra(EXTRA_SEGMENT_ID)
+        android.util.Log.i("VibrationAlarmReceiver", "Alarm fired for requestCode=$requestCode, segmentId=$segmentId, isRestToday=$isRestToday, target=$scheduleTarget, shouldSuppress=$shouldSuppress")
 
         // Recurring (daily) routine alarms re-arm themselves for next day right
         // here -- mirrors how flutter_local_notifications' own
@@ -82,6 +89,7 @@ class VibrationAlarmReceiver : BroadcastReceiver() {
         }
 
         if (shouldSuppress) {
+            android.util.Log.i("VibrationAlarmReceiver", "Suppressing alarm $requestCode due to rest-day rules")
             // Dismiss notification if it was posted by flutter_local_notifications
             val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
             notificationManager?.cancel(requestCode)
@@ -94,6 +102,7 @@ class VibrationAlarmReceiver : BroadcastReceiver() {
         // Buzz now, then hand off to the swipe-aware loop for the rest of the
         // window (durationMs): short cycles that stop as soon as the alarm
         // notification is gone.
+        android.util.Log.i("VibrationAlarmReceiver", "Starting initial vibration cycle for $requestCode, amplitude=$amplitude")
         startVibration(context, pattern, BUZZ_CYCLE_MS, amplitude)
         val window = if (durationMs > 0L) durationMs else BUZZ_CYCLE_MS
         val until = System.currentTimeMillis() + window
@@ -110,7 +119,7 @@ class VibrationAlarmReceiver : BroadcastReceiver() {
         // (short-lived) process alive while the Data Layer message is sent.
         if (watchAlarm) {
             val pending = goAsync()
-            WearAlarmMessenger.sendRing(context) { pending.finish() }
+            WearAlarmMessenger.sendRing(context, amplitude, pattern) { pending.finish() }
         }
 
         // Bring MainActivity directly to the foreground so the full-screen AlarmScreen displays immediately
@@ -204,13 +213,13 @@ class VibrationAlarmReceiver : BroadcastReceiver() {
 
         private fun setRingingAlarm(context: Context, id: Int, untilMs: Long) {
             val prefs = context.getSharedPreferences("adhd_alarm_prefs", Context.MODE_PRIVATE)
-            prefs.edit().putInt("ringing_alarm_id", id).putLong("ringing_until_ms", untilMs).apply()
+            prefs.edit().putInt("ringing_alarm_id", id).putLong("ringing_until_ms", untilMs).commit()
         }
 
         private fun clearRingingAlarm(context: Context, id: Int) {
             val prefs = context.getSharedPreferences("adhd_alarm_prefs", Context.MODE_PRIVATE)
             if (prefs.getInt("ringing_alarm_id", -1) == id) {
-                prefs.edit().remove("ringing_alarm_id").remove("ringing_until_ms").apply()
+                prefs.edit().remove("ringing_alarm_id").remove("ringing_until_ms").commit()
             }
         }
 
@@ -251,24 +260,22 @@ class VibrationAlarmReceiver : BroadcastReceiver() {
             val cancelled = ArrayList<Int>()
             for (code in activeCodes(context)) {
                 val requestCode = code.toIntOrNull() ?: continue
-                if (isCurrentlyRinging(context, requestCode)) {
-                    // 현재 울리고 있는 알람은 취소하지 않고 진동 루프를 보호
+                if (isCurrentlyRinging(context, requestCode) || isAlarmNotificationActive(context, requestCode)) {
+                    // 현재 울리고 있거나 시스템 알림 바에 표시 중인 알람은 취소하지 않고 보호
                     continue
                 }
                 alarmManager.cancel(
                     pendingIntentFor(context, requestCode, longArrayOf(0), 0L, 0L, false),
                 )
-                if (!isAlarmNotificationActive(context, requestCode)) {
-                    alarmManager.cancel(buzzLoopPendingIntent(context, requestCode, longArrayOf(0), 0L))
-                }
+                alarmManager.cancel(buzzLoopPendingIntent(context, requestCode, longArrayOf(0), 0L))
                 cancelled.add(requestCode)
             }
-            val prefs = context.getSharedPreferences("adhd_alarm_prefs", Context.MODE_PRIVATE)
-            val ringingId = prefs.getInt("ringing_alarm_id", -1)
-            val remaining = if (ringingId != -1 && isCurrentlyRinging(context, ringingId)) {
-                setOf(ringingId.toString())
-            } else {
-                emptySet()
+            val remaining = HashSet<String>()
+            for (code in activeCodes(context)) {
+                val reqId = code.toIntOrNull() ?: continue
+                if (isCurrentlyRinging(context, reqId) || isAlarmNotificationActive(context, reqId)) {
+                    remaining.add(code)
+                }
             }
             setActiveCodes(context, remaining)
             return cancelled
@@ -391,7 +398,13 @@ class VibrationAlarmReceiver : BroadcastReceiver() {
                 out.add(v)
                 total += v
             }
+            val interCyclePause = 500L
             while (total < durationMs) {
+                if (out.size % 2 == 0) {
+                    // Next index is even -> must be a pause so odd indices remain active vibrations
+                    out.add(interCyclePause)
+                    total += interCyclePause
+                }
                 for (i in 1 until pattern.size) {
                     out.add(pattern[i])
                     total += pattern[i]

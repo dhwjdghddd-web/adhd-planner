@@ -295,8 +295,7 @@ class MainActivity : FlutterActivity() {
                             for ((reqCode, target) in scheduleTargets) {
                                 putString("target_$reqCode", target)
                             }
-                            apply()
-                        }
+                        }.commit()
                         result.success(null)
                     }
                     else -> result.notImplemented()

@@ -24,18 +24,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.wear.compose.foundation.lazy.ScalingLazyColumnDefaults
+import androidx.wear.compose.material3.AppScaffold
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.Text
+import androidx.wear.compose.material3.TimeText
 import com.google.android.gms.wearable.Wearable
 
-/// The watch alarm: the currently-ringing block name(s) + 끄기, plus the
-/// vibration (owned here so it lives as long as this FLAG_KEEP_SCREEN_ON
-/// screen). Names come from the synced checklist (all "current" blocks), not
-/// from the ring messages -- reliable even when several overlap. 끄기 tells the
-/// phone to silence everything ringing, then hands off to the checklist.
+/// The watch alarm: the currently-ringing block name(s) + 끄기/스누즈/건너뛰기, plus the
+/// vibration. Names come from the synced checklist (all "current" blocks).
 class AlarmActivity : ComponentActivity() {
-    private val names: MutableState<List<String>> = mutableStateOf(emptyList())
+    private val ringingBlocks: MutableState<List<WatchBlock>> = mutableStateOf(emptyList())
     private val timeoutHandler = Handler(Looper.getMainLooper())
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -48,49 +48,68 @@ class AlarmActivity : ComponentActivity() {
         active = this
         startVibration()
         loadNames()
-        setContent { AlarmScreen(names.value, onDismiss = ::onDismiss) }
+        setContent {
+            AlarmScreen(
+                blocks = ringingBlocks.value,
+                onDismiss = ::onDismiss,
+                onSnooze = ::onSnooze,
+                onSkip = ::onSkip,
+            )
+        }
         // Auto-close when the buzz window ends: with FLAG_KEEP_SCREEN_ON an
         // ignored alarm would otherwise keep the watch screen on indefinitely
-        // (a real battery drain if the watch is off-wrist).
         timeoutHandler.postDelayed({ finish() }, WINDOW_MS)
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        loadNames() // a second/third alarm may have made more blocks current
+        setIntent(intent)
+        startVibration()
+        loadNames()
     }
 
     private fun loadNames() {
-        // The block(s) STARTING right now (by the watch's own clock) -- an
-        // already-running overlapping block isn't what this alarm is for.
         ChecklistData.readLatest(this) { data ->
-            val n = data?.startingBlocks()?.map { it.name }.orEmpty()
-            runOnUiThread { names.value = n }
+            val b = data?.startingBlocks().orEmpty()
+            runOnUiThread { ringingBlocks.value = b }
+        }
+    }
+
+    private fun sendToPhone(path: String, payload: ByteArray) {
+        Wearable.getNodeClient(this).connectedNodes.addOnSuccessListener { nodes ->
+            for (node in nodes) {
+                Wearable.getMessageClient(this).sendMessage(node.id, path, payload)
+            }
         }
     }
 
     private fun onDismiss() {
         stopVibration()
-        // One "silence everything ringing" signal -- robust no matter how many
-        // alarms rang (the phone dismisses every currently-active alarm).
-        Wearable.getNodeClient(this).connectedNodes.addOnSuccessListener { nodes ->
-            for (node in nodes) {
-                Wearable.getMessageClient(this)
-                    .sendMessage(node.id, PATH_ALARM_DISMISS_ALL, ByteArray(0))
-            }
-        }
-        // Hand off to the checklist (which shows whatever block(s) are current).
+        sendToPhone(PATH_ALARM_DISMISS_ALL, ByteArray(0))
         startActivity(
             Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
         )
         finish()
     }
 
+    private fun onSnooze(minutes: Int = 5) {
+        stopVibration()
+        val payload = org.json.JSONObject().put("minutes", minutes).toString().toByteArray()
+        sendToPhone(PATH_ALARM_SNOOZE, payload)
+        finish()
+    }
+
+    private fun onSkip() {
+        stopVibration()
+        val segId = ringingBlocks.value.firstOrNull()?.blockId ?: ""
+        val payload = org.json.JSONObject().put("segmentId", segId).toString().toByteArray()
+        sendToPhone(PATH_ALARM_SKIP, payload)
+        finish()
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         timeoutHandler.removeCallbacksAndMessages(null)
-        // Only the current instance stops the vibration, so a stale re-created
-        // instance's teardown can't cut a fresh alarm's buzzing short.
         if (active === this) {
             stopVibration()
             active = null
@@ -98,7 +117,34 @@ class AlarmActivity : ComponentActivity() {
     }
 
     private fun startVibration() {
-        val effect = VibrationEffect.createWaveform(finitePattern(WINDOW_MS), -1)
+        val amp = intent.getIntExtra("amplitude", 255)
+        val customPattern = intent.getLongArrayExtra("pattern")
+        val base = customPattern ?: BASE_PATTERN
+
+        val timings = ArrayList<Long>()
+        val amplitudes = ArrayList<Int>()
+        var total = 0L
+        while (total < WINDOW_MS) {
+            for (i in base.indices) {
+                val t = base[i]
+                if (t <= 0L && i == 0) continue
+                timings.add(t)
+                amplitudes.add(if (i % 2 == 1) amp.coerceIn(1, 255) else 0)
+                total += t
+            }
+        }
+
+        val effect = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            try {
+                VibrationEffect.createWaveform(timings.toLongArray(), amplitudes.toIntArray(), -1)
+            } catch (_: Exception) {
+                VibrationEffect.createWaveform(timings.toLongArray(), -1)
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            VibrationEffect.createWaveform(timings.toLongArray(), -1)
+        }
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             vibratorManager().defaultVibrator.vibrate(effect)
         } else {
@@ -123,20 +169,10 @@ class AlarmActivity : ComponentActivity() {
     private fun legacyVibrator(): Vibrator =
         getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
 
-    private fun finitePattern(durationMs: Long): LongArray {
-        val out = ArrayList<Long>()
-        var total = 0L
-        while (total < durationMs) {
-            for (v in BASE_PATTERN) {
-                out.add(v)
-                total += v
-            }
-        }
-        return out.toLongArray()
-    }
-
     companion object {
         private const val PATH_ALARM_DISMISS_ALL = "/alarm_dismiss_all"
+        private const val PATH_ALARM_SNOOZE = "/alarm_snooze"
+        private const val PATH_ALARM_SKIP = "/alarm_skip"
         private const val WINDOW_MS = 60_000L
         private val BASE_PATTERN = longArrayOf(0, 600, 400)
 
@@ -149,33 +185,72 @@ class AlarmActivity : ComponentActivity() {
 }
 
 @Composable
-private fun AlarmScreen(names: List<String>, onDismiss: () -> Unit) {
+private fun AlarmScreen(
+    blocks: List<WatchBlock>,
+    onDismiss: () -> Unit,
+    onSnooze: () -> Unit,
+    onSkip: () -> Unit,
+) {
     MaterialTheme {
-        Column(
-            modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-        ) {
-            if (names.isNotEmpty()) {
-                Text(
-                    names.joinToString("\n"),
-                    textAlign = TextAlign.Center,
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.padding(bottom = 4.dp),
-                )
-            }
-            Text(
-                "지금 시작할 시간이에요",
-                textAlign = TextAlign.Center,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(bottom = 16.dp),
-            )
-            Button(
-                onClick = onDismiss,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text("끄기", textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+        AppScaffold {
+            val listState = androidx.wear.compose.foundation.lazy.rememberScalingLazyListState()
+            androidx.wear.compose.material3.ScreenScaffold(
+                scrollState = listState,
+                timeText = { TimeText() },
+            ) { contentPadding ->
+                androidx.wear.compose.foundation.lazy.ScalingLazyColumn(
+                    state = listState,
+                    contentPadding = contentPadding,
+                    scalingParams = ScalingLazyColumnDefaults.scalingParams(
+                        edgeScale = 1f,
+                        minElementHeight = 0f,
+                    ),
+                    modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    item {
+                        val title = if (blocks.isNotEmpty()) blocks.joinToString("\n") { it.name } else "루틴 알람"
+                        Text(
+                            title,
+                            textAlign = TextAlign.Center,
+                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.padding(bottom = 2.dp),
+                        )
+                    }
+                    item {
+                        Text(
+                            "지금 시작할 시간이에요",
+                            textAlign = TextAlign.Center,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(bottom = 12.dp),
+                        )
+                    }
+                    item {
+                        Button(
+                            onClick = onDismiss,
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                        ) {
+                            Text("끄기", textAlign = TextAlign.Center)
+                        }
+                    }
+                    item {
+                        androidx.wear.compose.material3.FilledTonalButton(
+                            onClick = onSnooze,
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                        ) {
+                            Text("5분 뒤 다시", textAlign = TextAlign.Center)
+                        }
+                    }
+                    item {
+                        androidx.wear.compose.material3.CompactButton(
+                            onClick = onSkip,
+                            modifier = Modifier.padding(top = 4.dp),
+                        ) {
+                            Text("오늘은 건너뛰기")
+                        }
+                    }
+                }
             }
         }
     }
