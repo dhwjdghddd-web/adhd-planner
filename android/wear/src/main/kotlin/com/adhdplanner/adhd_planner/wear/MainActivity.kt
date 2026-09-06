@@ -463,42 +463,12 @@ fun ChecklistScreen(
                                     focusRequester = listFocusRequester,
                                 ),
                         ) {
-                            // 바로메모 저장 완료 피드백 (일시적)
-                            if (recentMemoSaved != null) {
-                                item(key = "memo_saved_card") {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(top = 16.dp, bottom = 4.dp),
-                                        contentAlignment = Alignment.Center,
-                                    ) {
-                                        Box(
-                                            modifier = Modifier
-                                                .background(
-                                                    color = colorScheme.tertiaryContainer,
-                                                    shape = ItemCardShape,
-                                                )
-                                                .padding(horizontal = 14.dp, vertical = 6.dp),
-                                            contentAlignment = Alignment.Center,
-                                        ) {
-                                            Text(
-                                                text = "✓ 메모 저장됨\n\"$recentMemoSaved\"",
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = colorScheme.onTertiaryContainer,
-                                                textAlign = TextAlign.Center,
-                                                maxLines = 2,
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-
                             // 바로메모 음성 입력 버튼
                             item(key = "voice_memo_btn") {
                                 Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(top = if (recentMemoSaved != null) 2.dp else 16.dp, bottom = 6.dp),
+                                        .padding(top = 16.dp, bottom = 6.dp),
                                     contentAlignment = Alignment.Center,
                                 ) {
                                     Box(
@@ -703,6 +673,35 @@ fun ChecklistScreen(
                                             textAlign = TextAlign.Center,
                                         )
                                     }
+                                }
+                            }
+                        }
+
+                        // 화면 상단 고정 플로팅 오버레이 안내 카드 (스크롤 위치와 무관하게 화면 상단 중앙에 노출)
+                        if (recentMemoSaved != null) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 22.dp, start = 12.dp, end = 12.dp)
+                                    .align(Alignment.TopCenter),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .background(
+                                            color = colorScheme.tertiaryContainer,
+                                            shape = ItemCardShape,
+                                        )
+                                        .padding(horizontal = 14.dp, vertical = 7.dp),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Text(
+                                        text = "✓ 메모 저장됨\n\"$recentMemoSaved\"",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = colorScheme.onTertiaryContainer,
+                                        textAlign = TextAlign.Center,
+                                        maxLines = 2,
+                                    )
                                 }
                             }
                         }

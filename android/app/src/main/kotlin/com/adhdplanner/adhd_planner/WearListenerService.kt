@@ -201,15 +201,22 @@ class WearListenerService : WearableListenerService() {
 
     // Watch → phone voice memo
     private fun addMemo(text: String, source: String = "voice") {
-        if (text.isBlank()) return
-        val uid = FirebaseAuth.getInstance().currentUser?.uid ?: return
+        if (text.isBlank()) {
+            android.util.Log.w("WearListener", "addMemo: text is blank, ignored")
+            return
+        }
+        val uid = FirebaseAuth.getInstance().currentUser?.uid
+        if (uid == null) {
+            android.util.Log.e("WearListener", "addMemo: FirebaseAuth currentUser is null, cannot save memo")
+            return
+        }
         val memoId = java.util.UUID.randomUUID().toString()
         val isoFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS", Locale.US).apply {
             timeZone = java.util.TimeZone.getTimeZone("UTC")
         }
         val createdAtIso = isoFormat.format(Date())
 
-        val memoMap = mapOf(
+        val memoMap = hashMapOf<String, Any?>(
             "id" to memoId,
             "text" to text.trim(),
             "source" to source,
@@ -221,6 +228,12 @@ class WearListenerService : WearableListenerService() {
             .collection("users").document(uid)
             .collection("memos").document(memoId)
             .set(memoMap)
+            .addOnSuccessListener {
+                android.util.Log.i("WearListener", "addMemo successfully saved memo: $memoId, text: ${text.trim()}")
+            }
+            .addOnFailureListener { e ->
+                android.util.Log.e("WearListener", "addMemo failed to save memo: $memoId", e)
+            }
     }
 
     companion object {
