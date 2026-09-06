@@ -1,9 +1,11 @@
 import 'package:intl/intl.dart';
 
+import '../core/time_geometry.dart';
 import 'models/alarm_skip.dart';
 import 'models/completion.dart';
 import 'models/mit.dart';
 import 'models/rest_day.dart';
+import 'models/segment.dart';
 
 /// Helpers for "what's true about a block *today*", in one place so every
 /// screen draws the day boundary and reads per-day records the same way.
@@ -71,3 +73,29 @@ bool isRestDayTomorrow(List<RestDay> restDays, {DateTime? now}) =>
 Set<String> restDateKeys(List<RestDay> restDays) => {
   for (final r in restDays) r.dateKey,
 };
+
+/// Filters segments applicable for [now]'s day based on rest day state and schedule targets,
+/// and applies any specific date overrides for start/end minutes.
+List<Segment> todaySegments(
+  List<Segment> allSegments, {
+  required bool isRestDay,
+  DateTime? now,
+}) {
+  final key = dayKeyFor(now);
+  return allSegments.where((s) {
+    if (isRestDay && s.scheduleTarget == SegmentScheduleTarget.workDaysOnly) {
+      return false;
+    }
+    if (!isRestDay && s.scheduleTarget == SegmentScheduleTarget.restDaysOnly) {
+      return false;
+    }
+    return true;
+  }).map((s) {
+    if (s.dateOverrides.containsKey(key)) {
+      final overrideStart = s.dateOverrides[key]!;
+      final overrideEnd = (overrideStart + s.lengthMinutes) % TimeGeometry.minutesPerDay;
+      return s.copyWith(startMinute: overrideStart, endMinute: overrideEnd);
+    }
+    return s;
+  }).toList();
+}

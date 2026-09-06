@@ -88,8 +88,18 @@ class SegmentsController {
 
   /// Overlap is allowed by design (the dial renders overlapping arcs on
   /// separate rings) but the editor surfaces a warning so it's a deliberate
-  /// choice rather than an accident.
+  /// choice rather than an accident. Blocks strictly targeted for different
+  /// days (workDaysOnly vs restDaysOnly) never conflict on the same day.
   bool overlapsAny(Segment candidate, List<Segment> others) {
-    return others.any((o) => o.id != candidate.id && candidate.overlaps(o));
+    return others.any((o) {
+      if (o.id == candidate.id) return false;
+      if ((candidate.scheduleTarget == SegmentScheduleTarget.workDaysOnly &&
+              o.scheduleTarget == SegmentScheduleTarget.restDaysOnly) ||
+          (candidate.scheduleTarget == SegmentScheduleTarget.restDaysOnly &&
+              o.scheduleTarget == SegmentScheduleTarget.workDaysOnly)) {
+        return false;
+      }
+      return candidate.overlaps(o);
+    });
   }
 }

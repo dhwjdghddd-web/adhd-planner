@@ -23,42 +23,64 @@ class SegmentEditorPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final segmentsAsync = ref.watch(segmentsProvider);
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('하루 구간')),
-      // Shrinks the visible body area itself (rather than padding inside
-      // the list, which only shows up once scrolled all the way down) so
-      // content never reaches the global bottom-left quick-add FAB (or
-      // this page's own bottom-right one) even before scrolling.
-      body: Padding(
-        padding: EdgeInsets.only(bottom: fabAvoidingBottomInset(context)),
-        child: segmentsAsync.when(
-          data: (segments) => _SegmentList(segments: segments),
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: errorView,
+    return DefaultTabController(
+      length: 3,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('하루 구간 관리'),
+          bottom: const TabBar(
+            tabs: [
+              Tab(text: '전체'),
+              Tab(text: '🏢 근무일'),
+              Tab(text: '🏖️ 쉬는 날'),
+            ],
+          ),
         ),
-      ),
-      floatingActionButton: isCompactLayout(context)
-          ? compactCornerFabs(
-              actions: [
-                Semantics(
-                  label: '구간 추가',
-                  child: FloatingActionButton.small(
-                    heroTag: 'segment-add',
-                    onPressed: () => _openForm(context),
-                    child: const Icon(Icons.add),
-                  ),
+        body: Padding(
+          padding: EdgeInsets.only(bottom: fabAvoidingBottomInset(context)),
+          child: segmentsAsync.when(
+            data: (segments) => TabBarView(
+              children: [
+                _SegmentList(segments: segments),
+                _SegmentList(
+                  segments: segments
+                      .where((s) => s.scheduleTarget != SegmentScheduleTarget.restDaysOnly)
+                      .toList(),
+                ),
+                _SegmentList(
+                  segments: segments
+                      .where((s) => s.scheduleTarget != SegmentScheduleTarget.workDaysOnly)
+                      .toList(),
                 ),
               ],
-            )
-          : MultiFabRow(
-              left: const GlobalQuickAddButton(),
-              right: FloatingActionButton.extended(
-                onPressed: () => _openForm(context),
-                icon: const Icon(Icons.add),
-                label: const Text('구간 추가'),
-              ),
             ),
-      floatingActionButtonLocation: screenFabLocation(context),
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: errorView,
+          ),
+        ),
+        floatingActionButton: isCompactLayout(context)
+            ? compactCornerFabs(
+                actions: [
+                  Semantics(
+                    label: '구간 추가',
+                    child: FloatingActionButton.small(
+                      heroTag: 'segment-add',
+                      onPressed: () => _openForm(context),
+                      child: const Icon(Icons.add),
+                    ),
+                  ),
+                ],
+              )
+            : MultiFabRow(
+                left: const GlobalQuickAddButton(),
+                right: FloatingActionButton.extended(
+                  onPressed: () => _openForm(context),
+                  icon: const Icon(Icons.add),
+                  label: const Text('구간 추가'),
+                ),
+              ),
+        floatingActionButtonLocation: screenFabLocation(context),
+      ),
     );
   }
 }
@@ -201,7 +223,66 @@ class _SegmentTile extends StatelessWidget {
               );
             },
           ),
-          title: Text(segment.name),
+          title: Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 6,
+            runSpacing: 4,
+            children: [
+              Text(segment.name, style: const TextStyle(fontWeight: FontWeight.w600)),
+              if (segment.isFirstBlock)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.primaryContainer,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    '🌅 기상',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: Theme.of(context).colorScheme.onPrimaryContainer,
+                    ),
+                  ),
+                ),
+              if (segment.scheduleTarget == SegmentScheduleTarget.workDaysOnly)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: const Text(
+                    '🏢 근무일',
+                    style: TextStyle(fontSize: 11, color: Colors.blue, fontWeight: FontWeight.w500),
+                  ),
+                )
+              else if (segment.scheduleTarget == SegmentScheduleTarget.restDaysOnly)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.teal.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: const Text(
+                    '🏖️ 쉬는 날',
+                    style: TextStyle(fontSize: 11, color: Colors.teal, fontWeight: FontWeight.w500),
+                  ),
+                ),
+              if (segment.dateOverrides.isNotEmpty)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    '📅 특정일 ${segment.dateOverrides.length}개',
+                    style: const TextStyle(fontSize: 11, color: Colors.orange, fontWeight: FontWeight.w500),
+                  ),
+                ),
+            ],
+          ),
           subtitle: Text(range),
           trailing: Row(
             mainAxisSize: MainAxisSize.min,

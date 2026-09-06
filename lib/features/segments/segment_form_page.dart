@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../core/constants.dart';
@@ -47,6 +48,8 @@ class _SegmentFormPageState extends ConsumerState<SegmentFormPage> {
   late SegmentAlarmType _alarmType;
   late SegmentScheduleTarget _scheduleTarget;
   late int _leadWarningMinutes;
+  late bool _isFirstBlock;
+  late Map<String, int> _dateOverrides;
   late List<String> _microSteps;
   // Parallel to _microSteps, one stable id per item so ReorderableListView can
   // track each item's identity across reorders -- the items are plain strings
@@ -70,6 +73,8 @@ class _SegmentFormPageState extends ConsumerState<SegmentFormPage> {
     _alarmType = existing?.alarmType ?? SegmentAlarmType.fullScreen;
     _scheduleTarget = existing?.scheduleTarget ?? SegmentScheduleTarget.everyday;
     _leadWarningMinutes = existing?.leadWarningMinutes ?? 10;
+    _isFirstBlock = existing?.isFirstBlock ?? false;
+    _dateOverrides = Map<String, int>.from(existing?.dateOverrides ?? {});
     _microSteps = [...(existing?.microSteps ?? const <String>[])];
     _microStepKeyIds = List.generate(
       _microSteps.length,
@@ -134,6 +139,71 @@ class _SegmentFormPageState extends ConsumerState<SegmentFormPage> {
     });
   }
 
+  Future<void> _addDateOverride() async {
+    final now = DateTime.now();
+    final pickedDate = await showDatePicker(
+      context: context,
+      initialDate: now,
+      firstDate: now.subtract(const Duration(days: 1)),
+      lastDate: now.add(const Duration(days: 365)),
+      helpText: '기상 시간을 다르게 설정할 날짜 선택',
+    );
+    if (pickedDate == null || !mounted) return;
+
+    final dateKey = DateFormat('yyyy-MM-dd').format(pickedDate);
+
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+              child: Text(
+                '$dateKey 기상 알람 설정',
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.access_time),
+              title: const Text('기상 시간 직접 설정'),
+              subtitle: const Text('해당 날짜에 일어날 시각을 지정합니다'),
+              onTap: () => Navigator.pop(ctx, 'time'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.notifications_off_outlined, color: Colors.orange),
+              title: const Text('알람 없음 (울리지 않음)'),
+              subtitle: const Text('해당 날짜에는 아침 기상 알람이 울리지 않습니다'),
+              onTap: () => Navigator.pop(ctx, 'none'),
+            ),
+            const SizedBox(height: 12),
+          ],
+        ),
+      ),
+    );
+    if (action == null || !mounted) return;
+
+    if (action == 'none') {
+      setState(() {
+        _dateOverrides[dateKey] = Segment.noAlarmMinute;
+      });
+      return;
+    }
+
+    final initialMinute = (_dateOverrides[dateKey] != null &&
+            _dateOverrides[dateKey] != Segment.noAlarmMinute)
+        ? _dateOverrides[dateKey]!
+        : _startMinute;
+    final pickedMinute = await pickWheelMinute(context, initialMinute);
+    if (pickedMinute == null || !mounted) return;
+
+    setState(() {
+      _dateOverrides[dateKey] = pickedMinute;
+    });
+  }
+
   Future<void> _save() async {
     if (!_canSave) return;
 
@@ -153,6 +223,8 @@ class _SegmentFormPageState extends ConsumerState<SegmentFormPage> {
       alarmType: _alarmType,
       scheduleTarget: _scheduleTarget,
       leadWarningMinutes: _leadWarningMinutes,
+      isFirstBlock: _isFirstBlock,
+      dateOverrides: _dateOverrides,
       notificationIds: widget.existing?.notificationIds ?? const [],
     );
 
@@ -364,6 +436,126 @@ class _SegmentFormPageState extends ConsumerState<SegmentFormPage> {
                 color: lengthOk
                     ? theme.colorScheme.onSurfaceVariant
                     : theme.colorScheme.error,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Card(
+              elevation: 0,
+              color: _isFirstBlock
+                  ? theme.colorScheme.primaryContainer.withValues(alpha: 0.3)
+                  : theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: BorderSide(
+                  color: _isFirstBlock
+                      ? theme.colorScheme.primary.withValues(alpha: 0.5)
+                      : theme.colorScheme.outlineVariant,
+                ),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SwitchListTile.adaptive(
+                      contentPadding: EdgeInsets.zero,
+                      secondary: Icon(
+                        Icons.wb_twilight,
+                        color: _isFirstBlock ? theme.colorScheme.primary : null,
+                      ),
+                      title: const Text(
+                        '하루의 첫 번째 블록 (기상 블록)',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      subtitle: const Text(
+                        '아침 기상 블록으로 지정하고, 특정일 기상 시간을 다르게 설정할 수 있어요',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                      value: _isFirstBlock,
+                      onChanged: (val) => setState(() => _isFirstBlock = val),
+                    ),
+                    if (_isFirstBlock) ...[
+                      const Divider(height: 16),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            '📅 특정일 기상 시간 변경',
+                            style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                          ),
+                          TextButton.icon(
+                            onPressed: _addDateOverride,
+                            icon: const Icon(Icons.add, size: 18),
+                            label: const Text('날짜 추가'),
+                          ),
+                        ],
+                      ),
+                      if (_dateOverrides.isEmpty)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 6),
+                          child: Text(
+                            '설정된 특정일이 없어요. 평소와 다른 시간에 일어나는 날이 있다면 추가해 보세요.',
+                            style: TextStyle(fontSize: 12, color: Colors.grey),
+                          ),
+                        )
+                      else ...[
+                        const SizedBox(height: 4),
+                        for (final entry in (_dateOverrides.entries.toList()..sort((a, b) => a.key.compareTo(b.key))))
+                          Builder(
+                            builder: (context) {
+                              final isNone = entry.value == Segment.noAlarmMinute;
+                              return Container(
+                                margin: const EdgeInsets.only(bottom: 6),
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: theme.colorScheme.surface,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: isNone
+                                        ? Colors.orange.withOpacity(0.5)
+                                        : theme.colorScheme.outlineVariant,
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      isNone ? Icons.notifications_off_outlined : Icons.alarm,
+                                      size: 16,
+                                      color: isNone ? Colors.orange : theme.colorScheme.primary,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        isNone
+                                            ? '${entry.key} ➔ 🔕 알람 없음 (울리지 않음)'
+                                            : '${entry.key} ➔ ${TimeGeometry.formatMinute(entry.value)} 기상',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w500,
+                                          fontSize: 13,
+                                          color: isNone ? Colors.orange.shade800 : null,
+                                        ),
+                                      ),
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(Icons.close, size: 18),
+                                      tooltip: '삭제',
+                                      padding: EdgeInsets.zero,
+                                      constraints: const BoxConstraints(),
+                                      onPressed: () {
+                                        setState(() {
+                                          _dateOverrides.remove(entry.key);
+                                        });
+                                      },
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                      ],
+                    ],
+                  ],
+                ),
               ),
             ),
             const SizedBox(height: 16),

@@ -42,6 +42,10 @@ class Segment {
   final SegmentScheduleTarget scheduleTarget;
   // Minutes before [startMinute] to fire a quiet transition warning (0 = disabled, 5, 10, 15, 30).
   final int leadWarningMinutes;
+  // Whether this block is designated as the first block (wake-up block) of the day.
+  final bool isFirstBlock;
+  // Specific calendar date overrides for start minute: {"yyyy-MM-dd": minuteOfDay}.
+  final Map<String, int> dateOverrides;
   // Notification ids this block currently has scheduled.
   final List<int> notificationIds;
 
@@ -60,6 +64,8 @@ class Segment {
     int? leadWarningMinutes,
     bool? alarmEnabled,
     bool? leadWarning,
+    this.isFirstBlock = false,
+    this.dateOverrides = const {},
     this.notificationIds = const [],
   }) : alarmType = alarmType ??
            (alarmEnabled != null
@@ -116,6 +122,31 @@ class Segment {
     ];
   }
 
+  static const int noAlarmMinute = -1;
+
+  /// True if alarm is explicitly suppressed on [dateKey].
+  bool isAlarmSuppressedOn(String dateKey) => dateOverrides[dateKey] == noAlarmMinute;
+
+  /// Returns the start minute for [dateKey] ("yyyy-MM-dd"), respecting date overrides if set.
+  int startMinuteFor([String? dateKey]) {
+    if (dateKey != null && dateOverrides.containsKey(dateKey)) {
+      final val = dateOverrides[dateKey]!;
+      if (val != noAlarmMinute) return val;
+    }
+    return startMinute;
+  }
+
+  /// Returns the end minute for [dateKey], keeping block duration if overridden.
+  int endMinuteFor([String? dateKey]) {
+    if (dateKey != null && dateOverrides.containsKey(dateKey)) {
+      final val = dateOverrides[dateKey]!;
+      if (val != noAlarmMinute) {
+        return (val + lengthMinutes) % TimeGeometry.minutesPerDay;
+      }
+    }
+    return endMinute;
+  }
+
   Segment copyWith({
     String? name,
     int? colorValue,
@@ -130,6 +161,8 @@ class Segment {
     int? leadWarningMinutes,
     bool? alarmEnabled,
     bool? leadWarning,
+    bool? isFirstBlock,
+    Map<String, int>? dateOverrides,
     List<int>? notificationIds,
   }) {
     return Segment(
@@ -145,6 +178,8 @@ class Segment {
       alarmType: alarmType ?? (alarmEnabled != null ? (alarmEnabled ? SegmentAlarmType.fullScreen : SegmentAlarmType.none) : this.alarmType),
       scheduleTarget: scheduleTarget ?? this.scheduleTarget,
       leadWarningMinutes: leadWarningMinutes ?? (leadWarning != null ? (leadWarning ? 10 : 0) : this.leadWarningMinutes),
+      isFirstBlock: isFirstBlock ?? this.isFirstBlock,
+      dateOverrides: dateOverrides ?? this.dateOverrides,
       notificationIds: notificationIds ?? this.notificationIds,
     );
   }
@@ -164,6 +199,8 @@ class Segment {
         'leadWarningMinutes': leadWarningMinutes,
         'alarmEnabled': alarmEnabled,
         'leadWarning': leadWarning,
+        'isFirstBlock': isFirstBlock,
+        'dateOverrides': dateOverrides,
         'notificationIds': notificationIds,
       };
 
@@ -204,6 +241,16 @@ class Segment {
       leadWarningMinutes = (map['leadWarning'] as bool) ? 10 : 0;
     }
 
+    final dateOverridesRaw = map['dateOverrides'];
+    final dateOverrides = <String, int>{};
+    if (dateOverridesRaw is Map) {
+      for (final entry in dateOverridesRaw.entries) {
+        if (entry.value is num) {
+          dateOverrides[entry.key.toString()] = (entry.value as num).toInt();
+        }
+      }
+    }
+
     return Segment(
       id: (map['id'] as String?) ?? '',
       name: (map['name'] as String?) ?? '',
@@ -219,6 +266,8 @@ class Segment {
       alarmType: alarmType,
       scheduleTarget: scheduleTarget,
       leadWarningMinutes: leadWarningMinutes,
+      isFirstBlock: (map['isFirstBlock'] as bool?) ?? false,
+      dateOverrides: dateOverrides,
       notificationIds: (map['notificationIds'] as List? ?? const [])
           .whereType<num>()
           .map((n) => n.toInt())

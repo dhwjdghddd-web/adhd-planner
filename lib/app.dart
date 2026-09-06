@@ -680,11 +680,13 @@ class _WearSyncState extends ConsumerState<_WearSync> {
     final moves = ref.watch(microStepMovesProvider).value;
     final restDays = ref.watch(restDaysProvider).value;
     if (segments != null && progress != null && moves != null) {
+      final isRest = restDays != null && isRestDayOn(restDays);
+      final todayBlocks = todaySegments(segments, isRestDay: isRest);
       final json = buildChecklistJson(
-        segments: segments,
+        segments: todayBlocks,
         progress: progress,
         moves: moves,
-        restToday: restDays != null && isRestDayOn(restDays),
+        restToday: isRest,
         restTomorrow:
             restDays != null && isRestDayOn(restDays, now: tomorrowOf()),
       );

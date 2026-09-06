@@ -57,9 +57,37 @@ class PlannerPage extends ConsumerStatefulWidget {
   ConsumerState<PlannerPage> createState() => _PlannerPageState();
 }
 
+enum HomeFilterMode {
+  today('📅 오늘'),
+  workDays('🏢 근무일'),
+  restDays('🏖️ 쉬는 날'),
+  all('🌐 전체 (겹침)');
+
+  const HomeFilterMode(this.label);
+  final String label;
+}
+
 class _PlannerPageState extends ConsumerState<PlannerPage> {
   late int _currentMinute;
   late final MinuteTicker _ticker;
+  HomeFilterMode _filterMode = HomeFilterMode.today;
+
+  List<Segment> _filterSegments(List<Segment> all, bool isResting) {
+    switch (_filterMode) {
+      case HomeFilterMode.today:
+        return todaySegments(all, isRestDay: isResting);
+      case HomeFilterMode.workDays:
+        return all
+            .where((s) => s.scheduleTarget != SegmentScheduleTarget.restDaysOnly)
+            .toList();
+      case HomeFilterMode.restDays:
+        return all
+            .where((s) => s.scheduleTarget != SegmentScheduleTarget.workDaysOnly)
+            .toList();
+      case HomeFilterMode.all:
+        return all;
+    }
+  }
 
   @override
   void initState() {
@@ -168,6 +196,46 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
             ).push(MaterialPageRoute(builder: (_) => const SettingsPage())),
           ),
         ],
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(38),
+          child: Container(
+            height: 38,
+            alignment: Alignment.center,
+            padding: const EdgeInsets.only(bottom: 6),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (final mode in HomeFilterMode.values) ...[
+                    ChoiceChip(
+                      label: Text(
+                        mode.label,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: _filterMode == mode
+                              ? FontWeight.bold
+                              : FontWeight.normal,
+                        ),
+                      ),
+                      selected: _filterMode == mode,
+                      onSelected: (_) => setState(() => _filterMode = mode),
+                      visualDensity: VisualDensity.compact,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 4,
+                        vertical: 0,
+                      ),
+                    ),
+                    if (mode != HomeFilterMode.values.last)
+                      const SizedBox(width: 6),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ),
       ),
       // A faint concentric-ripple backdrop fills the vertical slack the dial
       // leaves above/below itself on tall screens, so the home screen reads as
@@ -185,7 +253,7 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
           // it behind the banner) so a rest day shows just the calm rest banner
           // on the ambient backdrop.
           Offstage(
-            offstage: isResting,
+            offstage: isResting && _filterMode == HomeFilterMode.today,
             child:
                 // Header, badges, dial, and the next-block countdown are ONE
                 // vertically-centred group, balanced within the space above the
@@ -213,7 +281,7 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
                       if (isCompactLayout(context)) {
                         return segmentsAsync.maybeWhen(
                           data: (segments) => _CompactHome(
-                            segments: segments,
+                            segments: _filterSegments(segments, isResting),
                             currentMinute: _currentMinute,
                             mitSegmentIds: mitSegmentIds,
                           ),
@@ -228,7 +296,7 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
                       if (homeViewMode == HomeViewMode.nextAction) {
                         return segmentsAsync.maybeWhen(
                           data: (segments) => _NextActionView(
-                            segments: segments,
+                            segments: _filterSegments(segments, isResting),
                             currentMinute: _currentMinute,
                             mitSegmentIds: mitSegmentIds,
                           ),
@@ -315,7 +383,7 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
                             height: dialSize,
                             child: segmentsAsync.when(
                               data: (segments) => _Dial(
-                                segments: segments,
+                                segments: _filterSegments(segments, isResting),
                                 currentMinute: _currentMinute,
                                 completedSegmentIds: completedSegmentIds,
                                 mitSegmentIds: mitSegmentIds,
@@ -329,7 +397,7 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
                           SizedBox(height: vGap),
                           segmentsAsync.maybeWhen(
                             data: (segments) => _NextBlockCountdown(
-                              segments: segments,
+                              segments: _filterSegments(segments, isResting),
                               currentMinute: _currentMinute,
                             ),
                             orElse: () => const SizedBox.shrink(),
@@ -353,7 +421,7 @@ class _PlannerPageState extends ConsumerState<PlannerPage> {
                   ),
                 ),
           ),
-          if (isResting)
+          if (isResting && _filterMode == HomeFilterMode.today)
             Positioned.fill(
               child: IgnorePointer(
                 // Compact (cover): centre within the area ABOVE the bottom FAB

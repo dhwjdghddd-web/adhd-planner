@@ -433,5 +433,27 @@ void main() {
       );
       expect(trigger, tz.TZDateTime(tz.local, 2026, 6, 18, 14, 0));
     });
+
+    test('dateOverrides overrides trigger minute on specific date', () {
+      final trigger = nextValidTriggerAt(
+        minuteOfDay: morningMinute,
+        scheduleTarget: SegmentScheduleTarget.everyday,
+        restDateKeys: {},
+        dateOverrides: {'2026-06-19': 6 * 60},
+        now: fixedNow(),
+      );
+      expect(trigger, tz.TZDateTime(tz.local, 2026, 6, 19, 6, 0));
+    });
+
+    test('dateOverrides with noAlarmMinute suppresses alarm on that date', () {
+      final trigger = nextValidTriggerAt(
+        minuteOfDay: morningMinute,
+        scheduleTarget: SegmentScheduleTarget.everyday,
+        restDateKeys: {},
+        dateOverrides: {'2026-06-19': Segment.noAlarmMinute},
+        now: fixedNow(),
+      );
+      expect(trigger, tz.TZDateTime(tz.local, 2026, 6, 20, 7, 0));
+    });
   });
 }

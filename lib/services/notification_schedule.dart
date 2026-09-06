@@ -44,6 +44,7 @@ class ScheduledSpec {
     this.alarmType = SegmentAlarmType.fullScreen,
     this.scheduleTarget = SegmentScheduleTarget.everyday,
     this.isLeadWarning = false,
+    this.dateOverrides = const {},
   });
 
   final int id;
@@ -55,6 +56,7 @@ class ScheduledSpec {
   final SegmentScheduleTarget scheduleTarget;
   // False for the main start-of-block alarm; true for the quiet "전환 예고" heads-up.
   final bool isLeadWarning;
+  final Map<String, int> dateOverrides;
 
   String get payload => isLeadWarning ? 'lead:$segmentId' : 'block:$segmentId';
 }
@@ -87,6 +89,7 @@ List<ScheduledSpec> buildSchedule(
       body: '지금 시작할 시간이에요',
       alarmType: segment.alarmType,
       scheduleTarget: segment.scheduleTarget,
+      dateOverrides: segment.dateOverrides,
     ));
 
     final effectiveLead = segment.leadWarningMinutes > 0
@@ -95,6 +98,14 @@ List<ScheduledSpec> buildSchedule(
 
     if (effectiveLead > 0) {
       final leadMinuteOfDay = (segment.startMinute - effectiveLead) % 1440;
+      final leadOverrides = segment.dateOverrides.map(
+        (k, v) => MapEntry(
+          k,
+          v == Segment.noAlarmMinute
+              ? Segment.noAlarmMinute
+              : (v - effectiveLead) % 1440,
+        ),
+      );
       specs.add(ScheduledSpec(
         id: notificationIdFor(segment.id, _leadWarningSlot),
         segmentId: segment.id,
@@ -104,6 +115,7 @@ List<ScheduledSpec> buildSchedule(
         alarmType: SegmentAlarmType.gentle,
         scheduleTarget: segment.scheduleTarget,
         isLeadWarning: true,
+        dateOverrides: leadOverrides,
       ));
     }
   }
@@ -153,7 +165,8 @@ bool restDaySuppresses(
 }
 
 /// Computes the next valid trigger time for a block with [minuteOfDay] and
-/// [scheduleTarget], automatically skipping calendar days where alarms are suppressed.
+/// [scheduleTarget], automatically skipping calendar days where alarms are suppressed
+/// and applying any specific [dateOverrides].
 ///
 /// For `workDaysOnly`, skips any day whose "yyyy-MM-dd" dateKey is in [restDateKeys].
 /// For `restDaysOnly`, skips any day whose "yyyy-MM-dd" dateKey is NOT in [restDateKeys].
@@ -162,21 +175,29 @@ tz.TZDateTime nextValidTriggerAt({
   required int minuteOfDay,
   required SegmentScheduleTarget scheduleTarget,
   required Set<String> restDateKeys,
+  Map<String, int> dateOverrides = const {},
   tz.TZDateTime? now,
 }) {
-  var candidate = nextInstanceOf(minuteOfDay, now: now);
+  final current = now ?? tz.TZDateTime.now(tz.local);
+  var calendarDay = tz.TZDateTime(tz.local, current.year, current.month, current.day);
   for (var i = 0; i < 365; i++) {
-    final dateKey = DateFormat('yyyy-MM-dd').format(candidate);
+    final dateKey = DateFormat('yyyy-MM-dd').format(calendarDay);
     final isRest = restDateKeys.contains(dateKey);
     final isValid = switch (scheduleTarget) {
       SegmentScheduleTarget.everyday => true,
       SegmentScheduleTarget.workDaysOnly => !isRest,
       SegmentScheduleTarget.restDaysOnly => isRest,
     };
-    if (isValid) {
-      return candidate;
+    final isSuppressedByOverride =
+        dateOverrides[dateKey] == Segment.noAlarmMinute;
+    if (isValid && !isSuppressedByOverride) {
+      final effectiveMinute = dateOverrides[dateKey] ?? minuteOfDay;
+      final candidate = calendarDay.add(Duration(minutes: effectiveMinute));
+      if (candidate.isAfter(current)) {
+        return candidate;
+      }
     }
-    candidate = candidate.add(const Duration(days: 1));
+    calendarDay = calendarDay.add(const Duration(days: 1));
   }
-  return candidate;
+  return current.add(const Duration(days: 1));
 }

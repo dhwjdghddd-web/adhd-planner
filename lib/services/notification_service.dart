@@ -396,6 +396,7 @@ class NotificationService {
         minuteOfDay: spec.minuteOfDay,
         scheduleTarget: spec.scheduleTarget,
         restDateKeys: restDateKeys,
+        dateOverrides: spec.dateOverrides,
         now: now,
       );
       final firesToday = triggerAt.year == now.year &&
