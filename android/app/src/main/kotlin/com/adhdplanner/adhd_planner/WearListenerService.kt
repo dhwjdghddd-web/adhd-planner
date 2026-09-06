@@ -68,6 +68,12 @@ class WearListenerService : WearableListenerService() {
                     val segmentId = payload.optString("segmentId", "")
                     skipAlarms(listOf(segmentId))
                 }
+                PATH_ADD_MEMO -> {
+                    val payload = JSONObject(String(event.data))
+                    val text = payload.optString("text", "")
+                    val source = payload.optString("source", "voice")
+                    addMemo(text, source)
+                }
             }
         } catch (e: Exception) {
             android.util.Log.w("WearListener", "malformed wear message dropped", e)
@@ -193,6 +199,30 @@ class WearListenerService : WearableListenerService() {
         )
     }
 
+    // Watch → phone voice memo
+    private fun addMemo(text: String, source: String = "voice") {
+        if (text.isBlank()) return
+        val uid = FirebaseAuth.getInstance().currentUser?.uid ?: return
+        val memoId = java.util.UUID.randomUUID().toString()
+        val isoFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS", Locale.US).apply {
+            timeZone = java.util.TimeZone.getTimeZone("UTC")
+        }
+        val createdAtIso = isoFormat.format(Date())
+
+        val memoMap = mapOf(
+            "id" to memoId,
+            "text" to text.trim(),
+            "source" to source,
+            "createdAtIso" to createdAtIso,
+            "reviewed" to false,
+            "category" to null
+        )
+        FirebaseFirestore.getInstance()
+            .collection("users").document(uid)
+            .collection("memos").document(memoId)
+            .set(memoMap)
+    }
+
     companion object {
         private const val PATH_TOGGLE = "/toggle_item"
         private const val PATH_TOGGLE_REST = "/toggle_rest"
@@ -201,6 +231,7 @@ class WearListenerService : WearableListenerService() {
         private const val PATH_ALARM_DISMISS_ALL = "/alarm_dismiss_all"
         private const val PATH_ALARM_SNOOZE = "/alarm_snooze"
         private const val PATH_ALARM_SKIP = "/alarm_skip"
+        private const val PATH_ADD_MEMO = "/add_memo"
 
         // Ids the watch dismissed (id -> when), consumed by MainActivity's
         // channel so the phone's full-screen AlarmScreen can close/not-show.

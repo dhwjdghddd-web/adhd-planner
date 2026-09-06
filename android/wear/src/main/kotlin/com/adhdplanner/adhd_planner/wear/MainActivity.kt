@@ -1,16 +1,20 @@
 package com.adhdplanner.adhd_planner.wear
 
+import android.app.Activity
 import android.content.Context
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
+import android.speech.RecognizerIntent
 import android.view.HapticFeedbackConstants
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -69,9 +73,46 @@ private const val PATH_TOGGLE = "/toggle_item"
 private const val PATH_TOGGLE_REST = "/toggle_rest"
 private const val PATH_TOGGLE_REST_TOMORROW = "/toggle_rest_tomorrow"
 private const val PATH_MOVE_ITEM = "/move_item"
+private const val PATH_ADD_MEMO = "/add_memo"
 
 class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
     private val data = mutableStateOf(WatchData(emptyList()))
+    private val recentMemoSaved = mutableStateOf<String?>(null)
+
+    private val voiceMemoLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val spokenText = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
+            if (!spokenText.isNullOrBlank()) {
+                onAddVoiceMemo(spokenText)
+            }
+        }
+    }
+
+    private fun launchVoiceMemo() {
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ko-KR")
+            putExtra(RecognizerIntent.EXTRA_PROMPT, "메모를 말씀하세요")
+        }
+        try {
+            voiceMemoLauncher.launch(intent)
+        } catch (e: Exception) {
+            android.util.Log.e("MainActivity", "Voice memo launcher error", e)
+        }
+    }
+
+    private fun onAddVoiceMemo(text: String) {
+        playSuccessVibration(this)
+        recentMemoSaved.value = text
+        val payload = JSONObject()
+            .put("text", text)
+            .put("source", "voice")
+            .toString()
+            .toByteArray()
+        sendToPhone(PATH_ADD_MEMO, payload)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -79,6 +120,9 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
         setContent {
             ChecklistScreen(
                 data = data.value,
+                recentMemoSaved = recentMemoSaved.value,
+                onDismissMemoSaved = { recentMemoSaved.value = null },
+                onVoiceMemo = ::launchVoiceMemo,
                 onToggle = ::onToggle,
                 onToggleRest = ::onToggleRest,
                 onToggleRestTomorrow = ::onToggleRestTomorrow,
@@ -195,10 +239,36 @@ fun playCelebrationVibration(context: Context) {
     }
 }
 
+fun playSuccessVibration(context: Context) {
+    val timings = longArrayOf(0, 80, 50, 120)
+    val amplitudes = intArrayOf(0, 180, 0, 240)
+    val effect = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        try {
+            VibrationEffect.createWaveform(timings, amplitudes, -1)
+        } catch (_: Exception) {
+            VibrationEffect.createWaveform(timings, -1)
+        }
+    } else {
+        @Suppress("DEPRECATION")
+        VibrationEffect.createWaveform(timings, -1)
+    }
+
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        (context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager)
+            ?.defaultVibrator?.vibrate(effect)
+    } else {
+        @Suppress("DEPRECATION")
+        (context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator)?.vibrate(effect)
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ChecklistScreen(
     data: WatchData,
+    recentMemoSaved: String?,
+    onDismissMemoSaved: () -> Unit,
+    onVoiceMemo: () -> Unit,
     onToggle: (String, Int, Boolean) -> Unit,
     onToggleRest: (Boolean) -> Unit,
     onToggleRestTomorrow: (Boolean) -> Unit,
@@ -364,6 +434,13 @@ fun ChecklistScreen(
                 val onSurfaceCheckedColor = colorScheme.onSurface.copy(alpha = 0.65f)
                 val restActiveBg = colorScheme.primaryContainer
 
+                if (recentMemoSaved != null) {
+                    LaunchedEffect(recentMemoSaved) {
+                        delay(2500)
+                        onDismissMemoSaved()
+                    }
+                }
+
                 ScreenScaffold(
                     scrollState = listState,
                     timeText = { TimeText() },
@@ -384,6 +461,77 @@ fun ChecklistScreen(
                                     focusRequester = listFocusRequester,
                                 ),
                         ) {
+                            // 바로메모 저장 완료 피드백 (일시적)
+                            if (recentMemoSaved != null) {
+                                item(key = "memo_saved_card") {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(top = 16.dp, bottom = 4.dp),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .background(
+                                                    color = colorScheme.tertiaryContainer,
+                                                    shape = ItemCardShape,
+                                                )
+                                                .padding(horizontal = 14.dp, vertical = 6.dp),
+                                            contentAlignment = Alignment.Center,
+                                        ) {
+                                            Text(
+                                                text = "✓ 메모 저장됨\n\"$recentMemoSaved\"",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = colorScheme.onTertiaryContainer,
+                                                textAlign = TextAlign.Center,
+                                                maxLines = 2,
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            // 바로메모 음성 입력 버튼
+                            item(key = "voice_memo_btn") {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(top = if (recentMemoSaved != null) 2.dp else 16.dp, bottom = 6.dp),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .background(
+                                                color = colorScheme.primaryContainer,
+                                                shape = ItemCardShape,
+                                            )
+                                            .clickable {
+                                                view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+                                                onVoiceMemo()
+                                            }
+                                            .padding(horizontal = 16.dp, vertical = 7.dp),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.Center,
+                                        ) {
+                                            Text(
+                                                text = "🎤",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                modifier = Modifier.padding(end = 6.dp),
+                                            )
+                                            Text(
+                                                text = "바로메모",
+                                                style = MaterialTheme.typography.labelMedium,
+                                                color = colorScheme.onPrimaryContainer,
+                                                textAlign = TextAlign.Center,
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
                             // 상단: 쉬는 날 배너 또는 진행 중인 루틴 목록
                             if (data.restToday) {
                                 item(key = "rest_today_banner") {
