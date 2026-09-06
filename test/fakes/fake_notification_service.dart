@@ -1,4 +1,5 @@
 import 'package:adhd_planner/data/models/app_settings.dart';
+import 'package:adhd_planner/data/models/rest_day.dart';
 import 'package:adhd_planner/data/models/segment.dart';
 import 'package:adhd_planner/services/notification_service.dart';
 
@@ -32,8 +33,9 @@ class FakeNotificationService extends NotificationService {
   @override
   Future<void> rescheduleAll(
     List<Segment> segments,
-    AppSettings settings,
-  ) async {
+    AppSettings settings, {
+    List<RestDay>? currentRestDays,
+  }) async {
     rescheduleCalls.add(segments);
   }
 

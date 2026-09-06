@@ -186,6 +186,36 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
         .save(settings.copyWith(snoozeMinutes: minutes));
   }
 
+  void _testAlarm(AppSettings settings) async {
+    await ref.read(notificationServiceProvider).scheduleTestAlarm(
+      settings: settings,
+      delaySeconds: 10,
+    );
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('10초 뒤에 강력 알람(전체화면+진동+소리)이 울려요. 화면을 끄거나 앱을 나가서 확인해보세요!'),
+          duration: Duration(seconds: 4),
+        ),
+      );
+    }
+  }
+
+  void _testGentleAlarm(AppSettings settings) async {
+    await ref.read(notificationServiceProvider).scheduleTestGentleAlarm(
+      settings: settings,
+      delaySeconds: 10,
+    );
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('10초 뒤에 부드러운 알림(상단 배너+1회 진동)이 울려요!'),
+          duration: Duration(seconds: 4),
+        ),
+      );
+    }
+  }
+
   Future<void> _setCheckinAlarmEnabled(
     AppSettings settings,
     bool enabled,
@@ -521,6 +551,32 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
           subtitle: const Text('불규칙한 휴무일을 등록하고 알람을 맞춤 제어해요.'),
           trailing: const Icon(Icons.chevron_right),
           onTap: () => RestDayCalendarSheet.show(context),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+          child: Text('알람 동작 테스트 (10초 뒤 울림)', style: Theme.of(context).textTheme.bodyMedium),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          child: Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.alarm, size: 18),
+                  label: const Text('강력 알람'),
+                  onPressed: () => _testAlarm(settings),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.notifications_active_outlined, size: 18),
+                  label: const Text('부드러운 알림'),
+                  onPressed: () => _testGentleAlarm(settings),
+                ),
+              ),
+            ],
+          ),
         ),
         const Divider(),
         const _SectionHeader('체크인 알림'),

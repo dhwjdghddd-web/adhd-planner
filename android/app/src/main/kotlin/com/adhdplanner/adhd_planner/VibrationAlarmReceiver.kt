@@ -79,6 +79,9 @@ class VibrationAlarmReceiver : BroadcastReceiver() {
             // Dismiss notification if it was posted by flutter_local_notifications
             val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
             notificationManager?.cancel(requestCode)
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                notificationManager?.cancel(requestCode)
+            }, 300)
             return
         }
 
@@ -104,18 +107,21 @@ class VibrationAlarmReceiver : BroadcastReceiver() {
 
         // Bring MainActivity directly to the foreground so the full-screen AlarmScreen displays immediately
         // without waiting for the user to tap the notification popup banner.
-        try {
-            val launchIntent = Intent(context, MainActivity::class.java).apply {
-                action = Intent.ACTION_MAIN
-                addCategory(Intent.CATEGORY_LAUNCHER)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                putExtra("alarm_trigger", true)
-                putExtra("notification_id", requestCode)
-                if (segmentId != null) putExtra("segment_id", segmentId)
+        // Only launch full-screen when segmentId is provided (gentle alarms pass null so they don't take over the screen).
+        if (!segmentId.isNullOrEmpty()) {
+            try {
+                val launchIntent = Intent(context, MainActivity::class.java).apply {
+                    action = Intent.ACTION_MAIN
+                    addCategory(Intent.CATEGORY_LAUNCHER)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                    putExtra("alarm_trigger", true)
+                    putExtra("notification_id", requestCode)
+                    putExtra("segment_id", segmentId)
+                }
+                context.startActivity(launchIntent)
+            } catch (e: Exception) {
+                android.util.Log.w("VibrationAlarmReceiver", "Failed to auto-launch MainActivity for alarm", e)
             }
-            context.startActivity(launchIntent)
-        } catch (e: Exception) {
-            android.util.Log.w("VibrationAlarmReceiver", "Failed to auto-launch MainActivity for alarm", e)
         }
     }
 
@@ -220,16 +226,17 @@ class VibrationAlarmReceiver : BroadcastReceiver() {
                 alarmManager.cancel(
                     pendingIntentFor(context, requestCode, longArrayOf(0), 0L, 0L, false),
                 )
-                alarmManager.cancel(buzzLoopPendingIntent(context, requestCode, longArrayOf(0), 0L))
+                if (!isAlarmNotificationActive(context, requestCode)) {
+                    alarmManager.cancel(buzzLoopPendingIntent(context, requestCode, longArrayOf(0), 0L))
+                }
                 cancelled.add(requestCode)
             }
             setActiveCodes(context, emptySet())
-            stopVibration(context)
-            // NB: no WearAlarmMessenger.sendStop here -- cancelAll runs during
-            // routine rescheduleAll (incl. the fullScreenIntent cold start when
-            // an alarm fires), and telling the watch to stop then would kill a
+            // NB: no stopVibration(context) and no WearAlarmMessenger.sendStop here!
+            // cancelAll runs during routine rescheduleAll (incl. the cold start when
+            // an alarm fires), and stopping vibration here kills the buzz of a
             // legitimately-ringing alarm. Only the explicit single cancel()
-            // (a real dismiss) signals the watch.
+            // (a real dismiss) signals the watch and stops the vibration.
             return cancelled
         }
 

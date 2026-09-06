@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:intl/intl.dart';
 import 'package:timezone/timezone.dart' as tz;
 
 import '../data/models/app_settings.dart';
@@ -149,4 +150,33 @@ bool restDaySuppresses(
   if (firesToday && restToday) return true;
   if (!firesToday && restTomorrow) return true;
   return false;
+}
+
+/// Computes the next valid trigger time for a block with [minuteOfDay] and
+/// [scheduleTarget], automatically skipping calendar days where alarms are suppressed.
+///
+/// For `workDaysOnly`, skips any day whose "yyyy-MM-dd" dateKey is in [restDateKeys].
+/// For `restDaysOnly`, skips any day whose "yyyy-MM-dd" dateKey is NOT in [restDateKeys].
+/// For `everyday`, triggers at the next occurrence (today if still ahead, else tomorrow).
+tz.TZDateTime nextValidTriggerAt({
+  required int minuteOfDay,
+  required SegmentScheduleTarget scheduleTarget,
+  required Set<String> restDateKeys,
+  tz.TZDateTime? now,
+}) {
+  var candidate = nextInstanceOf(minuteOfDay, now: now);
+  for (var i = 0; i < 365; i++) {
+    final dateKey = DateFormat('yyyy-MM-dd').format(candidate);
+    final isRest = restDateKeys.contains(dateKey);
+    final isValid = switch (scheduleTarget) {
+      SegmentScheduleTarget.everyday => true,
+      SegmentScheduleTarget.workDaysOnly => !isRest,
+      SegmentScheduleTarget.restDaysOnly => isRest,
+    };
+    if (isValid) {
+      return candidate;
+    }
+    candidate = candidate.add(const Duration(days: 1));
+  }
+  return candidate;
 }

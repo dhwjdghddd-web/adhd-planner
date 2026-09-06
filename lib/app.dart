@@ -557,7 +557,7 @@ class _RestDayAlarmSync extends ConsumerWidget {
         // Fake/Firestore 모두 로컬 캐시가 동기적으로 갱신돼 있다).
         await ref
             .read(notificationServiceProvider)
-            .rescheduleAll(segments, settings);
+            .rescheduleAll(segments, settings, currentRestDays: restDays);
       } catch (e) {
         logSwallowed('쉬는 날 토글 후 알람 재스케줄', e);
       }

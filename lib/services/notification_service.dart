@@ -14,6 +14,7 @@ import '../data/models/rest_day.dart';
 import '../data/models/segment.dart';
 import '../data/providers.dart';
 import '../data/repositories/planner_repository.dart';
+import '../data/today.dart';
 import 'notification_schedule.dart';
 // The pure scheduling logic lives in notification_schedule.dart; re-export it
 // so existing importers of this file (and notification_service_test) keep
@@ -351,28 +352,32 @@ class NotificationService {
   /// again whenever blocks or that choice change so it takes effect immediately.
   Future<void> rescheduleAll(
     List<Segment> segments,
-    AppSettings settings,
-  ) async {
+    AppSettings settings, {
+    List<RestDay>? currentRestDays,
+  }) async {
     final repo = _repository;
     if (repo == null) return; // auth 전환 중 — 알람 재스케줄 건너뜀
     await _ensureChannels(settings);
 
     var restToday = false;
     var restTomorrow = false;
-    var restDays = const <RestDay>[];
-    try {
-      restDays = await repo.watchRestDays().first;
-    } catch (e) {
-      logSwallowed('쉬는 날 조회(재스케줄)', e); // 조회 실패 → 빈 목록으로 진행
+    var restDays = currentRestDays ?? const <RestDay>[];
+    if (currentRestDays == null) {
+      try {
+        restDays = await repo.watchRestDays().first;
+      } catch (e) {
+        logSwallowed('쉬는 날 조회(재스케줄)', e); // 조회 실패 → 빈 목록으로 진행
+      }
     }
+    restToday = isRestDayOn(restDays);
+    restTomorrow = isRestDayTomorrow(restDays);
     await _syncAlarmMetadata(segments, restDays);
+    final restDateKeys = restDays.map((r) => r.dateKey).toSet();
 
     // 기존 알람을 전부 비우고 아래에서 현재 blocks만 다시 건다.
     // 네이티브가 자체 보관하는 requestCode 집합으로 진동 알람을 전부 취소하고
     // 그 id들을 받아, 같은 id의 flutter_local_notifications 알림도 id별로
-    // 취소한다(_plugin.cancel은 추적 목록과 무관하게 id로 PendingIntent를
-    // 재구성해 취소하므로, 재부팅 boot-replay로 플러그인 추적이 어긋나
-    // cancelAll이 놓치는 고아 알림까지 잡는다). 마지막에 cancelAll로 한 번 더 정리.
+    // 지운 뒤 cancelAll()로 마무리(혹시 모를 누락 방지).
     final staleIds = await _cancelAllVibrationAlarms();
     for (final id in staleIds) {
       await _plugin.cancel(id);
@@ -383,8 +388,22 @@ class NotificationService {
       segments,
       leadMinutes: settings.leadMinutes,
     );
+    final now = tz.TZDateTime.now(tz.local);
     for (final spec in specs) {
-      final triggerAt = nextInstanceOf(spec.minuteOfDay);
+      final triggerAt = nextValidTriggerAt(
+        minuteOfDay: spec.minuteOfDay,
+        scheduleTarget: spec.scheduleTarget,
+        restDateKeys: restDateKeys,
+        now: now,
+      );
+      final firesToday = triggerAt.year == now.year &&
+          triggerAt.month == now.month &&
+          triggerAt.day == now.day;
+      // 당일 울리지 않는 알람(쉬는 날로 건너뛰어 내일 또는 그 이후로 밀린 알람)에는
+      // matchDateTimeComponents: DateTimeComponents.time을 지정하면 안 됨.
+      // 플러그인이 시간(시:분)만 보고 오늘 그 시간이 아직 안 지났으면 오늘 울려버리는 버그 방지.
+      final matchComponents = firesToday ? DateTimeComponents.time : null;
+
       if (spec.isLeadWarning) {
         // Quiet heads-up only -- no native Vibrator call, no alarmClock
         // urgency/status-bar icon. flutter_local_notifications auto-creates
@@ -399,7 +418,7 @@ class NotificationService {
           uiLocalNotificationDateInterpretation:
               UILocalNotificationDateInterpretation.absoluteTime,
           androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-          matchDateTimeComponents: DateTimeComponents.time,
+          matchDateTimeComponents: matchComponents,
           payload: spec.payload,
         );
         continue;
@@ -431,7 +450,7 @@ class NotificationService {
         uiLocalNotificationDateInterpretation:
             UILocalNotificationDateInterpretation.absoluteTime,
         androidScheduleMode: scheduleMode,
-        matchDateTimeComponents: DateTimeComponents.time,
+        matchDateTimeComponents: matchComponents,
         payload: spec.payload,
       );
 
@@ -449,6 +468,21 @@ class NotificationService {
           repeatInterval: const Duration(days: 1),
           watchAlarm: true,
           segmentId: spec.segmentId,
+          amplitude: settings.vibrationIntensity.amplitude,
+        );
+      } else if (spec.alarmType == SegmentAlarmType.gentle ||
+          spec.alarmType == SegmentAlarmType.hapticOnly) {
+        // 부드러운 알림 / 햅틱 진동 알림도 화면 켜짐/무음 모드에서 누락 없이
+        // 확실히 진동을 전달하도록 1회성 네이티브 진동 알람을 함께 스케줄링.
+        // segmentId를 null로 전달하여 AlarmScreen 전체화면 전환 없이 진동만 발생.
+        await _scheduleVibrationAlarm(
+          requestCode: spec.id,
+          triggerAt: triggerAt,
+          pattern: vibrationPatternFor(settings.vibrationPattern),
+          durationMs: vibrationCycleMs(settings.vibrationPattern),
+          repeatInterval: const Duration(days: 1),
+          watchAlarm: false,
+          segmentId: null,
           amplitude: settings.vibrationIntensity.amplitude,
         );
       }
@@ -649,26 +683,28 @@ class NotificationService {
     );
   }
 
-  /// Schedules a one-time test alarm in [delaySeconds] (default 5s) to verify
+  /// Schedules a one-time test alarm in [delaySeconds] (default 10s) to verify
   /// full-screen takeover, sound, and vibration.
   Future<void> scheduleTestAlarm({
-    required Segment segment,
+    Segment? segment,
     required AppSettings settings,
-    int delaySeconds = 5,
+    int delaySeconds = 10,
   }) async {
     await _ensureChannels(settings);
     const id = 99999;
     final triggerAt = tz.TZDateTime.now(tz.local).add(Duration(seconds: delaySeconds));
+    final segId = segment?.id ?? 'test_alarm';
+    final segName = segment?.name ?? '강력 알람 테스트';
     await _plugin.zonedSchedule(
       id,
-      '[테스트] ${segment.name}',
-      '강력 알람 테스트 중입니다.',
+      '[테스트] $segName',
+      '강력 알람 테스트 중입니다 (10초 뒤 울림).',
       triggerAt,
       NotificationDetails(android: _androidDetailsFor(settings)),
       uiLocalNotificationDateInterpretation:
           UILocalNotificationDateInterpretation.absoluteTime,
       androidScheduleMode: AndroidScheduleMode.alarmClock,
-      payload: 'block:${segment.id}',
+      payload: 'block:$segId',
     );
     await _scheduleVibrationAlarm(
       requestCode: id,
@@ -677,7 +713,39 @@ class NotificationService {
       durationMs: _alarmRepeatMs,
       repeatInterval: Duration.zero,
       watchAlarm: true,
-      segmentId: segment.id,
+      segmentId: segId,
+      amplitude: settings.vibrationIntensity.amplitude,
+    );
+  }
+
+  /// Schedules a one-time gentle alarm in [delaySeconds] (default 10s) to verify
+  /// gentle banner notification and 1-shot native vibration.
+  Future<void> scheduleTestGentleAlarm({
+    required AppSettings settings,
+    int delaySeconds = 10,
+  }) async {
+    await _ensureChannels(settings);
+    const id = 99998;
+    final triggerAt = tz.TZDateTime.now(tz.local).add(Duration(seconds: delaySeconds));
+    await _plugin.zonedSchedule(
+      id,
+      '[테스트] 부드러운 알림',
+      '부드러운 알림(상단 배너 및 진동) 테스트 중입니다 (10초 뒤 울림).',
+      triggerAt,
+      NotificationDetails(android: _gentleAndroidDetailsFor(settings)),
+      uiLocalNotificationDateInterpretation:
+          UILocalNotificationDateInterpretation.absoluteTime,
+      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      payload: 'gentle_test',
+    );
+    await _scheduleVibrationAlarm(
+      requestCode: id,
+      triggerAt: triggerAt,
+      pattern: vibrationPatternFor(settings.vibrationPattern),
+      durationMs: vibrationCycleMs(settings.vibrationPattern),
+      repeatInterval: Duration.zero,
+      watchAlarm: false,
+      segmentId: null,
       amplitude: settings.vibrationIntensity.amplitude,
     );
   }

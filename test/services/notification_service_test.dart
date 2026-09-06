@@ -378,4 +378,60 @@ void main() {
       }
     });
   });
+
+  group('nextValidTriggerAt', () {
+    tz.TZDateTime fixedNow() => tz.TZDateTime(tz.local, 2026, 6, 18, 10, 0); // 10:00 AM on 2026-06-18
+    const afternoonMinute = 14 * 60; // 14:00 (ahead today)
+    const morningMinute = 7 * 60; // 07:00 (already passed today)
+
+    test('workDaysOnly triggers today when today is not a rest day', () {
+      final trigger = nextValidTriggerAt(
+        minuteOfDay: afternoonMinute,
+        scheduleTarget: SegmentScheduleTarget.workDaysOnly,
+        restDateKeys: {},
+        now: fixedNow(),
+      );
+      expect(trigger, tz.TZDateTime(tz.local, 2026, 6, 18, 14, 0));
+    });
+
+    test('workDaysOnly skips today when today is a rest day', () {
+      final trigger = nextValidTriggerAt(
+        minuteOfDay: afternoonMinute,
+        scheduleTarget: SegmentScheduleTarget.workDaysOnly,
+        restDateKeys: {'2026-06-18'}, // today is rest day
+        now: fixedNow(),
+      );
+      expect(trigger, tz.TZDateTime(tz.local, 2026, 6, 19, 14, 0));
+    });
+
+    test('workDaysOnly skips multiple consecutive rest days', () {
+      final trigger = nextValidTriggerAt(
+        minuteOfDay: morningMinute,
+        scheduleTarget: SegmentScheduleTarget.workDaysOnly,
+        restDateKeys: {'2026-06-19', '2026-06-20'}, // tomorrow and day after are rest days
+        now: fixedNow(),
+      );
+      expect(trigger, tz.TZDateTime(tz.local, 2026, 6, 21, 7, 0));
+    });
+
+    test('restDaysOnly skips work days and lands on next rest day', () {
+      final trigger = nextValidTriggerAt(
+        minuteOfDay: afternoonMinute,
+        scheduleTarget: SegmentScheduleTarget.restDaysOnly,
+        restDateKeys: {'2026-06-20'}, // Saturday is rest day
+        now: fixedNow(),
+      );
+      expect(trigger, tz.TZDateTime(tz.local, 2026, 6, 20, 14, 0));
+    });
+
+    test('everyday triggers at next occurrence regardless of rest days', () {
+      final trigger = nextValidTriggerAt(
+        minuteOfDay: afternoonMinute,
+        scheduleTarget: SegmentScheduleTarget.everyday,
+        restDateKeys: {'2026-06-18'},
+        now: fixedNow(),
+      );
+      expect(trigger, tz.TZDateTime(tz.local, 2026, 6, 18, 14, 0));
+    });
+  });
 }

@@ -132,6 +132,20 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
       }
     }
 
+    if (segment == null && widget.segmentId == 'test_alarm') {
+      final now = DateTime.now();
+      segment = Segment(
+        id: 'test_alarm',
+        name: '강력 알람 테스트',
+        iconKey: 'alarm',
+        order: 0,
+        startMinute: now.hour * 60 + now.minute,
+        endMinute: (now.hour * 60 + now.minute + 30) % 1440,
+        colorValue: 0xFF2196F3,
+        alarmEnabled: true,
+      );
+    }
+
     final restDays = ref.watch(restDaysProvider).value ?? const [];
     final isRest = isRestDayOn(restDays);
 
@@ -328,6 +342,10 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
   // guarantees exactly one Focus regardless of what was open when it rang.
   void _dismiss(Segment segment) {
     unawaited(_tryCancelNotification());
+    if (segment.id == 'test_alarm') {
+      Navigator.of(context).pop();
+      return;
+    }
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute(builder: (_) => FocusPage.forBlock(segment)),
       (route) => route.isFirst,
@@ -349,6 +367,11 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
   // (see NotificationService.scheduleSnooze) rather than just disappearing
   // until tomorrow, which is what a bare 해제/무시 would do.
   void _snooze(Segment segment, int snoozeMinutes) {
+    if (segment.id == 'test_alarm') {
+      unawaited(_tryCancelNotification());
+      Navigator.of(context).pop();
+      return;
+    }
     unawaited(_cancelThenScheduleSnooze(segment, snoozeMinutes));
     // pop, not maybePop: this screen's PopScope(canPop: false) blocks
     // maybePop()/popDisposition-based pops (that's the whole point -- it's
@@ -396,6 +419,10 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
   // Tomorrow's normal daily alarm is untouched.
   void _skipToday(Segment segment) {
     unawaited(_tryCancelNotification());
+    if (segment.id == 'test_alarm') {
+      Navigator.of(context).pop();
+      return;
+    }
     unawaited(ref.read(alarmSkipControllerProvider).skipToday(segment.id));
     // pop, not maybePop -- see the comment in _snooze above.
     Navigator.of(context).pop();
