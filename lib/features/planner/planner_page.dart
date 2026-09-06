@@ -905,65 +905,98 @@ class _NextBlockCountdown extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (segments.isEmpty) return const SizedBox.shrink();
-    final ordered = [...segments]
-      ..sort((a, b) => a.startMinute.compareTo(b.startMinute));
-    Segment? next;
-    for (final s in ordered) {
-      if (s.startMinute > currentMinute) {
-        next = s;
-        break;
-      }
-    }
-    if (next == null) return const SizedBox.shrink();
-
-    final remaining = next.startMinute - currentMinute;
-    final h = remaining ~/ 60;
-    final m = remaining % 60;
-    final remLabel = h > 0 ? '$h시간 $m분' : '$m분';
-
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final mutedColor = isDark
         ? const Color(0xFFA6B2BE)
         : const Color(0xFF525C68);
 
-    return Semantics(
-      label: '다음 구간 ${next.name}까지 $remLabel 남음',
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.schedule, size: 16, color: mutedColor),
-            const SizedBox(width: 6),
-            Flexible(
-              child: Text.rich(
-                TextSpan(
-                  children: [
-                    const TextSpan(text: '다음 '),
-                    TextSpan(
-                      text: next.name,
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        color: theme.colorScheme.primary,
-                      ),
-                    ),
-                    const TextSpan(text: '까지 '),
-                    TextSpan(
-                      text: remLabel,
-                      style: const TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                  ],
+    Segment? next;
+    if (segments.isNotEmpty) {
+      final ordered = [...segments]
+        ..sort((a, b) => a.startMinute.compareTo(b.startMinute));
+      for (final s in ordered) {
+        if (s.startMinute > currentMinute) {
+          next = s;
+          break;
+        }
+      }
+    }
+
+    if (next == null) {
+      return SizedBox(
+        height: 28,
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.coffee, size: 16, color: mutedColor),
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    '남은 일정이 없어요 · 편히 쉬어도 좋아요',
+                    style: theme.textTheme.bodyMedium?.copyWith(color: mutedColor),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                  ),
                 ),
-                style: theme.textTheme.bodyMedium?.copyWith(color: mutedColor),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-              ),
+              ],
             ),
-          ],
+          ),
+        ),
+      );
+    }
+
+    final remaining = next.startMinute - currentMinute;
+    final h = remaining ~/ 60;
+    final m = remaining % 60;
+    final remLabel = h > 0 ? '$h시간 $m분' : '$m분';
+
+    return SizedBox(
+      height: 28,
+      child: Center(
+        child: Semantics(
+          label: '다음 구간 ${next.name}까지 $remLabel 남음',
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.schedule, size: 16, color: mutedColor),
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text.rich(
+                    TextSpan(
+                      children: [
+                        const TextSpan(text: '다음 '),
+                        TextSpan(
+                          text: next.name,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            color: theme.colorScheme.primary,
+                          ),
+                        ),
+                        const TextSpan(text: '까지 '),
+                        TextSpan(
+                          text: remLabel,
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                      ],
+                    ),
+                    style: theme.textTheme.bodyMedium?.copyWith(color: mutedColor),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
