@@ -74,21 +74,11 @@ private const val PATH_TOGGLE_REST = "/toggle_rest"
 private const val PATH_TOGGLE_REST_TOMORROW = "/toggle_rest_tomorrow"
 private const val PATH_MOVE_ITEM = "/move_item"
 private const val PATH_ADD_MEMO = "/add_memo"
+private const val REQUEST_CODE_VOICE_MEMO = 1001
 
 class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
     private val data = mutableStateOf(WatchData(emptyList()))
     private val recentMemoSaved = mutableStateOf<String?>(null)
-
-    private val voiceMemoLauncher = registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.resultCode == Activity.RESULT_OK) {
-            val spokenText = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
-            if (!spokenText.isNullOrBlank()) {
-                onAddVoiceMemo(spokenText)
-            }
-        }
-    }
 
     private fun launchVoiceMemo() {
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
@@ -97,9 +87,21 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
             putExtra(RecognizerIntent.EXTRA_PROMPT, "메모를 말씀하세요")
         }
         try {
-            voiceMemoLauncher.launch(intent)
+            @Suppress("DEPRECATION")
+            startActivityForResult(intent, REQUEST_CODE_VOICE_MEMO)
         } catch (e: Exception) {
             android.util.Log.e("MainActivity", "Voice memo launcher error", e)
+        }
+    }
+
+    @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQUEST_CODE_VOICE_MEMO && resultCode == Activity.RESULT_OK) {
+            val spokenText = data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
+            if (!spokenText.isNullOrBlank()) {
+                onAddVoiceMemo(spokenText)
+            }
         }
     }
 
